@@ -1,0 +1,49 @@
+{
+    "countryCode": "AUS",
+    "countryName": "Australia",
+
+    "taxIdLabel": "ABN (Australian Business Number)",
+    "taxIdFormat": "^\\d{11}$",
+    "taxIdPlaceholder": "XXXXXXXXXXX",
+    "taxIdHelpText": "11-digit ABN",
+
+    "vatRequired": false,
+    "vatLabel": "GST Registration",
+
+    "registrationNumberLabel": "ACN (Australian Company Number)",
+    "registrationNumberFormat": "^\\d{9}$",
+    "registrationNumberPlaceholder": "XXXXXXXXX",
+    "registrationNumberHelpText": "9-digit ACN from ASIC",
+
+    "hasStates": true,
+    "stateLabel": "State/Territory",
+    "states": [
+      { "code": "NSW", "name": "New South Wales" },
+      { "code": "VIC", "name": "Victoria" },
+      { "code": "QLD", "name": "Queensland" },
+      { "code": "WA", "name": "Western Australia" },
+      { "code": "SA", "name": "South Australia" },
+      { "code": "TAS", "name": "Tasmania" },
+      { "code": "ACT", "name": "Australian Capital Territory" },
+      { "code": "NT", "name": "Northern Territory" }
+    ],
+
+    "postalCodeFormat": "^\\d{4}$",
+    "postalCodePlaceholder": "XXXX",
+
+    "additionalFields": [
+      {
+        "fieldName": "afslLicense",
+        "label": "AFSL Number",
+        "type": "text",
+        "required": false,
+        "placeholder": "If AFSL holder",
+        "helpText": "Australian Financial Services License"
+      }
+    ],
+
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "ARTICLES_OF_INCORPORATION"
+    ]
+  }

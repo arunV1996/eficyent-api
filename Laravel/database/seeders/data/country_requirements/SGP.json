@@ -1,0 +1,39 @@
+{
+    "countryCode": "SGP",
+    "countryName": "Singapore",
+
+    "taxIdLabel": "UEN (Unique Entity Number)",
+    "taxIdFormat": "^[A-Z\\d]{9,10}$",
+    "taxIdPlaceholder": "e.g., 201912345A",
+    "taxIdHelpText": "Unique Entity Number from ACRA",
+
+    "vatRequired": false,
+    "vatLabel": "GST Registration Number",
+    "vatFormat": "^[A-Z\\d]{10}$",
+    "vatPlaceholder": "If GST registered",
+
+    "registrationNumberLabel": "ACRA Registration Number",
+    "registrationNumberFormat": "^[A-Z\\d]{9,10}$",
+    "registrationNumberPlaceholder": "Same as UEN",
+
+    "hasStates": false,
+
+    "postalCodeFormat": "^\\d{6}$",
+    "postalCodePlaceholder": "XXXXXX",
+
+    "additionalFields": [
+      {
+        "fieldName": "masLicense",
+        "label": "MAS License Number",
+        "type": "text",
+        "required": false,
+        "placeholder": "If MAS regulated"
+      }
+    ],
+
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "MEMORANDUM_OF_ASSOCIATION",
+      "SHAREHOLDER_REGISTRY"
+    ]
+  }

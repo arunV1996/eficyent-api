@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Statement</title>
+    <style>
+        html {
+            padding: 0;
+            margin: 0;
+        }
+
+        p {
+            padding: 0;
+            margin: 0;
+        }
+
+        th,
+        td {
+            padding: 0;
+            margin: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            margin: 20px;
+            padding: 0;
+            margin: 0;
+            line-height: 1;
+        }
+
+        .statement {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .statement-table thead th {
+            padding: 5px;
+            text-align: center;
+            font-size: 9px;
+        }
+
+        .statement-table tbody tr td {
+            padding: 10px 5px;
+            text-align: center;
+            font-size: 8px;
+            font-weight: 400;
+            line-height: 1.4;
+        }
+
+        .statement-table tbody tr:nth-child(even) td {
+            background-color: #fbfafa;
+        }
+    </style>
+</head>
+
+<body class="statement">
+    <table bgcolor="#E3F3FE" style="background-color: #E3F3FE; width: 50%;">
+        <tr>
+            <td style=" padding: 10px;"></td>
+        </tr>
+    </table>
+    <table bgcolor="#01FFD1" style="background-color: #01FFD1; width: 80%;">
+        <tr>
+            <td style=" padding: 10px;"></td>
+        </tr>
+    </table>
+    <table bgcolor="#0176FF" style="background-color: #0176FF; margin-bottom: 40px;">
+        <tr>
+            <td style=" padding: 10px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td valign="bottom">
+                <p style="font-size: 12px;font-weight: 300;color: #777777;">
+                    <strong style="color: #111111;">{{tr('bank_statement')}} </strong> | {{ now()->format('m/d/Y') }}
+                </p>
+            </td>
+            <td align="right">
+                <img src="dark-logo.png" alt="logo" width="210" height="50">
+            </td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:15px;padding-bottom: 15px;"></td>
+        </tr>
+    </table>
+    <table class="statement-table" style="margin-top: 20px;">
+        <thead>
+            <tr>
+                <th>{{tr('s_no')}}</th>
+
+                <th>{{tr('transaction_id')}}</th>
+
+                <th>{{tr('client_ref_no')}}</th>
+
+                <th>{{tr('sending_amount')}}</th>
+
+                <th>{{tr('recipient_amount')}}</th>
+
+                <th>{{tr('fx_rate')}}</th>
+
+                <th>{{tr('remitter_name')}}</th>
+
+                <th>{{tr('beneficiary_name')}}</th>
+
+                <th>{{tr('account_number')}}</th>
+
+                <th>{{tr('remarks')}}</th>
+
+                <th>{{tr('status')}}</th>
+
+                <th>{{tr('created_at')}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($export_details as $i => $export_detail)
+
+            <tr>
+
+                <td>{{ $i+1 }}</td>
+
+                <td>{{ $export_detail['txn_ref_no'] }}</td>
+
+                <td>{{ $export_detail['client_ref_no'] }}</td>
+
+                <td>{{ $export_detail['sending_amount'] }}</td>
+
+                <td>{{ $export_detail['receiving_amount'] }}</td>
+
+                <td>{{ $export_detail['fx_rate'] }}</td>
+
+                <td>{{ $export_detail['remitter_name'] }}</td>
+
+                <td>{{ $export_detail['beneficiary_name'] }}</td>
+
+                <td>{{ $export_detail['account_number'] }}</td>
+
+                <td>{{ $export_detail['remarks'] }}</td>
+
+                <td>{{ $export_detail['status'] }}</td>
+
+                <td>{{ $export_detail['created_at'] }}</td>
+
+            </tr>
+            @endforeach
+
+        </tbody>
+    </table>
+    <table bgcolor="#0176FF" style="background-color: #0176FF; margin-top: 40px;">
+        <tr>
+            <td style="padding:20px;" align="center">
+                <p style="font-size: 14px;font-weight: 300;color: #fff;">
+                    <strong style="color: #111111;">
+                        Note:
+                    </strong>
+                    This is computer generated receipt and does not require physical signature.
+                </p>
+            </td>
+        </tr>
+    </table>
+</body>
+
+</html>

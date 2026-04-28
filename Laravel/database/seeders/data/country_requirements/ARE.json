@@ -1,0 +1,51 @@
+{
+    "countryCode": "ARE",
+    "countryName": "United Arab Emirates",
+
+    "taxIdLabel": "TRN (Tax Registration Number)",
+    "taxIdFormat": "^\\d{15}$",
+    "taxIdPlaceholder": "XXXXXXXXXXXXXXX",
+
+    "vatRequired": true,
+    "vatLabel": "VAT Registration Number",
+    "vatFormat": "^\\d{15}$",
+    "vatPlaceholder": "Same as TRN",
+
+    "registrationNumberLabel": "Trade License Number",
+    "registrationNumberPlaceholder": "Enter trade license number",
+
+    "hasStates": true,
+    "stateLabel": "Emirate",
+    "states": [
+      { "code": "AZ", "name": "Abu Dhabi" },
+      { "code": "DU", "name": "Dubai" },
+      { "code": "SH", "name": "Sharjah" },
+      { "code": "AJ", "name": "Ajman" },
+      { "code": "FU", "name": "Fujairah" },
+      { "code": "RK", "name": "Ras Al Khaimah" },
+      { "code": "UQ", "name": "Umm Al Quwain" }
+    ],  
+
+    "additionalFields": [
+      {
+        "fieldName": "economicLicense",
+        "label": "Economic License Number",
+        "type": "text",
+        "required": true,
+        "placeholder": "Enter economic license number"
+      },
+      {
+        "fieldName": "dfsaLicense",
+        "label": "DFSA/ADGM License",
+        "type": "text",
+        "required": false,
+        "placeholder": "If financial services regulated"
+      }
+    ],
+
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "BUSINESS_LICENSE",
+      "SHAREHOLDER_REGISTRY"
+    ]
+  }

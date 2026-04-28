@@ -1,0 +1,99 @@
+{
+    "countryCode": "DEU",
+    "countryName": "Germany",
+    "taxIdLabel": "Steuernummer",
+    "taxIdFormat": "^\\d{10,13}$",
+    "taxIdPlaceholder": "Tax number from Finanzamt",
+    "vatRequired": true,
+    "vatLabel": "USt-IdNr (VAT ID)",
+    "vatFormat": "^DE\\d{9}$",
+    "vatPlaceholder": "DE followed by 9 digits",
+    "registrationNumberLabel": "Handelsregister Number",
+    "registrationNumberFormat": "^HRB?\\s?\\d+$",
+    "registrationNumberPlaceholder": "e.g., HRB 12345",
+    "registrationNumberHelpText": "Commercial register number",
+    "hasStates": true,
+    "stateLabel": "Bundesland",
+    "states": [
+        {
+            "code": "BW",
+            "name": "Baden-Württemberg"
+        },
+        {
+            "code": "BY",
+            "name": "Bayern"
+        },
+        {
+            "code": "BE",
+            "name": "Berlin"
+        },
+        {
+            "code": "BB",
+            "name": "Brandenburg"
+        },
+        {
+            "code": "HB",
+            "name": "Bremen"
+        },
+        {
+            "code": "HH",
+            "name": "Hamburg"
+        },
+        {
+            "code": "HE",
+            "name": "Hessen"
+        },
+        {
+            "code": "MV",
+            "name": "Mecklenburg-Vorpommern"
+        },
+        {
+            "code": "NI",
+            "name": "Niedersachsen"
+        },
+        {
+            "code": "NW",
+            "name": "Nordrhein-Westfalen"
+        },
+        {
+            "code": "RP",
+            "name": "Rheinland-Pfalz"
+        },
+        {
+            "code": "SL",
+            "name": "Saarland"
+        },
+        {
+            "code": "SN",
+            "name": "Sachsen"
+        },
+        {
+            "code": "ST",
+            "name": "Sachsen-Anhalt"
+        },
+        {
+            "code": "SH",
+            "name": "Schleswig-Holstein"
+        },
+        {
+            "code": "TH",
+            "name": "Thüringen"
+        }
+    ],
+    "postalCodeFormat": "^\\d{5}$",
+    "postalCodePlaceholder": "XXXXX",
+    "additionalFields": [
+        {
+            "fieldName": "bafinLicense",
+            "label": "BaFin License Number",
+            "type": "text",
+            "required": false,
+            "placeholder": "If BaFin regulated"
+        }
+    ],
+    "requiredDocuments": [
+        "CERTIFICATE_OF_INCORPORATION",
+        "ARTICLES_OF_INCORPORATION",
+        "SHAREHOLDER_REGISTRY"
+    ]
+}

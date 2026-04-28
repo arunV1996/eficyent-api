@@ -1,0 +1,348 @@
+<?php
+
+/*
+|--------------------------------------------------------------------------
+| Application Constants
+|--------------------------------------------------------------------------
+|
+|
+|
+*/
+
+define('NO', 0);
+define('YES', 1);
+
+define('ACTIVE', 1);
+define('INACTIVE', 0);
+
+define('USER_DECLINED', 0);
+define('USER_APPROVED', 1);
+define('USER_PENDING', 2);
+
+define('DEFAULT_TIMEZONE', "Asia/Kolkata");
+define('SGT_TIMEZONE', "Asia/Singapore");
+define('UTC_TIMEZONE', "UTC");
+
+define('USER_TYPE_PENDING', 0);
+define('USER_TYPE_INDIVIDUAL', 1);
+define('USER_TYPE_BUSINESS', 2);
+
+define('ONBOARDING_STEP_ONE_COMPLETED', 1);
+define('ONBOARDING_STEP_TWO_COMPLETED', 2);
+define('ONBOARDING_STEP_THREE_COMPLETED', 3);
+define('ONBOARDING_STEP_FOUR_COMPLETED', 4);
+
+
+define('ONBOARDING_STEP_ONE', 1);
+define('ONBOARDING_STEP_TWO', 2);
+define('ONBOARDING_STEP_THREE', 3);
+define('ONBOARDING_STEP_FOUR', 4);
+
+define('IDENTITY_VERIFICATION_PENDING', 1);
+define('IDENTITY_VERIFICATION_INITIATED', 2);
+define('IDENTITY_VERIFICATION_PROCESSING', 3);
+define('IDENTITY_VERIFICATION_FAILED', 4);
+define('IDENTITY_VERIFICATION_COMPLETED', 5);
+
+define('INTERNAL_API_TOKEN', 'internal-api-token');
+define('EXTERNAL_API_TOKEN', 'external-api-token');
+define('ENCRYPTION_ABILITY', 'encryption');
+define('AUTHENTICATION_ABILITY', 'authentication');
+
+
+define('EMAIL_VERIFIED', 1);
+define('EMAIL_NOT_VERIFIED', 0);
+
+define('METHOD_REGISTER','register');
+define('METHOD_LOGIN','login');
+define('METHOD_VERIFY_EMAIL','verify_email');
+define('METHOD_GET_CREDENTIALS','get_credentials');
+define('METHOD_PROFILE','profile');
+define('METHOD_ONBOARDING_STEP_TWO','onboarding_step_two');
+define('METHOD_ONBOARDING_STEP_THREE','onboarding_step_three');
+define('METHOD_USER_STATUS','user_status');
+define('METHOD_SUBUSER','subuser');
+
+
+define('Mr', 'Mr');
+define('Mrs', 'Mrs');
+define('Miss', 'Miss');
+
+define('ONBOARDING_STATUS_PENDING', 0);
+define('ONBOARDING_STATUS_INITIATED', 1);
+define('ONBOARDING_STATUS_CREATED', 2);
+define('ONBOARDING_STATUS_FAILED', 3);
+
+define('EXTERNAL_TYPE_CALIZA', 'ec');
+define('EXTERNAL_TYPE_DIGININE', 'ed');
+define('EXTERNAL_TYPE_CURRENCY_CLOUD', 'ev');
+define('EXTERNAL_TYPE_MASSIVE', 'em');
+define('EXTERNAL_TYPE_VIYONA_PAY', 'ep');
+define('EXTERNAL_TYPE_PROCESSING_UNIT', 'pu');
+define('EXTERNAL_TYPE_INCODE', 'ei');
+define('EXTERNAL_TYPE_INVOICEMATE', 'im');
+define('EXTERNAL_TYPE_COMPLIANCE', 'cp');
+define('EXTERNAL_TYPE_HERALD_REMITTANCE', 'hr');
+
+define('LOOKUP_TYPE_ID_TYPE', 'id_types');
+define('LOOKUP_TYPE_PROOF_OF_ADDRESS', 'proof_of_address');
+define('LOOKUP_TYPE_PURPOSE_OF_TRANSACTION', 'purpose_of_transaction');
+define('LOOKUP_TYPE_SOURCE_OF_FUNDS', 'source_of_funds');
+define('LOOKUP_TYPE_BUSINESS_TYPE', 'business_types');
+define('LOOKUP_TYPE_PROFESSION', 'professions');
+define('LOOKUP_TYPE_SOURCE_OF_INCOME', 'sources_of_incomes');
+define('LOOKUP_TYPE_ADDRESS_TYPES', 'address_types');
+define('LOOKUP_TYPE_DOCUMENT_TYPES', 'document_types');
+define('LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS','purposes_of_transactions');
+define('LOOKUP_BUSINESS_VERIFICATION_TYPES','business_verification_types');
+define('LOOKUP_TYPE_PAYMENT_METHOD','payment_methods');
+define('LOOKUP_TYPE_COUNTRY_CONFIGURATIONS','country_configurations');
+define('LOOKUP_TYPE_EEC_PAYMENT_PURPOSE', 'eec_payment_purpose');
+
+
+define('MODULE_CALIZA', 'caliza');
+define('MODULE_HERALD_SUMSUB', 'herald_sumsub');
+define('MODULE_DIGININE', 'diginine');
+define('MODULE_INCODE', 'incode');
+define('MODULE_MASSIVE', 'massive');
+define('MODULE_SUREPASS', 'surepass');
+define('MODULE_COMPLIANCE', 'compliance');
+define('MODULE_VIYONA_PAY', 'viyonapay');
+define('MODULE_PROCESSINGUNIT', 'processingunit');
+define('MODULE_INVOICEMATE', 'invoicemate');
+define('MODULE_REMITTANCE', 'remittance');
+
+define('VIRTUAL_ACCOUNT_STATUS_PENDING', 0);
+define('VIRTUAL_ACCOUNT_STATUS_CREATED', 1);
+define('VIRTUAL_ACCOUNT_STATUS_FAILED', 2);
+
+define('CURRENCY_USD', 'USD');
+define('COUNTRY_US', 'US');
+
+define('BENEFICIARY_TYPE_INDIVIDUAL', 1);
+define('BENEFICIARY_TYPE_BUSINESS', 2);
+
+define('PAYMENT_RAIL_WIRE','wire');
+define('PAYMENT_RAIL_SWIFT','swift');
+define('PAYMENT_RAIL_ACH','ach');
+
+define('BENEFICIARY_ACCOUNT_PENDING', 0);
+define('BENEFICIARY_ACCOUNT_ACTIVATED', 1);
+define('BENEFICIARY_ACCOUNT_DEACTIVATED', 2);
+define('BENEFICIARY_ACCOUNT_BLOCKED', 3);
+
+
+define('BENEFICIARY_ACCOUNT_TYPE_CHECKING', 'Checking');
+define('BENEFICIARY_ACCOUNT_TYPE_SAVINGS', 'Savings');
+define('BENEFICIARY_ACCOUNT_TYPE_GENERAL_LEDGER', 'GeneralLedger');
+define('BENEFICIARY_ACCOUNT_TYPE_LOAN', 'Loan');
+
+define('QUOTE_TYPE_FORWARD', 'FORWARD');
+define('QUOTE_TYPE_REVERSE', 'REVERSE');
+
+define('QUOTE_NOT_SUBMITTED', 0);
+define('QUOTE_SUBMITTED', 1);
+define('QUOTE_EXPIRED', 2);
+
+define('BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL', 0);
+define('BENEFICIARY_TRANSACTION_APPROVED', 1);
+define('BENEFICIARY_TRANSACTION_INITIATED', 2);
+define('BENEFICIARY_TRANSACTION_PROCESSING', 3);
+define('BENEFICIARY_TRANSACTION_COMPLETED', 4);
+define('BENEFICIARY_TRANSACTION_FAILED', 5);
+define('BENEFICIARY_TRANSACTION_EXPIRED', 6);
+define('BENEFICIARY_TRANSACTION_REJECTED', 7);
+define('BENEFICIARY_TRANSACTION_CANCELLED', 8);
+define('BENEFICIARY_TRANSACTION_CORPORATE_INITIATED', 9);
+define('BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED', 10);
+define('BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED', 11);
+define('BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED', 12);
+define('BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD', 13);
+define('BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATED', 14);
+define('BENEFICIARY_TRANSACTION_PROCESSING_UNIT_PROCESSING', 15);
+define('BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED', 16);
+define('BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED', 17);
+
+ 
+
+define('CALIZA_BANK_NAME','Cross River bank');
+
+define('SIGNATURE_TIMESTAMP_BUFFER', 5);
+define('DEFAULT_QUOTE_EXPIRY_MINUTES', 30);
+define('AWS_TEMP_URL_EXPIRY', 10);
+define('TAKE_COUNT', 12);
+
+define('RECIPIENT_TYPE_INDIVIDUAL', 1);
+define('RECIPIENT_TYPE_BUSINESS', 2);
+
+define('C2C', 'C2C');
+define('C2B', 'C2B');
+define('B2C', 'B2C');
+define('B2B', 'B2B');
+
+
+define('DIGININE_TRANSACTION_SEND', 'SEND');
+define('DIGININE_TRANSACTION_REMITTANCE', 'REMITTANCE');
+define('DIGININE_TRANSACTION_C2C', 'C2C');
+define('DIGININE_TRANSACTION_CHANEL', 'PARTNER');
+
+define('GENDER_MALE', 'M');
+define('GENDER_FEMALE', 'F');
+define('GENDER_OTHER', 'O');
+
+define('FILE_TYPE_PDF', 1);
+define('FILE_TYPE_EXCEL', 2);
+
+define('DEPOSIT_TRANSACTION_PENDING',0);
+define('DEPOSIT_TRANSACTION_COMPLETED',1);
+define('DEPOSIT_TRANSACTION_FAILED',2);
+define('DEPOSIT_TRANSACTION_REJECTED',3);
+define('DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED',4);
+define('DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING',5);
+define('DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED',6);
+
+
+define('MERCHANT_TYPE_PAYOUT',1);
+define('MERCHANT_TYPE_WHITELABEL',2);
+define('MERCHANT_TYPE_PAYOUTINTEGRATOR',3);
+define('MERCHANT_TYPE_PAYINCOLLECTION',4);
+
+define('TRANSACTION_TYPE_DEBIT',1);
+define('TRANSACTION_TYPE_CREDIT',2);
+
+define('CALLBACK_PAYOUT_SUCCESS','TRANSACTION_COMPLETED');
+define('CALLBACK_PAYOUT_REJECTED','TRANSACTION_REJECTED');
+define('CALLBACK_PAYOUT_FAILED','TRANSACTION_FAILED');
+define('CALLBACK_DEPOSIT_SUCCESS','DEPOSIT_COMPLETED');
+define('CALLBACK_DEPOSIT_REJECTED','DEPOSIT_REJECTED');
+define('CALLBACK_VIRTUAL_ACCOUNT_CREATED','BANK_ACCOUNT_CREATED');
+
+define('FEE_TYPE_FLAT',1);
+define('FEE_TYPE_PERCENTAGE',2);
+define('FEE_TYPE_FIXED',3);
+
+define('TRANSACTION_MODE_APPROVAL',1);
+define('TRANSACTION_MODE_DIRECT',2);
+
+define('ID_VERIFIED_BY_ADMIN','ad');
+define('ID_VERIFIED_BY_HERALD_SUMSUB','hs');
+define('ID_VERIFIED_BY_SUREPASS','sp');
+define('ID_VERIFIED_BY_INCODE','ic');
+
+define('SENDER_STATUS_PENDING',0);
+define('SENDER_STATUS_APPROVED',1);
+define('SENDER_STATUS_REJECTED',2);
+define('SENDER_STATUS_EXPIRED',3);
+define('SENDER_STATUS_DISABLED',4);
+
+define('TEAM_MEMBER_ROLE_ADMIN',1);
+define('TEAM_MEMBER_ROLE_OWNER',2);
+define('TEAM_MEMBER_ROLE_SUPPORT_MEMBER',3);
+define('TEAM_MEMBER_ROLE_CORPORATE',4);
+
+
+define('TEAM_MEMBER_PERMISSION_INITIATOR',1);
+define('TEAM_MEMBER_PERMISSION_MAKER',2);
+define('TEAM_MEMBER_PERMISSION_CHECKER',3);
+define('TEAM_MEMBER_PERMISSION_MAKER_CHECKER',4);
+
+define('TEAM_MEMBER_INACTIVE', 0);
+define('TEAM_MEMBER_ACTIVE', 1);
+define('TEAM_MEMBER_DISABLED', 2);
+
+define('TRANSACTION_FEE','transaction_fee');
+define('FX_FEE','fx_fee');
+define('MAINTANENCE_FEE','maintenance_fee');
+define('DEPOSIT_FEE','deposit_fee');
+
+define('WALLET_TRANSACTION_PENDING',0);
+define('WALLET_TRANSACTION_COMPLETED',1);
+define('WALLET_TRANSACTION_FAILED',2);
+define('WALLET_TRANSACTION_REJECTED',3);
+define('WALLET_TRANSACTION_CANCELLED',4);
+
+define('WALLET_STATUS_ACTIVE',1);
+define('WALLET_STATUS_INACTIVE',0);
+
+define('PAID_TO_BENEFICIARY', 1);
+define('PAID_TO_WALLET', 2);
+
+define('QUOTE_MODE_RATE','rate');
+define('QUOTE_MODE_QUOTATION','quote');
+
+define('PAYOUT_JOB_STATUS_PENDING', 0);
+define('PAYOUT_JOB_STATUS_PROCESSING', 1);
+define('PAYOUT_JOB_STATUS_COMPLETED', 2);
+define('PAYOUT_JOB_STATUS_FAILED', 3);
+
+define('REMITTER_AUTO_APPROVED', 1);
+define('REMITTER_MANUAL_APPROVAL', 2);
+
+
+//FV Bank
+define('EXTERNAL_TYPE_FVBANK', 'ef');
+define('FV_BANK_NAME', 'FV Bank');
+
+define('MODULE_FVBANK', 'fvbank');
+
+define('FV_BANK_ONBOARDING_INITIATED', 1);
+define('FV_BANK_ONBOARDING_COMPLETED', 2);
+
+define('BENEFICIARY_ACCOUNT_VALIDATION_STATUS_PENDING', 0);
+define('BENEFICIARY_ACCOUNT_VALIDATION_STATUS_SUCCESS', 1);
+define('BENEFICIARY_ACCOUNT_VALIDATION_STATUS_FAILED', 2);
+
+
+define('ACTION_BY_USER','user');
+define('ACTION_BY_ADMIN','admin');
+define('ACTION_BY_SYSTEM','system');
+define('ACTION_BY_TEAM','team');
+define('ACTION_BY_TREASURY','treasury');
+
+define('DEVICE_TYPE_ANDROID','android');
+define('DEVICE_TYPE_IOS','ios');
+define('DEVICE_TYPE_WEB','web');
+
+define('CALLBACK_RESPONSE','callback_response');
+define('LIST_RESPONSE','list_response');
+
+
+define('SUPPORTED_USER_INDIVIDUAL', 'individual');
+define('SUPPORTED_USER_BUSINESS', 'business');
+define('SUPPORTED_USER_INDIVIDUAL_AND_BUSINESS', 'individual_and_business');
+
+define('EXPORT_TYPE_PDF', 'pdf');
+define('EXPORT_TYPE_EXCEL', 'excel');
+
+define('DEPOSIT_TYPE_DEPOSIT', 'deposit');
+define('DEPOSIT_TYPE_REFUND', 'refund');
+define('DEPOSIT_TYPE_TOPUP', 'topup');
+define('DEPOSIT_TYPE_CREDIT', 'credit');
+
+define('PAYMENT_PROOF_REQUESTED', 1);
+define('PAYMENT_PROOF_UPLOADED', 2);
+define('PAYMENT_PROOF_REJECTED', 3);
+
+define('PAYMENT_PROOF_SWIFT','swift_copy');
+define('PAYMENT_PROOF_FIRA','fira');
+
+define('EXTERNAL_CALL_FOR_QUOTE','quote');
+define('EXTERNAL_CALL_FOR_CREATE','create');
+define('EXTERNAL_CALL_FOR_STATUS_CHECK','status_check');
+define('EXTERNAL_CALL_FOR_CONFIRM','confirm');
+define('EXTERNAL_CALL_FOR_CALLBACK','callback');
+
+define('ENABLED', 1);
+define('DISABLED', 0);
+
+define('EXPORT_TYPE_DEPOSIT',1);
+define('EXPORT_TYPE_BENEFICIARY',2);
+
+define('EXPORT_PENDING',1);
+define('EXPORT_INPROGRESS',2);
+define('EXPORT_COMPLETED',3);
+define('EXPORT_FAILED',4);
+
+
+define('CURRENCY_USDC', 'USDC');
+define('CURRENCY_USDT', 'USDT');

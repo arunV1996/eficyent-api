@@ -1,0 +1,44 @@
+{
+    "countryCode": "CYM",
+    "countryName": "Cayman Islands",
+
+    "taxIdLabel": "N/A (No Income Tax)",
+    "taxIdPlaceholder": "Not applicable",
+
+    "vatRequired": false,
+
+    "registrationNumberLabel": "CIMA Registration Number",
+    "registrationNumberPlaceholder": "Enter CIMA registration",
+
+    "hasStates": false,
+
+    "additionalFields": [
+      {
+        "fieldName": "cimaLicense",
+        "label": "CIMA License Category",
+        "type": "select",
+        "required": false,
+        "options": [
+          { "value": "MUTUAL_FUND", "label": "Mutual Fund" },
+          { "value": "INSURANCE", "label": "Insurance" },
+          { "value": "SECURITIES", "label": "Securities Investment Business" },
+          { "value": "BANKING", "label": "Banking" },
+          { "value": "TRUST", "label": "Trust" }
+        ]
+      }
+    ],
+
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "CERTIFICATE_OF_GOOD_STANDING",
+      "MEMORANDUM_OF_ASSOCIATION",
+      "SHAREHOLDER_REGISTRY",
+      "UBO_DECLARATION"
+    ],
+
+    "warnings": [
+      "Offshore jurisdiction - Enhanced Due Diligence required",
+      "Must provide Certificate of Good Standing",
+      "Full UBO disclosure mandatory"
+    ]
+  }

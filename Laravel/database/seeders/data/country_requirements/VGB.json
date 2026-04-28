@@ -1,0 +1,38 @@
+{
+    "countryCode": "VGB",
+    "countryName": "British Virgin Islands",
+
+    "taxIdLabel": "N/A (No Income Tax)",
+    "taxIdPlaceholder": "Not applicable",
+
+    "vatRequired": false,
+
+    "registrationNumberLabel": "BVI Company Number",
+    "registrationNumberPlaceholder": "Enter BVI registry number",
+
+    "hasStates": false,
+
+    "additionalFields": [
+      {
+        "fieldName": "fscLicense",
+        "label": "FSC License Number",
+        "type": "text",
+        "required": false,
+        "placeholder": "If FSC regulated"
+      }
+    ],
+
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "CERTIFICATE_OF_GOOD_STANDING",
+      "MEMORANDUM_OF_ASSOCIATION",
+      "SHAREHOLDER_REGISTRY",
+      "UBO_DECLARATION"
+    ],
+
+    "warnings": [
+      "Offshore jurisdiction - Enhanced Due Diligence required",
+      "Must provide Certificate of Good Standing",
+      "Full UBO disclosure mandatory"
+    ]
+  }

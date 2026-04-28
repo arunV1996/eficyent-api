@@ -1,0 +1,42 @@
+{
+    "countryCode": "GBR",
+    "countryName": "United Kingdom",
+    "taxIdLabel": "UTR (Unique Taxpayer Reference)",
+    "taxIdFormat": "^\\d{10}$",
+    "taxIdPlaceholder": "XXXXXXXXXX",
+    "taxIdHelpText": "10-digit number from HMRC",
+    "vatRequired": true,
+    "vatLabel": "VAT Number",
+    "vatFormat": "^GB\\d{9}$|^GB\\d{12}$|^GBGD\\d{3}$|^GBHA\\d{3}$",
+    "vatPlaceholder": "GB followed by 9 or 12 digits",
+    "registrationNumberLabel": "Companies House Number",
+    "registrationNumberFormat": "^[A-Z]{2}\\d{6}$|^\\d{8}$",
+    "registrationNumberPlaceholder": "e.g., 12345678 or SC123456",
+    "registrationNumberHelpText": "Companies House registration number",
+    "hasStates": false,
+    "postalCodeFormat": "^[A-Z]{1,2}\\d[A-Z\\d]? ?\\d[A-Z]{2}$",
+    "postalCodePlaceholder": "e.g., SW1A 1AA",
+    "additionalFields": [
+      {
+        "fieldName": "sicCode",
+        "label": "SIC Code",
+        "type": "text",
+        "required": false,
+        "format": "^\\d{5}$",
+        "placeholder": "XXXXX",
+        "helpText": "Standard Industrial Classification code"
+      },
+      {
+        "fieldName": "fcaRegistration",
+        "label": "FCA Registration Number",
+        "type": "text",
+        "required": false,
+        "placeholder": "If FCA regulated"
+      }
+    ],
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "MEMORANDUM_OF_ASSOCIATION",
+      "SHAREHOLDER_REGISTRY"
+    ]
+  }

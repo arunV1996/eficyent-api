@@ -1,0 +1,34 @@
+{
+    "countryCode": "HKG",
+    "countryName": "Hong Kong",
+
+    "taxIdLabel": "Business Registration Number",
+    "taxIdFormat": "^\\d{8}$",
+    "taxIdPlaceholder": "XXXXXXXX",
+    "taxIdHelpText": "8-digit BR number",
+
+    "vatRequired": false,
+
+    "registrationNumberLabel": "CR Number",
+    "registrationNumberFormat": "^\\d{7}$",
+    "registrationNumberPlaceholder": "XXXXXXX",
+    "registrationNumberHelpText": "Companies Registry number",
+
+    "hasStates": false,
+
+    "additionalFields": [
+      {
+        "fieldName": "sfcLicense",
+        "label": "SFC License Number",
+        "type": "text",
+        "required": false,
+        "placeholder": "If SFC regulated"
+      }
+    ],
+
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "ARTICLES_OF_INCORPORATION",
+      "SHAREHOLDER_REGISTRY"
+    ]
+  }

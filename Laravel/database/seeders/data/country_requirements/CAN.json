@@ -1,0 +1,43 @@
+ {
+    "countryCode": "CAN",
+    "countryName": "Canada",
+
+    "taxIdLabel": "BN (Business Number)",
+    "taxIdFormat": "^\\d{9}$",
+    "taxIdPlaceholder": "XXXXXXXXX",
+    "taxIdHelpText": "9-digit CRA business number",
+
+    "vatRequired": false,
+    "vatLabel": "GST/HST Number",
+    "vatFormat": "^\\d{9}RT\\d{4}$",
+    "vatPlaceholder": "XXXXXXXXXRT0001",
+
+    "registrationNumberLabel": "Corporation Number",
+    "registrationNumberPlaceholder": "Federal or provincial number",
+
+    "hasStates": true,
+    "stateLabel": "Province/Territory",
+    "states": [
+      { "code": "AB", "name": "Alberta" },
+      { "code": "BC", "name": "British Columbia" },
+      { "code": "MB", "name": "Manitoba" },
+      { "code": "NB", "name": "New Brunswick" },
+      { "code": "NL", "name": "Newfoundland and Labrador" },
+      { "code": "NS", "name": "Nova Scotia" },
+      { "code": "NT", "name": "Northwest Territories" },
+      { "code": "NU", "name": "Nunavut" },
+      { "code": "ON", "name": "Ontario" },
+      { "code": "PE", "name": "Prince Edward Island" },
+      { "code": "QC", "name": "Quebec" },
+      { "code": "SK", "name": "Saskatchewan" },
+      { "code": "YT", "name": "Yukon" }
+    ],
+
+    "postalCodeFormat": "^[A-Z]\\d[A-Z]\\s?\\d[A-Z]\\d$",
+    "postalCodePlaceholder": "A1A 1A1",
+
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "ARTICLES_OF_INCORPORATION"
+    ]
+  }

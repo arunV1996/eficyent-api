@@ -1,0 +1,37 @@
+{
+    "countryCode": "FRA",
+    "countryName": "France",
+
+    "taxIdLabel": "SIREN/SIRET",
+    "taxIdFormat": "^\\d{9}$|^\\d{14}$",
+    "taxIdPlaceholder": "SIREN (9 digits) or SIRET (14 digits)",
+
+    "vatRequired": true,
+    "vatLabel": "TVA Intracommunautaire",
+    "vatFormat": "^FR[A-Z0-9]{2}\\d{9}$",
+    "vatPlaceholder": "FR followed by 11 characters",
+
+    "registrationNumberLabel": "RCS Number",
+    "registrationNumberPlaceholder": "e.g., Paris B 123 456 789",
+
+    "hasStates": false,
+
+    "postalCodeFormat": "^\\d{5}$",
+    "postalCodePlaceholder": "XXXXX",
+
+    "additionalFields": [
+      {
+        "fieldName": "acprLicense",
+        "label": "ACPR License Number",
+        "type": "text",
+        "required": false,
+        "placeholder": "If ACPR regulated"
+      }
+    ],
+
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "ARTICLES_OF_INCORPORATION",
+      "FINANCIAL_STATEMENTS"
+    ]
+  }

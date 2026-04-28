@@ -1,0 +1,41 @@
+ {
+    "countryCode": "JEY",
+    "countryName": "Jersey",
+
+    "taxIdLabel": "Jersey Company Number",
+    "taxIdPlaceholder": "Enter company number",
+
+    "vatRequired": false,
+
+    "registrationNumberLabel": "JFSC Registration Number",
+    "registrationNumberPlaceholder": "Enter JFSC registration",
+
+    "hasStates": false,
+
+    "additionalFields": [
+      {
+        "fieldName": "jfscLicense",
+        "label": "JFSC License Type",
+        "type": "select",
+        "required": false,
+        "options": [
+          { "value": "BANKING", "label": "Banking" },
+          { "value": "INVESTMENT", "label": "Investment Business" },
+          { "value": "FUND_SERVICES", "label": "Fund Services" },
+          { "value": "TRUST", "label": "Trust Company Business" }
+        ]
+      }
+    ],
+
+    "requiredDocuments": [
+      "CERTIFICATE_OF_INCORPORATION",
+      "CERTIFICATE_OF_GOOD_STANDING",
+      "ARTICLES_OF_INCORPORATION",
+      "SHAREHOLDER_REGISTRY",
+      "UBO_DECLARATION"
+    ],
+
+    "warnings": [
+      "Offshore jurisdiction - Enhanced Due Diligence required"
+    ]
+  }

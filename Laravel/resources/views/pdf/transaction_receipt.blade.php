@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Invoice | {{$invoice_details['unique_id']}}</title>
+    <style>
+        html {
+            padding: 0;
+            margin: 0;
+        }
+
+        p {
+            padding: 0;
+            margin: 0;
+        }
+
+        th,
+        td {
+            padding: 0;
+            margin: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            margin: 30px;
+            padding: 0;
+            margin: 0;
+            line-height: 1;
+        }
+
+        .statement {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+    </style>
+</head>
+
+<body class="statement">
+    <table bgcolor="#E3F3FE" style="background-color: #E3F3FE; width: 50%;">
+        <tr>
+            <td style=" padding: 10px;"></td>
+        </tr>
+    </table>
+    <table bgcolor="#01FFD1" style="background-color: #01FFD1; width: 80%;">
+        <tr>
+            <td style=" padding: 10px;"></td>
+        </tr>
+    </table>
+    <table bgcolor="#0176FF" style="background-color: #0176FF; margin-bottom: 40px;">
+        <tr>
+            <td style=" padding: 10px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:15px;padding-bottom: 15px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td>
+                <p style="font-size: 20px;font-weight: 300;color: #777777;padding-top: 20px;">
+                    <strong style="color: #111111;">Invoice Details</strong>
+                </p>
+            </td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="padding-top: 30px;">
+                <table>
+                    <tr>
+                        <td>
+                            <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 20px;">
+                                <strong style="color: #111111;">Date: </strong> {{ $invoice_details['created_at'] ?? '--' }}
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 20px;">
+                                <strong style="color: #111111;">Transaction Reference No: </strong> {{ $invoice_details['txn_ref_no'] ?? '--' }}
+                            </p>
+                        </td>
+                    </tr>
+                    @if(!empty($invoice_details['utr_no']))
+                    <tr>
+                        <td>
+                            <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;">
+                                <strong style="color: #111111;">UTR No: </strong> {{ $invoice_details['utr_no'] ?? '--'}}
+                            </p>
+                        </td>
+                    </tr>
+                    @endif
+                </table>
+            </td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:15px;padding-bottom: 15px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td>
+                <p style="font-size: 20px;font-weight: 300;color: #777777;padding-top: 20px;">
+                    <strong style="color: #111111;">Remitter Details</strong>
+                </p>
+            </td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="padding-top: 30px;">
+                <table>
+                    <tr>
+                        <td>
+                            <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 20px;">
+                                <strong style="color: #111111;">Name: </strong> {{ $invoice_details['sender_name'] ?? '--'}}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>
+                            <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 20px;">
+                                <strong style="color: #111111;">Address: </strong> {{ ($invoice_details['sender_address'] ?? '') . ' ,' . ($invoice_details['sender_city'] ?? '') . ' ,' . ($invoice_details['sender_state'] ?? '') . ' ,' . ($invoice_details['sender_country'] ?? '') . ' ,' . ($invoice_details['sender_postal_code'] ?? '')}}
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:15px;padding-bottom: 15px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td>
+                <p style="font-size: 20px;font-weight: 300;color: #777777;padding-top: 20px;">
+                    <strong style="color: #111111;">Recipient Details</strong>
+                </p>
+            </td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="padding-top: 30px;">
+                <table>
+                    <tr>
+                        <td>
+                            <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 20px;">
+                                <strong style="color: #111111;">Name: </strong> {{ $invoice_details['beneficiary_name'] ?? '--'}}
+                            </p>
+                        </td>
+                        <td>
+                            <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;">
+                                <strong style="color: #111111;">Account Number: </strong> {{ $invoice_details['account_number'] ?? '--'}}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        @if(!empty($invoice_details['bank_code']))
+                        <td>
+                            <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 20px;">
+                                <strong style="color: #111111;">Bank Code: </strong> {{ $invoice_details['bank_code'] ?? '--'}}
+                            </p>
+                        </td>
+                        @endif
+                        @if(!empty($invoice_details['routing_number']))
+                        <td>
+                            <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 20px;">
+                                <strong style="color: #111111;">Routing Number: </strong> {{ $invoice_details['routing_number'] ?? '--'}}
+                            </p>
+                        </td>
+                        @endif
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:15px;padding-bottom: 15px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td>
+                <p style="font-size: 20px;font-weight: 300;color: #777777;padding-top: 20px;">
+                    <strong style="color: #111111;"> Transfer Overview</strong>
+                </p>
+            </td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="padding-top: 30px;">
+                <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 15px;">Transfered Amount
+                </p>
+                <strong style="font-size: 15px;color: #111111;text-align: left;">{{ $invoice_details['currency'] ?? '--' }} {{ $invoice_details['amount'] ?? '--'}}</strong>
+            </td>
+        </tr>
+        <tr>
+            <td style="padding-top: 30px;">
+                <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 15px;">Customer Remark
+                </p>
+                <strong style="font-size: 15px;color: #111111;text-align: left;">{{ $invoice_details['remarks'] ?? '--'}}</strong>
+            </td>
+            <td style="padding-top: 30px;">
+                <p style="font-size: 14px;font-weight: 300;color: #777777;text-align: left;padding-bottom: 15px;">Transaction Status
+                </p>
+                <strong style="font-size: 15px; color: #111111; text-align: left;">
+                    {{ $invoice_details['status'] ?? '--' }}
+                </strong>
+
+            </td>
+        </tr>
+    </table>
+    <table>
+        <tr>
+            <td style="border-bottom:1px solid #eaeaea; padding-top:20px;padding-bottom: 15px;"></td>
+        </tr>
+    </table>
+
+    <table bgcolor="#0176FF" style="background-color: #0176FF; margin-top: 40px;">
+        <tr>
+            <td style="padding:20px;" align="center">
+                <p style="font-size: 14px;font-weight: 300;color: #111111;">
+                    <strong style="color: #111111;">
+                        Note:
+                    </strong>
+                    This is computer generated receipt and does not require physical signature.
+                </p>
+            </td>
+        </tr>
+    </table>
+</body>
+
+</html>
