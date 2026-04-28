@@ -45,6 +45,24 @@ export const totpService = {
   generateSecret(): string {
     return new Secret({ size: 20 }).base32;
   },
+
+  /**
+   * Verify a plaintext (already-decrypted) base32 TOTP secret. Used during
+   * the TFA enable flow when we still have the secret in-memory.
+   */
+  verifyPlain(secretBase32: string, code: string): boolean {
+    const cleaned = code.replace(/\s+/g, "");
+    if (!/^\d{6}$/.test(cleaned)) return false;
+    const totp = new TOTP({
+      issuer: "Eficyent",
+      label: "Eficyent",
+      algorithm: "SHA1",
+      digits: 6,
+      period: 30,
+      secret: Secret.fromBase32(secretBase32),
+    });
+    return totp.validate({ token: cleaned, window: 1 }) !== null;
+  },
 };
 
 /**

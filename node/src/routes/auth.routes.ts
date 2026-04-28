@@ -6,6 +6,7 @@ import { validate } from "../middleware/validateRequest";
 import { loginController } from "../controllers/auth/loginController";
 import { registerController } from "../controllers/auth/registerController";
 import { forgotPasswordController } from "../controllers/auth/forgotPasswordController";
+import { verifyEmailController } from "../controllers/auth/verifyEmailController";
 import {
   ForgotPasswordSchema,
   LoginSchema,
@@ -14,6 +15,10 @@ import {
   TfaLoginSchema,
   VerifyCodeSchema,
 } from "../validators/auth/authValidators";
+import {
+  SendOtpSchema,
+  VerifyOtpSchema,
+} from "../validators/auth/verifyEmailValidators";
 
 /**
  * Mirrors the `user/*` group from Laravel routes/api.php for auth-related
@@ -27,6 +32,20 @@ export async function authRoutes(): Promise<Router> {
     "/register",
     validate({ body: RegisterSchema }),
     asyncHandler(registerController.register),
+  );
+
+  r.post(
+    "/verify-otp",
+    limited,
+    validate({ body: VerifyOtpSchema }),
+    asyncHandler(verifyEmailController.verifyOtp),
+  );
+
+  r.post(
+    "/resend-otp",
+    limited,
+    validate({ body: SendOtpSchema }),
+    asyncHandler(verifyEmailController.resendOtp),
   );
 
   r.post(

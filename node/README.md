@@ -224,17 +224,30 @@ For 1M users:
 Phase 1 (this PR) ships the foundation + reference modules. Subsequent
 phases port the remaining Laravel controllers/services in dependency order:
 
-| Phase | Modules |
-|---|---|
-| 2 | Profile, VerifyEmail, Subuser, Settings, StaticPages, Lookups |
-| 3 | Onboarding (multi-step), VirtualAccount, BeneficiaryAccounts |
-| 4 | Senders, Quotes, Wallet (+ WalletTransactions) |
-| 5 | Deposits (incl. webhook intake), Ledger |
-| 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) |
-| 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* |
-| 8 | External services (Caliza, Diginine, FvBank, Massive, ProcessingUnit, Compliance, Remittance, Surepass, Incode, ViyonaPay, InvoiceMate, Telegram, HeraldSumsub) |
-| 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) |
-| 10 | Admin / Treasury / Support consoles, Reports, Exports, Imports |
+| Phase | Modules | Status |
+|---|---|---|
+| 1 | Foundation + Auth + Payout reference module | done |
+| 2 | Profile, VerifyEmail, Subuser, Settings, StaticPages, Lookups | done |
+| 3 | Onboarding (multi-step), VirtualAccount, BeneficiaryAccounts | pending |
+| 4 | Senders, Quotes, Wallet (+ WalletTransactions) | pending |
+| 5 | Deposits (incl. webhook intake), Ledger | pending |
+| 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | pending |
+| 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | pending |
+| 8 | External services (Caliza, Diginine, FvBank, Massive, ProcessingUnit, Compliance, Remittance, Surepass, Incode, ViyonaPay, InvoiceMate, Telegram, HeraldSumsub) | pending |
+| 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) | pending |
+| 10 | Admin / Treasury / Support consoles, Reports, Exports, Imports | pending |
+
+### Phase 2 deferred items
+
+A few branches inside Phase 2 controllers depend on later phases - they
+return a clean 501 or a minimal payload now and will be filled in when the
+underlying module lands:
+
+* `lookups/refresh-rates` -> needs Massive quote provider (Phase 8)
+* `lookups/get-rates` per-merchant commission overlay -> needs MerchantFee/Quote (Phase 4)
+* `profile/check_user_status` KYC re-poll -> needs KycFactory (Phase 8)
+* `profile/update_profile_form_fields` dynamic schema -> needs FieldsHelper / FvBank context (Phase 3)
+* `profile/update_profile` multipart uploads -> currently base64-only; multer wired in Phase 3
 
 Each phase keeps API contracts byte-stable and is deployable independently
 behind a feature flag.

@@ -58,13 +58,15 @@ model User {
   publicKey   String? @map("public_key") @db.Text
 
   // 2FA (encrypted)
-  tfaSecret      String?  @map("tfa_secret") @db.Text
-  isTfaEnabled   Boolean  @default(false) @map("is_tfa_enabled")
-  backupCodes    String?  @map("backup_codes") @db.Text
+  tfaSecret             String?  @map("tfa_secret") @db.Text
+  isTfaEnabled          Boolean  @default(false) @map("is_tfa_enabled")
+  isTfaSetupCompleted   Boolean  @default(false) @map("is_tfa_setup_completed")
+  backupCodes           String?  @map("backup_codes") @db.Text
 
   // Service providers (json array)
   serviceProviders Json? @map("service_providers")
   memo            String?
+  tourStatus      Int     @default(0) @map("tour_status")
 
   status      Int     @default(1)
   timezone    String  @default("Asia/Kolkata") @db.VarChar(30)
@@ -80,6 +82,9 @@ model User {
   tokens             PersonalAccessToken[]
   passwordResets     PasswordReset[] @relation("UserPasswordResets")
   information        UserInformation?
+  documents          UserDocument[]
+  subusers           User[]   @relation("BusinessSubusers")
+  businessUser       User?    @relation("BusinessSubusers", fields: [businessUserId], references: [id])
 
   @@index([merchantId])
   @@index([businessUserId])
@@ -118,15 +123,60 @@ model PasswordReset {
 
 model UserInformation {
   id                       BigInt   @id @default(autoincrement())
+  uniqueId                 String   @unique @map("unique_id")
   userId                   BigInt   @unique @map("user_id")
-  country                  String?  @db.VarChar(8)
-  businessName             String?  @map("business_name")
+  country                  String?  @db.VarChar(100)
+  address1                 String?  @map("address_1") @db.VarChar(255)
+  address2                 String?  @map("address_2") @db.VarChar(255)
+  city                     String?  @db.VarChar(100)
+  state                    String?  @db.VarChar(100)
+  postalCode               String?  @map("postal_code") @db.VarChar(50)
+  purposeOfTransactions    String?  @map("purpose_of_transactions") @db.Text
   businessVerificationType String?  @map("business_verification_type")
-  // ... remaining UserInformation fields modeled when onboarding controller is ported.
+
+  legalName                String?  @map("legal_name") @db.VarChar(255)
+  taxId                    String?  @map("tax_id") @db.VarChar(100)
+  formationDate            DateTime? @map("formation_date") @db.Date
+  businessName             String?  @map("business_name") @db.VarChar(255)
+  website                  String?  @db.VarChar(255)
+  ipAddress                String?  @map("ip_address") @db.VarChar(45)
+  role                     String?  @db.VarChar(100)
+  businessPersons          Json?    @map("business_persons")
+  profession               String?  @db.VarChar(100)
+  sourceOfIncome           String?  @map("source_of_income") @db.VarChar(11)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_informations")
+}
+
+// -----------------------------------------------------------------------------
+// User documents (KYC)
+// -----------------------------------------------------------------------------
+
+model UserDocument {
+  id                  BigInt   @id @default(autoincrement())
+  uniqueId            String   @unique @map("unique_id")
+  userId              BigInt   @map("user_id")
+  documentName        String?  @map("document_name") @db.VarChar(100)
+  documentType        String?  @map("document_type") @db.VarChar(100)
+  documentCountry     String?  @map("document_country") @db.VarChar(100)
+  documentFile        String?  @map("document_file")
+  documentBackFile    String?  @map("document_back_file")
+  documentExpiryDate  DateTime? @map("document_expiry_date") @db.Date
+  status              Int      @default(1)
+  verifiedAt          DateTime? @map("verified_at")
+  remarks             String?  @db.Text
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt      @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, documentName])
+  @@map("user_documents")
 }
 
 // -----------------------------------------------------------------------------
@@ -341,4 +391,148 @@ model ExternalServiceCall {
   @@index([externalType, callFor])
   @@index([referenceType, referenceId])
   @@map("external_service_calls")
+}
+
+// -----------------------------------------------------------------------------
+// Settings + lookups (Phase 2)
+// -----------------------------------------------------------------------------
+
+model Setting {
+  id        Int      @id @default(autoincrement())
+  key       String
+  value     String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@index([key])
+  @@map("settings")
+}
+
+model StaticPage {
+  id            BigInt   @id @default(autoincrement())
+  uniqueId      String   @map("unique_id")
+  title         String
+  description   String   @db.LongText
+  type          String   @default("others")
+  footerSection Int      @default(0) @map("footer_section")
+  status        Int      @default(1)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt      @map("updated_at")
+
+  @@index([uniqueId])
+  @@index([title])
+  @@index([status])
+  @@map("static_pages")
+}
+
+model MobileCountryCode {
+  id          BigInt   @id @default(autoincrement())
+  uniqueId    String   @unique @map("unique_id")
+  countryName String   @map("country_name") @db.VarChar(50)
+  isdCode     String   @map("isd_code") @db.VarChar(8)
+  alpha2Code  String   @map("alpha_2_code") @db.VarChar(5)
+  alpha3Code  String   @map("alpha_3_code") @db.VarChar(5)
+  status      Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  @@index([alpha2Code])
+  @@index([alpha3Code])
+  @@map("mobile_country_codes")
+}
+
+model State {
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  name         String
+  countryCode  String   @map("country_code")
+  countryAlpha3 String? @map("country_alpha3")
+  stateCode    String   @map("state_code")
+  status       Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@index([countryCode])
+  @@index([countryAlpha3])
+  @@map("states")
+}
+
+model Lookup {
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  key          String
+  value        String   @db.Text
+  type         String
+  externalType String   @default("ed") @map("external_type")
+  status       Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@index([type])
+  @@index([type, externalType])
+  @@map("lookups")
+}
+
+model SupportedCountry {
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  countryName  String   @map("country_name") @db.VarChar(50)
+  countryCode  String   @map("country_code") @db.VarChar(3)
+  currency     String   @db.VarChar(3)
+  type         String?  @db.VarChar(3)
+  externalType String?  @map("external_type")
+  status       Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@index([countryCode])
+  @@index([externalType])
+  @@map("supported_countries")
+}
+
+model ServiceBank {
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  bankId       String   @unique @map("bank_id")
+  bankName     String   @map("bank_name")
+  country      String   @db.VarChar(3)
+  currency     String?  @db.VarChar(10)
+  serviceType  String?  @map("service_type") @db.VarChar(3)
+  externalType String?  @map("external_type") @db.VarChar(11)
+  isoCode      String?  @map("iso_code")
+  status       String   @default("1")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  @@index([country, externalType])
+  @@map("service_banks")
+}
+
+model FxRate {
+  id           BigInt   @id @default(autoincrement())
+  fromCurrency String   @map("from_currency") @db.VarChar(3)
+  toCurrency   String   @map("to_currency") @db.VarChar(3)
+  rate         Decimal  @db.Decimal(20, 8)
+  provider     String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@unique([fromCurrency, toCurrency, provider], name: "fx_rate_pair")
+  @@index([fromCurrency, toCurrency])
+  @@map("fx_rates")
+}
+
+model AdminWallet {
+  id        BigInt   @id @default(autoincrement())
+  uniqueId  String   @unique @map("unique_id")
+  name      String?
+  address   String?  @db.Text
+  network   String?
+  currency  String?
+  status    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("admin_wallets")
 }
