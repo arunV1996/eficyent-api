@@ -1,0 +1,344 @@
+// =============================================================================
+// Prisma schema (generated from Laravel migrations).
+//
+// This file currently models the tables required for Phase 1 reference modules
+// (auth + beneficiary payout end-to-end). Remaining tables follow the same
+// naming + relation pattern; they are added as their controllers are ported.
+//
+// Source migrations: ../../Laravel/database/migrations/
+// To regenerate from a live DB once available:  npx prisma db pull
+// =============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// users + auth
+// -----------------------------------------------------------------------------
+
+model User {
+  id                   BigInt    @id @default(autoincrement())
+  uniqueId             String    @unique @map("unique_id")
+  merchantId           String?   @map("merchant_id")
+  businessUserId       BigInt?   @map("business_user_id")
+  complianceMerchantId String?   @map("compliance_merchant_id")
+
+  title       String? @db.VarChar(5)
+  firstName   String? @map("first_name") @db.VarChar(100)
+  middleName  String? @map("middle_name") @db.VarChar(100)
+  lastName    String? @map("last_name") @db.VarChar(100)
+  email       String  @unique
+  emailCode   String? @map("email_code")
+  emailCodeExpiry  String? @map("email_code_expiry")
+  emailVerifiedAt  DateTime? @map("email_verified_at")
+  mobileCountryCode String? @map("mobile_country_code")
+  mobile      String? @unique
+  password    String
+  gender      String? @db.VarChar(5)
+  dob         DateTime? @db.Date
+  picture     String?
+  userType    Int     @default(0) @map("user_type")
+  userRole    Int?    @map("user_role")
+  onboardingStep   Int @default(1) @map("onboarding_step")
+  idVerification   Int @default(1) @map("id_verification")
+  idVerifiedBy     String? @map("id_verified_by")
+  idVerificationData Json? @map("id_verification_data")
+
+  // Encrypted-at-rest values (envelope-encrypted via KMS in service layer)
+  apiKey      String? @map("api_key") @db.Text
+  saltKey     String? @map("salt_key") @db.Text
+  privateKey  String? @map("private_key") @db.Text
+  publicKey   String? @map("public_key") @db.Text
+
+  // 2FA (encrypted)
+  tfaSecret      String?  @map("tfa_secret") @db.Text
+  isTfaEnabled   Boolean  @default(false) @map("is_tfa_enabled")
+  backupCodes    String?  @map("backup_codes") @db.Text
+
+  // Service providers (json array)
+  serviceProviders Json? @map("service_providers")
+  memo            String?
+
+  status      Int     @default(1)
+  timezone    String  @default("Asia/Kolkata") @db.VarChar(30)
+  browserId   String? @map("browser_id")
+  rememberToken String? @map("remember_token") @db.VarChar(100)
+  deviceId    String? @map("device_id")
+  deviceType  String? @map("device_type")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt      @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  tokens             PersonalAccessToken[]
+  passwordResets     PasswordReset[] @relation("UserPasswordResets")
+  information        UserInformation?
+
+  @@index([merchantId])
+  @@index([businessUserId])
+  @@map("users")
+}
+
+model PersonalAccessToken {
+  id            BigInt    @id @default(autoincrement())
+  tokenableType String    @map("tokenable_type")
+  tokenableId   BigInt    @map("tokenable_id")
+  name          String
+  tokenHash     String    @unique @map("token") @db.VarChar(64)
+  abilities     String?   @db.Text
+  lastUsedAt    DateTime? @map("last_used_at")
+  expiresAt     DateTime? @map("expires_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt      @map("updated_at")
+
+  user User? @relation(fields: [tokenableId], references: [id], onDelete: Cascade, map: "fk_pat_user")
+
+  @@index([tokenableType, tokenableId])
+  @@map("personal_access_tokens")
+}
+
+model PasswordReset {
+  email     String
+  token     String   @unique @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation("UserPasswordResets", fields: [email], references: [email], onDelete: Cascade, map: "fk_pwr_user")
+
+  @@id([email, token])
+  @@index([email])
+  @@map("password_resets")
+}
+
+model UserInformation {
+  id                       BigInt   @id @default(autoincrement())
+  userId                   BigInt   @unique @map("user_id")
+  country                  String?  @db.VarChar(8)
+  businessName             String?  @map("business_name")
+  businessVerificationType String?  @map("business_verification_type")
+  // ... remaining UserInformation fields modeled when onboarding controller is ported.
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_informations")
+}
+
+// -----------------------------------------------------------------------------
+// merchants
+// -----------------------------------------------------------------------------
+
+model Merchant {
+  id        BigInt   @id @default(autoincrement())
+  uniqueId  String   @unique @map("unique_id")
+  name      String?
+  type      Int
+  status    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  settings MerchantSetting[]
+  fees     MerchantFee[]
+
+  @@map("merchants")
+}
+
+model MerchantSetting {
+  id         BigInt   @id @default(autoincrement())
+  merchantId BigInt   @map("merchant_id")
+  key        String
+  value      String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt      @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, key])
+  @@map("merchant_settings")
+}
+
+model MerchantFee {
+  id         BigInt   @id @default(autoincrement())
+  merchantId BigInt   @map("merchant_id")
+  feeType    Int      @map("fee_type")
+  amount     Decimal  @db.Decimal(20, 6)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt      @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@map("merchant_fees")
+}
+
+// -----------------------------------------------------------------------------
+// beneficiary accounts + transactions (payout path)
+// -----------------------------------------------------------------------------
+
+model BeneficiaryAccount {
+  id                          BigInt    @id @default(autoincrement())
+  uniqueId                    String    @unique @map("unique_id")
+  userId                      BigInt?   @map("user_id")
+  currency                    String    @default("USD") @db.VarChar(3)
+  country                     String    @default("US") @db.VarChar(4)
+  type                        Int?      @default(1)
+  firstName                   String?   @map("first_name")
+  middleName                  String?   @map("middle_name")
+  lastName                    String?   @map("last_name")
+  email                       String?
+  mobileCountryCode           String?   @map("mobile_country_code")
+  mobile                      String?
+  paymentRail                 String?   @map("payment_rail")
+  serviceBank                 String?   @map("service_bank")
+  bankName                    String?   @map("bank_name")
+  routingNumber               String?   @map("routing_number")
+  accountName                 String?   @map("account_name")
+  accountNumber               String?   @map("account_number")
+  accountType                 String?   @map("account_type")
+  swiftCode                   String?   @map("swift_code")
+  iban                        String?
+  intermediaryBankSwiftCode   String?   @map("intermediary_bank_swift_code")
+  intermediaryBankName        String?   @map("intermediary_bank_name")
+  bankCountry                 String?   @map("bank_country") @db.VarChar(3)
+  businessName                String?   @map("business_name")
+  businessCountry             String?   @map("business_country") @db.VarChar(3)
+  externalType                String?   @map("external_type")
+  externalReferenceId         String?   @map("external_reference_id")
+  externalData                Json?     @map("external_data")
+  status                      Int       @default(0)
+  createdAt                   DateTime  @default(now()) @map("created_at")
+  updatedAt                   DateTime  @updatedAt      @map("updated_at")
+  deletedAt                   DateTime? @map("deleted_at")
+
+  transactions BeneficiaryTransaction[]
+
+  @@index([userId, status])
+  @@map("beneficiary_accounts")
+}
+
+model BeneficiaryTransaction {
+  id                  BigInt   @id @default(autoincrement())
+  uniqueId            String   @unique @map("unique_id")
+  txnRefNo            String?  @unique @map("txn_ref_no")
+  userId              BigInt   @map("user_id")
+  teamMemberId        BigInt?  @map("team_member_id")
+  senderId            BigInt?  @map("sender_id")
+  beneficiaryAccountId BigInt? @map("beneficiary_account_id")
+  quoteId             BigInt?  @map("quote_id")
+  virtualAccountId    BigInt?  @map("virtual_account_id")
+  walletId            BigInt?  @map("wallet_id")
+
+  amount              Decimal  @db.Decimal(20, 6)
+  totalAmount         Decimal  @map("total_amount") @db.Decimal(20, 6)
+  commissionAmount    Decimal  @default(0) @map("commission_amount") @db.Decimal(20, 6)
+  currency            String?  @db.VarChar(3)
+
+  paymentRail         String?  @map("payment_rail")
+  paymentMethod       String?  @map("payment_method")
+  externalType        String?  @map("external_type")
+  externalReferenceId String?  @map("external_reference_id")
+  externalData        Json?    @map("external_data")
+
+  purposeOfTransaction String? @map("purpose_of_transaction")
+  sourceOfFunds       String?  @map("source_of_funds")
+  remarks             String?  @db.Text
+
+  status              Int      @default(0)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt      @map("updated_at")
+
+  beneficiaryAccount BeneficiaryAccount? @relation(fields: [beneficiaryAccountId], references: [id])
+  statusHistories    BeneficiaryTransactionStatusHistory[]
+
+  @@index([userId, status])
+  @@index([senderId])
+  @@index([quoteId])
+  @@map("beneficiary_transactions")
+}
+
+model BeneficiaryTransactionStatusHistory {
+  id                       BigInt   @id @default(autoincrement())
+  beneficiaryTransactionId BigInt   @map("beneficiary_transaction_id")
+  fromStatus               Int?     @map("from_status")
+  toStatus                 Int      @map("to_status")
+  actionBy                 String?  @map("action_by")
+  actorId                  BigInt?  @map("actor_id")
+  notes                    String?  @db.Text
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt      @map("updated_at")
+
+  transaction BeneficiaryTransaction @relation(fields: [beneficiaryTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([beneficiaryTransactionId])
+  @@map("beneficiary_transaction_status_histories")
+}
+
+model PayoutJob {
+  id                       BigInt   @id @default(autoincrement())
+  jobUniqueId              String   @unique @map("job_unique_id")
+  beneficiaryTransactionId BigInt?  @map("beneficiary_transaction_id")
+  userId                   BigInt   @map("user_id")
+  status                   Int      @default(0)
+  attempts                 Int      @default(0)
+  lastError                String?  @map("last_error") @db.Text
+  payload                  Json?
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt      @map("updated_at")
+
+  @@index([status])
+  @@index([userId])
+  @@map("payout_jobs")
+}
+
+// -----------------------------------------------------------------------------
+// idempotency
+// -----------------------------------------------------------------------------
+//
+// Idempotency keys are stored in Redis (hot path), but a durable copy is
+// persisted here so replays survive Redis flush events. The Redis copy
+// short-circuits the DB on the hot path; this table is read only on cache miss.
+
+model IdempotencyKey {
+  id           BigInt   @id @default(autoincrement())
+  key          String   @unique @db.VarChar(128)
+  userId       BigInt   @map("user_id")
+  route        String   @db.VarChar(255)
+  requestHash  String   @map("request_hash") @db.VarChar(64)
+  responseCode Int      @map("response_code")
+  responseBody String   @map("response_body") @db.LongText
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+// -----------------------------------------------------------------------------
+// External call audit trail
+// -----------------------------------------------------------------------------
+
+model ExternalServiceCall {
+  id              BigInt   @id @default(autoincrement())
+  externalType    String   @map("external_type")
+  callFor         String   @map("call_for")
+  referenceType   String?  @map("reference_type")
+  referenceId     BigInt?  @map("reference_id")
+  endpoint        String?  @db.Text
+  requestHeaders  Json?    @map("request_headers")
+  requestPayload  Json?    @map("request_payload")
+  responseStatus  Int?     @map("response_status")
+  responseBody    String?  @map("response_body") @db.LongText
+  durationMs      Int?     @map("duration_ms")
+  errorMessage    String?  @map("error_message") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt      @map("updated_at")
+
+  @@index([externalType, callFor])
+  @@index([referenceType, referenceId])
+  @@map("external_service_calls")
+}
