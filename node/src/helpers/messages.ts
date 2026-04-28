@@ -13,9 +13,11 @@ export const ApiSuccessMessages: Record<number, string> = {
   103: "Verification code resent.",
   104: "Login successful.",
   105: "Logout successful.",
+  106: "Onboarding step completed.",
   109: "Reset password link sent to your email.",
   110: "Verification code verified.",
   111: "Password reset successful.",
+  113: "Account validation completed.",
 };
 
 export const ApiErrorMessages: Record<number, string> = {
@@ -24,7 +26,15 @@ export const ApiErrorMessages: Record<number, string> = {
   104: "OTP has expired.",
   106: "Email already verified.",
   107: "Email not verified.",
-  108: "Invalid request.",
+  108: "Invalid onboarding step.",
+  113: "Onboarding service is not supported.",
+  115: "Account already activated for this provider.",
+  116: "Virtual account not found.",
+  117: "Failed to create beneficiary account.",
+  118: "Beneficiary account not found.",
+  158: "Beneficiary account already exists.",
+  179: "Failed to create account validation record.",
+  195: "C2B (consumer to business) is not supported.",
   109: "File upload failed.",
   110: "Missing X-Api-Key header.",
   111: "Missing X-Api-Signature header.",

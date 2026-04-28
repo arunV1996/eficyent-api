@@ -117,3 +117,76 @@ export const B2C = "B2C";
 export const B2B = "B2B";
 export const RECIPIENT_TYPE_INDIVIDUAL = 1;
 export const RECIPIENT_TYPE_BUSINESS = 2;
+
+// Onboarding steps - same numeric value as `ONBOARDING_STEP_X_COMPLETED`.
+export const ONBOARDING_STEP_ONE = 1;
+export const ONBOARDING_STEP_TWO = 2;
+export const ONBOARDING_STEP_THREE = 3;
+export const ONBOARDING_STEP_FOUR = 4;
+export const ONBOARDING_STEP_TWO_COMPLETED = 2;
+export const ONBOARDING_STEP_THREE_COMPLETED = 3;
+
+export const ONBOARDING_STATUS_PENDING = 0;
+export const ONBOARDING_STATUS_INITIATED = 1;
+export const ONBOARDING_STATUS_CREATED = 2;
+export const ONBOARDING_STATUS_FAILED = 3;
+
+export const VIRTUAL_ACCOUNT_STATUS_PENDING = 0;
+export const VIRTUAL_ACCOUNT_STATUS_CREATED = 1;
+export const VIRTUAL_ACCOUNT_STATUS_FAILED = 2;
+
+export const COUNTRY_US = "US";
+export const CURRENCY_USD = "USD";
+
+export const BENEFICIARY_ACCOUNT_PENDING = 0;
+export const BENEFICIARY_ACCOUNT_ACTIVATED = 1;
+export const BENEFICIARY_ACCOUNT_DEACTIVATED = 2;
+export const BENEFICIARY_ACCOUNT_BLOCKED = 3;
+
+export const BENEFICIARY_ACCOUNT_VALIDATION_STATUS_PENDING = 0;
+export const BENEFICIARY_ACCOUNT_VALIDATION_STATUS_SUCCESS = 1;
+export const BENEFICIARY_ACCOUNT_VALIDATION_STATUS_FAILED = 2;
+
+export const ID_VERIFIED_BY_ADMIN = "ad";
+export const TEAM_MEMBER_ROLE_CORPORATE = 4;
+
+export const METHOD_ONBOARDING_STEP_TWO = "onboarding_step_two";
+export const METHOD_ONBOARDING_STEP_THREE = "onboarding_step_three";
+
+// onboarding_step_map() - human key -> numeric step.
+export const ONBOARDING_STEP_MAP: Record<string, number> = {
+  REGISTER_USER: ONBOARDING_STEP_ONE,
+  GET_INFORMATION: ONBOARDING_STEP_TWO_COMPLETED,
+  GET_DOCUMENTS: ONBOARDING_STEP_THREE_COMPLETED,
+};
+
+// virtual_account_status_map() - human key -> numeric status.
+export const VIRTUAL_ACCOUNT_STATUS_MAP: Record<string, number> = {
+  PENDING: VIRTUAL_ACCOUNT_STATUS_PENDING,
+  CREATED: VIRTUAL_ACCOUNT_STATUS_CREATED,
+  FAILED: VIRTUAL_ACCOUNT_STATUS_FAILED,
+};
+
+// beneficiary_account_status_map() - human key -> numeric status.
+export const BENEFICIARY_ACCOUNT_STATUS_MAP: Record<string, number> = {
+  PENDING: BENEFICIARY_ACCOUNT_PENDING,
+  ACTIVATED: BENEFICIARY_ACCOUNT_ACTIVATED,
+  DEACTIVATED: BENEFICIARY_ACCOUNT_DEACTIVATED,
+  BLOCKED: BENEFICIARY_ACCOUNT_BLOCKED,
+};
+
+// onboarding_status_label()
+export function onboardingStatusLabel(value: number): string {
+  switch (value) {
+    case ONBOARDING_STATUS_PENDING:
+      return "PENDING";
+    case ONBOARDING_STATUS_INITIATED:
+      return "INITIATED";
+    case ONBOARDING_STATUS_CREATED:
+      return "CREATED";
+    case ONBOARDING_STATUS_FAILED:
+      return "FAILED";
+    default:
+      return "PENDING";
+  }
+}

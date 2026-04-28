@@ -228,7 +228,7 @@ phases port the remaining Laravel controllers/services in dependency order:
 |---|---|---|
 | 1 | Foundation + Auth + Payout reference module | done |
 | 2 | Profile, VerifyEmail, Subuser, Settings, StaticPages, Lookups | done |
-| 3 | Onboarding (multi-step), VirtualAccount, BeneficiaryAccounts | pending |
+| 3 | Onboarding (multi-step), VirtualAccount, BeneficiaryAccounts | done |
 | 4 | Senders, Quotes, Wallet (+ WalletTransactions) | pending |
 | 5 | Deposits (incl. webhook intake), Ledger | pending |
 | 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | pending |
@@ -246,8 +246,30 @@ underlying module lands:
 * `lookups/refresh-rates` -> needs Massive quote provider (Phase 8)
 * `lookups/get-rates` per-merchant commission overlay -> needs MerchantFee/Quote (Phase 4)
 * `profile/check_user_status` KYC re-poll -> needs KycFactory (Phase 8)
-* `profile/update_profile_form_fields` dynamic schema -> needs FieldsHelper / FvBank context (Phase 3)
-* `profile/update_profile` multipart uploads -> currently base64-only; multer wired in Phase 3
+* `profile/update_profile` multipart uploads -> currently base64-only; multer wired in Phase 4
+
+### Phase 3 deferred items
+
+* `accounts/activate` -> records UserService(INITIATED) + logs intent. Actual
+  Caliza/FvBank HTTP onboarding + virtual-account provisioning lands in
+  Phase 8; the accompanying webhook handlers (which populate
+  `virtual_accounts` rows) land in Phase 9.
+* `accounts/balances` and `bankBalance` use a partial computation
+  (BeneficiaryTransaction debits only). Full balance (DepositTransaction +
+  WalletTransaction credit/debit + per-merchant commission overlay) is
+  re-enabled when DepositTransaction (Phase 5) and WalletTransaction
+  (Phase 4) are ported.
+* `beneficiaries/validate_account` returns cached results from the
+  `beneficiary_account_validations` table; on cache miss it returns 501
+  (the ProcessingUnit external service lands in Phase 8).
+* `beneficiaries/bulk/template` and `beneficiaries/bulk/store` return 501;
+  Excel import/export (`maatwebsite/excel` equivalent) lands in Phase 8.
+* `onboarding/stepThree` records the document and KYC intent; the actual
+  KYC provider HTTP handoff (Sumsub / Incode / Surepass) lands in Phase 8.
+* `FieldsHelper::beneficiary_form_fields` is ported in a simplified form
+  that covers the canonical USD + non-USD branches. The full per-country
+  rule overlay (lookup-driven `country_configurations` + per-merchant
+  field whitelists) lands alongside the lookup ingestion job in Phase 8.
 
 Each phase keeps API contracts byte-stable and is deployable independently
 behind a feature flag.
