@@ -18,6 +18,8 @@ import { beneficiaryAccountsRoutes } from "./beneficiaryAccounts.routes";
 import { sendersRoutes } from "./senders.routes";
 import { quotesRoutes } from "./quotes.routes";
 import { walletsRoutes } from "./wallets.routes";
+import { depositsRoutes, retryDepositRoute } from "./deposits.routes";
+import { ledgersRoutes } from "./ledgers.routes";
 
 /**
  * Top-level API router. Mirrors Laravel routes/api.php structure.
@@ -63,6 +65,11 @@ export async function apiRouter(): Promise<Router> {
   r.use("/user/remitters", sendersRoutes());
   r.use("/user/quotes", await quotesRoutes());
   r.use("/user/wallets", await walletsRoutes());
+
+  // Phase 5 endpoints
+  r.use("/user/deposits", await depositsRoutes());
+  r.use("/user/ledgers", await ledgersRoutes());
+  r.use("/user", await retryDepositRoute());
 
   // Phase 1
   r.use("/user/beneficiary-transactions", payoutRoutes());

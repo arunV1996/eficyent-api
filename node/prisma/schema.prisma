@@ -385,7 +385,8 @@ model VirtualAccount {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt      @map("updated_at")
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  depositTransactions DepositTransaction[]
 
   @@index([userId, status])
   @@index([userId, externalType])
@@ -870,4 +871,100 @@ model AdminWallet {
   updatedAt DateTime @updatedAt      @map("updated_at")
 
   @@map("admin_wallets")
+}
+
+// -----------------------------------------------------------------------------
+// Deposits (Phase 5)
+// -----------------------------------------------------------------------------
+
+model DepositTransaction {
+  id                       BigInt   @id @default(autoincrement())
+  uniqueId                 String   @unique @map("unique_id")
+  userId                   BigInt   @map("user_id")
+  teamMemberId             BigInt?  @map("team_member_id")
+  virtualAccountId         BigInt   @map("virtual_account_id")
+  adminWalletId            BigInt?  @map("admin_wallet_id")
+
+  amount                   Decimal  @default(0) @db.Decimal(15, 2)
+  commissionAmount         Decimal  @default(0) @map("commission_amount") @db.Decimal(15, 2)
+  externalCommissionAmount Decimal  @default(0) @map("external_commission_amount") @db.Decimal(15, 2)
+  merchantCommissionAmount Decimal  @default(0) @map("merchant_commission_amount") @db.Decimal(15, 2)
+  totalCommissionAmount    Decimal  @default(0) @map("total_commission_amount") @db.Decimal(15, 2)
+  totalAmount              Decimal  @default(0) @map("total_amount") @db.Decimal(15, 2)
+
+  depositCurrency          String?  @map("deposit_currency") @db.VarChar(10)
+  fromWalletAddress        String?  @map("from_wallet_address") @db.VarChar(255)
+  transactionHash          String?  @map("transaction_hash") @db.VarChar(255)
+
+  memo                     String?
+  externalType             String?  @map("external_type")
+  externalReferenceId      String?  @map("external_reference_id")
+  externalData             Json?    @map("external_data")
+  externalStatus           String?  @map("external_status")
+  externalRemarks          String?  @map("external_remarks") @db.Text
+  remarks                  String?  @db.Text
+
+  clientReferenceId        String?  @map("client_reference_id")
+  status                   Int      @default(0)
+  type                     String   @default("deposit")
+  purposeOfPayment         String?  @map("purpose_of_payment")
+  sourceOfFunds            String?  @map("source_of_funds")
+  proof                    String?  @db.VarChar(255)
+  orderId                  String?  @map("order_id")
+
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt      @map("updated_at")
+
+  virtualAccount  VirtualAccount @relation(fields: [virtualAccountId], references: [id], onDelete: Cascade)
+  statusHistories DepositTransactionStatusHistory[]
+
+  @@index([userId, status])
+  @@index([virtualAccountId, status])
+  @@index([clientReferenceId])
+  @@map("deposit_transactions")
+}
+
+model DepositTransactionStatusHistory {
+  id                   BigInt   @id @default(autoincrement())
+  uniqueId             String   @unique @map("unique_id")
+  depositTransactionId BigInt   @map("deposit_transaction_id")
+  fromStatus           String?  @map("from_status")
+  toStatus             String   @map("to_status")
+  changedBy            String?  @map("changed_by")
+  changedByType        String?  @map("changed_by_type")
+  changedAt            DateTime @map("changed_at")
+  meta                 Json?
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt      @map("updated_at")
+
+  depositTransaction DepositTransaction @relation(fields: [depositTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([depositTransactionId])
+  @@map("deposit_transaction_status_histories")
+}
+
+model DepositTransactionsAccount {
+  id          BigInt   @id @default(autoincrement())
+  uniqueId    String   @unique @map("unique_id")
+  userId      BigInt?  @map("user_id")
+  currency    String   @db.VarChar(3)
+  totalAmount Decimal  @default(0) @map("total_amount") @db.Decimal(15, 2)
+  status      Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  @@index([userId])
+  @@map("deposit_transactions_accounts")
+}
+
+model CallbackLog {
+  id           BigInt   @id @default(autoincrement())
+  loggableType String   @map("loggable_type")
+  loggableId   BigInt   @map("loggable_id")
+  logs         Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@index([loggableType, loggableId])
+  @@map("callback_logs")
 }
