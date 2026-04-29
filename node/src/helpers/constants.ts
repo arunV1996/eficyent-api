@@ -190,3 +190,66 @@ export function onboardingStatusLabel(value: number): string {
       return "PENDING";
   }
 }
+
+// Quote status (mirror of QUOTE_*)
+export const QUOTE_NOT_SUBMITTED = 0;
+export const QUOTE_SUBMITTED = 1;
+export const QUOTE_EXPIRED = 2;
+export const QUOTE_TYPE_FORWARD = "FORWARD";
+export const QUOTE_TYPE_REVERSE = "REVERSE";
+export const QUOTE_MODE_RATE = "rate";
+export const QUOTE_MODE_QUOTATION = "quote";
+
+// Wallet transaction
+export const WALLET_TRANSACTION_PENDING = 0;
+export const WALLET_TRANSACTION_COMPLETED = 1;
+export const WALLET_TRANSACTION_FAILED = 2;
+export const WALLET_TRANSACTION_REJECTED = 3;
+export const WALLET_TRANSACTION_CANCELLED = 4;
+
+export const WALLET_STATUS_ACTIVE = 1;
+export const WALLET_STATUS_INACTIVE = 0;
+
+export const WALLET_STATUS_MAP: Record<string, number> = {
+  ACTIVE: WALLET_STATUS_ACTIVE,
+  INACTIVE: WALLET_STATUS_INACTIVE,
+};
+
+// Sender status
+export const SENDER_STATUS_PENDING = 0;
+export const SENDER_STATUS_APPROVED = 1;
+export const SENDER_STATUS_REJECTED = 2;
+export const SENDER_STATUS_EXPIRED = 3;
+export const SENDER_STATUS_DISABLED = 4;
+
+export const REMITTER_STATUS_MAP: Record<string, number> = {
+  PENDING: SENDER_STATUS_PENDING,
+  APPROVED: SENDER_STATUS_APPROVED,
+  REJECTED: SENDER_STATUS_REJECTED,
+  EXPIRED: SENDER_STATUS_EXPIRED,
+  DISABLED: SENDER_STATUS_DISABLED,
+};
+
+// Transaction type (debit/credit) - shared across wallet, ledger, etc.
+export const TRANSACTION_TYPE_DEBIT = 1;
+export const TRANSACTION_TYPE_CREDIT = 2;
+
+// Fee shape (FEE_TYPE_*)
+export const FEE_TYPE_FLAT = 1;
+export const FEE_TYPE_PERCENTAGE = 2;
+export const FEE_TYPE_FIXED = 3;
+
+export const TRANSACTION_FEE = "transaction_fee";
+export const FX_FEE = "fx_fee";
+export const MAINTENANCE_FEE = "maintenance_fee";
+export const DEPOSIT_FEE = "deposit_fee";
+
+// Polymorphic morph map keys (mirror Laravel's class -> table-name maps).
+// Used by Quote.source_type and Ledger.transaction_type, etc.
+export const MORPH_VIRTUAL_ACCOUNT = "App\\Models\\VirtualAccount";
+export const MORPH_WALLET = "App\\Models\\Wallet";
+export const MORPH_USER = "App\\Models\\User";
+export const MORPH_MERCHANT = "App\\Models\\Merchant";
+export const MORPH_BENEFICIARY_TRANSACTION = "App\\Models\\BeneficiaryTransaction";
+export const MORPH_DEPOSIT_TRANSACTION = "App\\Models\\DepositTransaction";
+export const MORPH_WALLET_TRANSACTION = "App\\Models\\WalletTransaction";
