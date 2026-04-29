@@ -1,0 +1,719 @@
+// =============================================================================
+// Prisma schema (generated from Laravel migrations).
+//
+// This file currently models the tables required for Phase 1 reference modules
+// (auth + beneficiary payout end-to-end). Remaining tables follow the same
+// naming + relation pattern; they are added as their controllers are ported.
+//
+// Source migrations: ../../Laravel/database/migrations/
+// To regenerate from a live DB once available:  npx prisma db pull
+// =============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// users + auth
+// -----------------------------------------------------------------------------
+
+model User {
+  id                   BigInt    @id @default(autoincrement())
+  uniqueId             String    @unique @map("unique_id")
+  merchantId           String?   @map("merchant_id")
+  businessUserId       BigInt?   @map("business_user_id")
+  complianceMerchantId String?   @map("compliance_merchant_id")
+
+  title       String? @db.VarChar(5)
+  firstName   String? @map("first_name") @db.VarChar(100)
+  middleName  String? @map("middle_name") @db.VarChar(100)
+  lastName    String? @map("last_name") @db.VarChar(100)
+  email       String  @unique
+  emailCode   String? @map("email_code")
+  emailCodeExpiry  String? @map("email_code_expiry")
+  emailVerifiedAt  DateTime? @map("email_verified_at")
+  mobileCountryCode String? @map("mobile_country_code")
+  mobile      String? @unique
+  password    String
+  gender      String? @db.VarChar(5)
+  dob         DateTime? @db.Date
+  picture     String?
+  userType    Int     @default(0) @map("user_type")
+  userRole    Int?    @map("user_role")
+  onboardingStep   Int @default(1) @map("onboarding_step")
+  idVerification   Int @default(1) @map("id_verification")
+  idVerifiedBy     String? @map("id_verified_by")
+  idVerificationData Json? @map("id_verification_data")
+
+  // Encrypted-at-rest values (envelope-encrypted via KMS in service layer)
+  apiKey      String? @map("api_key") @db.Text
+  saltKey     String? @map("salt_key") @db.Text
+  privateKey  String? @map("private_key") @db.Text
+  publicKey   String? @map("public_key") @db.Text
+
+  // 2FA (encrypted)
+  tfaSecret             String?  @map("tfa_secret") @db.Text
+  isTfaEnabled          Boolean  @default(false) @map("is_tfa_enabled")
+  isTfaSetupCompleted   Boolean  @default(false) @map("is_tfa_setup_completed")
+  backupCodes           String?  @map("backup_codes") @db.Text
+
+  // Service providers (json array)
+  serviceProviders Json? @map("service_providers")
+  memo            String?
+  tourStatus      Int     @default(0) @map("tour_status")
+
+  status      Int     @default(1)
+  enableSender Int    @default(0) @map("enable_sender")
+  timezone    String  @default("Asia/Kolkata") @db.VarChar(30)
+  browserId   String? @map("browser_id")
+  rememberToken String? @map("remember_token") @db.VarChar(100)
+  deviceId    String? @map("device_id")
+  deviceType  String? @map("device_type")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt      @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  tokens             PersonalAccessToken[]
+  passwordResets     PasswordReset[] @relation("UserPasswordResets")
+  information        UserInformation?
+  documents          UserDocument[]
+  subusers           User[]   @relation("BusinessSubusers")
+  businessUser       User?    @relation("BusinessSubusers", fields: [businessUserId], references: [id])
+  virtualAccounts    VirtualAccount[]
+  userServices       UserService[]
+  wallets            Wallet[]
+  senders            Sender[]
+
+  @@index([merchantId])
+  @@index([businessUserId])
+  @@map("users")
+}
+
+model PersonalAccessToken {
+  id            BigInt    @id @default(autoincrement())
+  tokenableType String    @map("tokenable_type")
+  tokenableId   BigInt    @map("tokenable_id")
+  name          String
+  tokenHash     String    @unique @map("token") @db.VarChar(64)
+  abilities     String?   @db.Text
+  lastUsedAt    DateTime? @map("last_used_at")
+  expiresAt     DateTime? @map("expires_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt      @map("updated_at")
+
+  user User? @relation(fields: [tokenableId], references: [id], onDelete: Cascade, map: "fk_pat_user")
+
+  @@index([tokenableType, tokenableId])
+  @@map("personal_access_tokens")
+}
+
+model PasswordReset {
+  email     String
+  token     String   @unique @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation("UserPasswordResets", fields: [email], references: [email], onDelete: Cascade, map: "fk_pwr_user")
+
+  @@id([email, token])
+  @@index([email])
+  @@map("password_resets")
+}
+
+model UserInformation {
+  id                       BigInt   @id @default(autoincrement())
+  uniqueId                 String   @unique @map("unique_id")
+  userId                   BigInt   @unique @map("user_id")
+  country                  String?  @db.VarChar(100)
+  address1                 String?  @map("address_1") @db.VarChar(255)
+  address2                 String?  @map("address_2") @db.VarChar(255)
+  city                     String?  @db.VarChar(100)
+  state                    String?  @db.VarChar(100)
+  postalCode               String?  @map("postal_code") @db.VarChar(50)
+  purposeOfTransactions    String?  @map("purpose_of_transactions") @db.Text
+  businessVerificationType String?  @map("business_verification_type")
+
+  legalName                String?  @map("legal_name") @db.VarChar(255)
+  taxId                    String?  @map("tax_id") @db.VarChar(100)
+  formationDate            DateTime? @map("formation_date") @db.Date
+  businessName             String?  @map("business_name") @db.VarChar(255)
+  website                  String?  @db.VarChar(255)
+  ipAddress                String?  @map("ip_address") @db.VarChar(45)
+  role                     String?  @db.VarChar(100)
+  businessPersons          Json?    @map("business_persons")
+  profession               String?  @db.VarChar(100)
+  sourceOfIncome           String?  @map("source_of_income") @db.VarChar(11)
+  idType                   String?  @map("id_type")
+  idNumber                 String?  @map("id_number")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_informations")
+}
+
+// -----------------------------------------------------------------------------
+// User documents (KYC)
+// -----------------------------------------------------------------------------
+
+model UserDocument {
+  id                  BigInt   @id @default(autoincrement())
+  uniqueId            String   @unique @map("unique_id")
+  userId              BigInt   @map("user_id")
+  documentName        String?  @map("document_name") @db.VarChar(100)
+  documentType        String?  @map("document_type") @db.VarChar(100)
+  documentCountry     String?  @map("document_country") @db.VarChar(100)
+  documentFile        String?  @map("document_file")
+  documentBackFile    String?  @map("document_back_file")
+  documentExpiryDate  DateTime? @map("document_expiry_date") @db.Date
+  status              Int      @default(1)
+  verifiedAt          DateTime? @map("verified_at")
+  remarks             String?  @db.Text
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt      @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, documentName])
+  @@map("user_documents")
+}
+
+// -----------------------------------------------------------------------------
+// merchants
+// -----------------------------------------------------------------------------
+
+model Merchant {
+  id        BigInt   @id @default(autoincrement())
+  uniqueId  String   @unique @map("unique_id")
+  name      String?
+  type      Int
+  status    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  settings MerchantSetting[]
+  fees     MerchantFee[]
+
+  @@map("merchants")
+}
+
+model MerchantSetting {
+  id         BigInt   @id @default(autoincrement())
+  merchantId BigInt   @map("merchant_id")
+  key        String
+  value      String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt      @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, key])
+  @@map("merchant_settings")
+}
+
+model MerchantFee {
+  id         BigInt   @id @default(autoincrement())
+  merchantId BigInt   @map("merchant_id")
+  feeType    Int      @map("fee_type")
+  amount     Decimal  @db.Decimal(20, 6)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt      @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@map("merchant_fees")
+}
+
+// -----------------------------------------------------------------------------
+// beneficiary accounts + transactions (payout path)
+// -----------------------------------------------------------------------------
+
+model BeneficiaryAccount {
+  id                          BigInt    @id @default(autoincrement())
+  uniqueId                    String    @unique @map("unique_id")
+  userId                      BigInt?   @map("user_id")
+  currency                    String    @default("USD") @db.VarChar(3)
+  country                     String    @default("US") @db.VarChar(4)
+  type                        Int?      @default(1)
+  firstName                   String?   @map("first_name")
+  middleName                  String?   @map("middle_name")
+  lastName                    String?   @map("last_name")
+  email                       String?
+  mobileCountryCode           String?   @map("mobile_country_code")
+  mobile                      String?
+  paymentRail                 String?   @map("payment_rail")
+  serviceBank                 String?   @map("service_bank")
+  bankName                    String?   @map("bank_name")
+  routingNumber               String?   @map("routing_number")
+  accountName                 String?   @map("account_name")
+  accountNumber               String?   @map("account_number")
+  accountType                 String?   @map("account_type")
+  swiftCode                   String?   @map("swift_code")
+  iban                        String?
+  intermediaryBankSwiftCode   String?   @map("intermediary_bank_swift_code")
+  intermediaryBankName        String?   @map("intermediary_bank_name")
+  intermediaryBankAba         String?   @map("intermediary_bank_aba")
+  intermediaryBankAddress     String?   @map("intermediary_bank_address")
+  intermediaryBankCity        String?   @map("intermediary_bank_city")
+  intermediaryBankState       String?   @map("intermediary_bank_state")
+  intermediaryBankPostalCode  String?   @map("intermediary_bank_postal_code")
+  intermediaryBankCountry     String?   @map("intermediary_bank_country")
+  bankCountry                 String?   @map("bank_country") @db.VarChar(3)
+  businessName                String?   @map("business_name")
+  businessCountry             String?   @map("business_country") @db.VarChar(3)
+  externalType                String?   @map("external_type")
+  externalReferenceId         String?   @map("external_reference_id")
+  externalData                Json?     @map("external_data")
+  status                      Int       @default(0)
+  createdAt                   DateTime  @default(now()) @map("created_at")
+  updatedAt                   DateTime  @updatedAt      @map("updated_at")
+  deletedAt                   DateTime? @map("deleted_at")
+
+  transactions      BeneficiaryTransaction[]
+  additionalDetails BeneficiaryAdditionalDetail?
+
+  @@index([userId, status])
+  @@map("beneficiary_accounts")
+}
+
+model BeneficiaryAdditionalDetail {
+  id                     BigInt   @id @default(autoincrement())
+  uniqueId               String   @unique @map("unique_id")
+  beneficiaryAccountId   BigInt   @unique @map("beneficiary_account_id")
+  addressType            String?  @map("address_type")
+  addressLine1           String?  @map("address_line1")
+  addressLine2           String?  @map("address_line2")
+  postalCode             String?  @map("postal_code") @db.VarChar(20)
+  city                   String?
+  state                  String?
+  country                String?  @db.VarChar(3)
+  paymentType            String?  @map("payment_type")
+  bankAddressLine1       String?  @map("bank_address_line1")
+  bankAddressLine2       String?  @map("bank_address_line2")
+  bankPostalCode         String?  @map("bank_postal_code") @db.VarChar(20)
+  bankCity               String?  @map("bank_city")
+  bankState              String?  @map("bank_state")
+  bankCountry            String?  @map("bank_country") @db.VarChar(3)
+  userSourceOfIncome     String?  @map("user_source_of_income")
+  purposeOfTransaction   String?  @map("purpose_of_transaction")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt      @map("updated_at")
+  deletedAt              DateTime? @map("deleted_at")
+
+  beneficiaryAccount BeneficiaryAccount @relation(fields: [beneficiaryAccountId], references: [id], onDelete: Cascade)
+
+  @@map("beneficiary_additional_details")
+}
+
+model BeneficiaryAccountValidation {
+  id                  BigInt   @id @default(autoincrement())
+  uniqueId            String   @unique @map("unique_id")
+  userId              BigInt   @map("user_id")
+  accountName         String?  @map("account_name")
+  accountNumber       String   @unique @map("account_number")
+  code                String?
+  validationService   String?  @map("validation_service")
+  externalReferenceId String?  @map("external_reference_id")
+  externalStatus      String?  @map("external_status")
+  externalData        Json?    @map("external_data")
+  remarks             String?  @db.Text
+  isAccountExists     Int      @default(0) @map("is_account_exists")
+  isNreAccount        Int      @default(0) @map("is_nre_account")
+  status              Int      @default(0)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt      @map("updated_at")
+
+  @@index([accountNumber, code])
+  @@map("beneficiary_account_validations")
+}
+
+// -----------------------------------------------------------------------------
+// Virtual accounts (Phase 3)
+// -----------------------------------------------------------------------------
+
+model VirtualAccount {
+  id                    BigInt    @id @default(autoincrement())
+  uniqueId              String    @unique @map("unique_id")
+  userId                BigInt?   @map("user_id")
+  country               String    @default("US") @db.VarChar(100)
+  currency              String    @default("USD") @db.VarChar(100)
+  accountNumber         String?   @map("account_number")
+  accountHolderName     String?   @map("account_holder_name")
+  accountHolderAddress  String?   @map("account_holder_address")
+  accountBankName       String?   @map("account_bank_name")
+  accountBankCode       String?   @map("account_bank_code")
+  accountBankAddress    String?   @map("account_bank_address")
+  routingNumber         String?   @map("routing_number")
+  externalType          String?   @map("external_type")
+  externalReferenceId   String?   @map("external_reference_id")
+  externalData          Json?     @map("external_data")
+  status                Int       @default(0)
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt      @map("updated_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, externalType])
+  @@map("virtual_accounts")
+}
+
+// -----------------------------------------------------------------------------
+// User services (per-provider onboarding state)
+// -----------------------------------------------------------------------------
+
+model UserService {
+  id                  BigInt   @id @default(autoincrement())
+  uniqueId            String   @unique @map("unique_id")
+  userId              BigInt   @map("user_id")
+  serviceType         String   @map("service_type")
+  externalReferenceId String?  @map("external_reference_id")
+  externalData        Json?    @map("external_data")
+  externalStatus      String?  @map("external_status")
+  status              String   @default("0")
+  isActive            Int      @default(1) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt      @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serviceType])
+  @@index([userId])
+  @@map("user_services")
+}
+
+// -----------------------------------------------------------------------------
+// Wallets (Phase 4 will add WalletTransaction; here for VirtualAccount balance)
+// -----------------------------------------------------------------------------
+
+model Wallet {
+  id        BigInt   @id @default(autoincrement())
+  uniqueId  String   @unique @map("unique_id")
+  userId    BigInt   @map("user_id")
+  currency  String   @db.VarChar(3)
+  balance   Decimal  @default(0) @db.Decimal(20, 4)
+  status    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, currency])
+  @@index([userId, currency])
+  @@map("wallets")
+}
+
+// -----------------------------------------------------------------------------
+// Senders (placeholder schema; full surface ported in Phase 4)
+// -----------------------------------------------------------------------------
+
+model Sender {
+  id                BigInt   @id @default(autoincrement())
+  uniqueId          String   @unique @map("unique_id")
+  userId            BigInt   @map("user_id")
+  clientReferenceId String?  @map("client_reference_id")
+  title             String?  @db.VarChar(5)
+  firstName         String?  @map("first_name") @db.VarChar(100)
+  middleName        String?  @map("middle_name") @db.VarChar(100)
+  lastName          String?  @map("last_name") @db.VarChar(100)
+  email             String?
+  mobileCountryCode String?  @map("mobile_country_code")
+  mobile            String?
+  dob               DateTime? @db.Date
+  country           String?  @db.VarChar(100)
+  address1          String?  @map("address_1") @db.VarChar(255)
+  address2          String?  @map("address_2") @db.VarChar(255)
+  city              String?  @db.VarChar(100)
+  state             String?  @db.VarChar(100)
+  postalCode        String?  @map("postal_code") @db.VarChar(50)
+  type              Int?     @default(1)
+  idType            String?  @map("id_type")
+  idNumber          String?  @map("id_number")
+  sourceOfFunds     String?  @map("source_of_funds")
+  businessPersons   Json?    @map("business_persons")
+  status            Int      @default(1)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt      @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientReferenceId])
+  @@map("senders")
+}
+
+model BeneficiaryTransaction {
+  id                  BigInt   @id @default(autoincrement())
+  uniqueId            String   @unique @map("unique_id")
+  txnRefNo            String?  @unique @map("txn_ref_no")
+  userId              BigInt   @map("user_id")
+  teamMemberId        BigInt?  @map("team_member_id")
+  senderId            BigInt?  @map("sender_id")
+  beneficiaryAccountId BigInt? @map("beneficiary_account_id")
+  quoteId             BigInt?  @map("quote_id")
+  virtualAccountId    BigInt?  @map("virtual_account_id")
+  walletId            BigInt?  @map("wallet_id")
+
+  amount              Decimal  @db.Decimal(20, 6)
+  totalAmount         Decimal  @map("total_amount") @db.Decimal(20, 6)
+  commissionAmount    Decimal  @default(0) @map("commission_amount") @db.Decimal(20, 6)
+  currency            String?  @db.VarChar(3)
+
+  paymentRail         String?  @map("payment_rail")
+  paymentMethod       String?  @map("payment_method")
+  externalType        String?  @map("external_type")
+  externalReferenceId String?  @map("external_reference_id")
+  externalData        Json?    @map("external_data")
+
+  purposeOfTransaction String? @map("purpose_of_transaction")
+  sourceOfFunds       String?  @map("source_of_funds")
+  remarks             String?  @db.Text
+
+  status              Int      @default(0)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt      @map("updated_at")
+
+  beneficiaryAccount BeneficiaryAccount? @relation(fields: [beneficiaryAccountId], references: [id])
+  statusHistories    BeneficiaryTransactionStatusHistory[]
+
+  @@index([userId, status])
+  @@index([senderId])
+  @@index([quoteId])
+  @@map("beneficiary_transactions")
+}
+
+model BeneficiaryTransactionStatusHistory {
+  id                       BigInt   @id @default(autoincrement())
+  beneficiaryTransactionId BigInt   @map("beneficiary_transaction_id")
+  fromStatus               Int?     @map("from_status")
+  toStatus                 Int      @map("to_status")
+  actionBy                 String?  @map("action_by")
+  actorId                  BigInt?  @map("actor_id")
+  notes                    String?  @db.Text
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt      @map("updated_at")
+
+  transaction BeneficiaryTransaction @relation(fields: [beneficiaryTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([beneficiaryTransactionId])
+  @@map("beneficiary_transaction_status_histories")
+}
+
+model PayoutJob {
+  id                       BigInt   @id @default(autoincrement())
+  jobUniqueId              String   @unique @map("job_unique_id")
+  beneficiaryTransactionId BigInt?  @map("beneficiary_transaction_id")
+  userId                   BigInt   @map("user_id")
+  status                   Int      @default(0)
+  attempts                 Int      @default(0)
+  lastError                String?  @map("last_error") @db.Text
+  payload                  Json?
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt      @map("updated_at")
+
+  @@index([status])
+  @@index([userId])
+  @@map("payout_jobs")
+}
+
+// -----------------------------------------------------------------------------
+// idempotency
+// -----------------------------------------------------------------------------
+//
+// Idempotency keys are stored in Redis (hot path), but a durable copy is
+// persisted here so replays survive Redis flush events. The Redis copy
+// short-circuits the DB on the hot path; this table is read only on cache miss.
+
+model IdempotencyKey {
+  id           BigInt   @id @default(autoincrement())
+  key          String   @unique @db.VarChar(128)
+  userId       BigInt   @map("user_id")
+  route        String   @db.VarChar(255)
+  requestHash  String   @map("request_hash") @db.VarChar(64)
+  responseCode Int      @map("response_code")
+  responseBody String   @map("response_body") @db.LongText
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+// -----------------------------------------------------------------------------
+// External call audit trail
+// -----------------------------------------------------------------------------
+
+model ExternalServiceCall {
+  id              BigInt   @id @default(autoincrement())
+  externalType    String   @map("external_type")
+  callFor         String   @map("call_for")
+  referenceType   String?  @map("reference_type")
+  referenceId     BigInt?  @map("reference_id")
+  endpoint        String?  @db.Text
+  requestHeaders  Json?    @map("request_headers")
+  requestPayload  Json?    @map("request_payload")
+  responseStatus  Int?     @map("response_status")
+  responseBody    String?  @map("response_body") @db.LongText
+  durationMs      Int?     @map("duration_ms")
+  errorMessage    String?  @map("error_message") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt      @map("updated_at")
+
+  @@index([externalType, callFor])
+  @@index([referenceType, referenceId])
+  @@map("external_service_calls")
+}
+
+// -----------------------------------------------------------------------------
+// Settings + lookups (Phase 2)
+// -----------------------------------------------------------------------------
+
+model Setting {
+  id        Int      @id @default(autoincrement())
+  key       String
+  value     String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@index([key])
+  @@map("settings")
+}
+
+model StaticPage {
+  id            BigInt   @id @default(autoincrement())
+  uniqueId      String   @map("unique_id")
+  title         String
+  description   String   @db.LongText
+  type          String   @default("others")
+  footerSection Int      @default(0) @map("footer_section")
+  status        Int      @default(1)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt      @map("updated_at")
+
+  @@index([uniqueId])
+  @@index([title])
+  @@index([status])
+  @@map("static_pages")
+}
+
+model MobileCountryCode {
+  id          BigInt   @id @default(autoincrement())
+  uniqueId    String   @unique @map("unique_id")
+  countryName String   @map("country_name") @db.VarChar(50)
+  isdCode     String   @map("isd_code") @db.VarChar(8)
+  alpha2Code  String   @map("alpha_2_code") @db.VarChar(5)
+  alpha3Code  String   @map("alpha_3_code") @db.VarChar(5)
+  status      Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  @@index([alpha2Code])
+  @@index([alpha3Code])
+  @@map("mobile_country_codes")
+}
+
+model State {
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  name         String
+  countryCode  String   @map("country_code")
+  countryAlpha3 String? @map("country_alpha3")
+  stateCode    String   @map("state_code")
+  status       Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@index([countryCode])
+  @@index([countryAlpha3])
+  @@map("states")
+}
+
+model Lookup {
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  key          String
+  value        String   @db.Text
+  type         String
+  externalType String   @default("ed") @map("external_type")
+  status       Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@index([type])
+  @@index([type, externalType])
+  @@map("lookups")
+}
+
+model SupportedCountry {
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  countryName  String   @map("country_name") @db.VarChar(50)
+  countryCode  String   @map("country_code") @db.VarChar(3)
+  currency     String   @db.VarChar(3)
+  type         String?  @db.VarChar(3)
+  externalType String?  @map("external_type")
+  status       Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@index([countryCode])
+  @@index([externalType])
+  @@map("supported_countries")
+}
+
+model ServiceBank {
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  bankId       String   @unique @map("bank_id")
+  bankName     String   @map("bank_name")
+  country      String   @db.VarChar(3)
+  currency     String?  @db.VarChar(10)
+  serviceType  String?  @map("service_type") @db.VarChar(3)
+  externalType String?  @map("external_type") @db.VarChar(11)
+  isoCode      String?  @map("iso_code")
+  status       String   @default("1")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  @@index([country, externalType])
+  @@map("service_banks")
+}
+
+model FxRate {
+  id           BigInt   @id @default(autoincrement())
+  fromCurrency String   @map("from_currency") @db.VarChar(3)
+  toCurrency   String   @map("to_currency") @db.VarChar(3)
+  rate         Decimal  @db.Decimal(20, 8)
+  provider     String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@unique([fromCurrency, toCurrency, provider], name: "fx_rate_pair")
+  @@index([fromCurrency, toCurrency])
+  @@map("fx_rates")
+}
+
+model AdminWallet {
+  id        BigInt   @id @default(autoincrement())
+  uniqueId  String   @unique @map("unique_id")
+  name      String?
+  address   String?  @db.Text
+  network   String?
+  currency  String?
+  status    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@map("admin_wallets")
+}

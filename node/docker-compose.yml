@@ -1,0 +1,49 @@
+version: "3.9"
+
+# Local development compose file. Production runs on AWS (ECS/EKS) and
+# does not use this file. Secrets in production are pulled from AWS
+# Secrets Manager via SecretsLoader.
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    environment:
+      - NODE_ENV=production
+      - APP_ENV=local
+      - PORT=8080
+    env_file: [.env]
+    ports: ["8080:8080"]
+    depends_on: [mysql, redis]
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: runtime
+    command: ["node", "dist/worker.js"]
+    environment:
+      - NODE_ENV=production
+      - APP_ENV=local
+    env_file: [.env]
+    depends_on: [mysql, redis]
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: eficyent
+    ports: ["3306:3306"]
+    volumes: [mysql-data:/var/lib/mysql]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: [redis-data:/data]
+
+volumes:
+  mysql-data:
+  redis-data:
