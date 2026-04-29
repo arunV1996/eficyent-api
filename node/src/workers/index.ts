@@ -4,6 +4,7 @@ import { getBullConnection } from "../config/redis";
 import { logger } from "../helpers/logger";
 import { QueueName, QueueNames } from "../queues/queues";
 import { processPayout } from "./handlers/payoutHandler";
+import { processBulkPayout } from "./handlers/bulkPayoutHandler";
 import { processCallback } from "./handlers/callbackHandler";
 import { processFxRates } from "./handlers/fxRatesHandler";
 import { processIdempotencyReaper } from "./handlers/idempotencyReaperHandler";
@@ -33,6 +34,11 @@ const definitions: WorkerDef[] = [
     queue: QueueNames.Payout,
     concurrency: env().BULLMQ_PAYOUT_CONCURRENCY,
     handler: processPayout,
+  },
+  {
+    queue: QueueNames.BulkPayout,
+    concurrency: env().BULLMQ_BULK_PAYOUT_CONCURRENCY,
+    handler: processBulkPayout,
   },
   {
     queue: QueueNames.Callback,

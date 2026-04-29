@@ -596,6 +596,65 @@ export async function siteName(): Promise<string> {
 }
 
 /**
+ * Mirror of FieldsHelper::transaction_form_fields. Returns the *transaction
+ * level* fields a user fills in for a payout - amount, remarks, supporting
+ * documents, payment purpose. The Laravel signature accepts an optional
+ * (user, type, country) for per-corridor overrides; the simplified Phase 6
+ * shape covers the canonical fields.
+ */
+export async function transactionFormFields(): Promise<FieldDef[]> {
+  return [
+    make("amount", "Amount", {
+      type: "number",
+      validation: { min_value: 1, max_value: 10_000_000 },
+    }),
+    make("quote_id", "Quote ID"),
+    make("remarks", "Remarks", {
+      mandatory: false,
+      validation: { max_length: 255 },
+    }),
+    make("purpose_of_payment", "Purpose of Payment", { mandatory: false }),
+    make("supporting_document", "Supporting Document", {
+      type: "file",
+      mandatory: false,
+      validation: {
+        accepted_extensions: ["image/jpeg", "image/png", "image/jpg", "application/pdf"],
+        max_file_size: 5 * 1024 * 1024,
+      },
+    }),
+    make("txn_ref_no", "Transaction Reference Number", {
+      mandatory: false,
+      validation: { max_length: 64 },
+    }),
+    make("client_reference_id", "Client Reference ID", {
+      mandatory: false,
+      validation: { max_length: 255 },
+    }),
+  ];
+}
+
+/**
+ * Mirror of FieldsHelper::QuoteFormFields - the static minimal quote fields
+ * that drive instant + bulk payout uploads.
+ */
+export async function quoteFormFields(): Promise<FieldDef[]> {
+  return [
+    make("amount", "Amount", {
+      type: "number",
+      validation: { min_value: 1, max_value: 10_000_000 },
+    }),
+    make("remarks", "Remarks", {
+      mandatory: false,
+      validation: { max_length: 255 },
+    }),
+    make("txn_ref_no", "Transaction Reference Number", {
+      mandatory: false,
+      validation: { max_length: 64 },
+    }),
+  ];
+}
+
+/**
  * Mirror of FieldsHelper::sender_fields. Cached per-(type, merchantId,
  * deposit-on/off) tuple - matches the Laravel cache key exactly so two
  * deployments converge on the same shape.

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authRoutes } from "./auth.routes";
-import { payoutRoutes } from "./payout.routes";
+import { payoutPublicRoutes, payoutRoutes } from "./payout.routes";
 import { settingsRoutes } from "./settings.routes";
 import { staticPagesRoutes } from "./staticPages.routes";
 import {
@@ -71,8 +71,9 @@ export async function apiRouter(): Promise<Router> {
   r.use("/user/ledgers", await ledgersRoutes());
   r.use("/user", await retryDepositRoute());
 
-  // Phase 1
-  r.use("/user/beneficiary-transactions", payoutRoutes());
+  // Phase 6 - full BeneficiaryTransaction surface
+  r.use("/user/beneficiary-transactions", await payoutRoutes());
+  r.use("/user", await payoutPublicRoutes());
 
   return r;
 }

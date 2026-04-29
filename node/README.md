@@ -231,7 +231,7 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 3 | Onboarding (multi-step), VirtualAccount, BeneficiaryAccounts | done |
 | 4 | Senders, Quotes, Wallet (+ WalletTransactions) | done |
 | 5 | Deposits, Ledger (full bankBalance loop closed) | done |
-| 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | pending |
+| 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | done |
 | 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | pending |
 | 8 | External services (Caliza, Diginine, FvBank, Massive, ProcessingUnit, Compliance, Remittance, Surepass, Incode, ViyonaPay, InvoiceMate, Telegram, HeraldSumsub) | pending |
 | 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) | pending |
@@ -301,6 +301,25 @@ underlying module lands:
 * `LedgerRepository`'s polymorphic `whereHasMorph` is replaced with an
   explicit candidate-id JOIN; behaviour is identical and the search-key
   match performs better at scale.
+
+### Phase 6 deferred items
+
+* `beneficiary-transactions/store|direct` external dispatch chain
+  (Compliance -> ProcessingUnit -> Caliza/Diginine/FvBank) lands in
+  Phase 8; the worker currently transitions APPROVED/INITIATED -> PROCESSING
+  + writes the audit row + bookkeeping ledger.
+* `beneficiary-transactions/instant/store` and `bulk/store` enqueue a
+  PayoutJob carrying the entire row payload; the worker that materialises
+  Quote + BeneficiaryAccount + Sender + BeneficiaryTransaction lands in
+  Phase 8 alongside the external service drivers.
+* `beneficiary-transactions/export` (PDF receipt) and `download` (bulk
+  PDF/Excel) and `bulk/template` -> 501 (Phase 8 mpdf/excel).
+* `retry_external_service` for COMPLIANCE_INITIATION_FAILED transitions is
+  logged-only; the actual ComplianceService::make call lands in Phase 8.
+* Polymorphic refund chain (`createRefund` for cancel + reject) is fully
+  wired and writes back into Wallet (credit) or DepositTransaction (refund
+  type) + Ledger; downstream notifications (Telegram, callbacks) land in
+  Phases 8/9.
 
 Each phase keeps API contracts byte-stable and is deployable independently
 behind a feature flag.

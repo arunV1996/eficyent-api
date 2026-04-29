@@ -7,10 +7,15 @@ import { getQueue, QueueName, QueueNames } from "./queues";
  */
 
 export interface PayoutJobPayload {
-  beneficiaryTransactionId: string;
-  payoutJobId: string;
+  beneficiaryTransactionId?: string;
+  payoutJobUniqueId: string;
   userId: string;
   source: "direct" | "instant" | "approval" | "bulk";
+}
+
+export interface BulkPayoutJobPayload {
+  payoutJobUniqueId: string;
+  userId: string;
 }
 
 export interface CallbackJobPayload {
@@ -38,13 +43,15 @@ async function enqueue(
 export const Dispatch = {
   payout: (data: PayoutJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.Payout, "ProcessPayout", data, {
-      jobId: `payout:${data.beneficiaryTransactionId}`,
+      jobId: data.beneficiaryTransactionId
+        ? `payout:${data.beneficiaryTransactionId}`
+        : `payout-job:${data.payoutJobUniqueId}`,
       ...opts,
     }),
 
-  bulkPayout: (data: { batchId: string; userId: string }, opts?: JobsOptions) =>
+  bulkPayout: (data: BulkPayoutJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.BulkPayout, "ProcessBulkPayout", data, {
-      jobId: `bulk:${data.batchId}`,
+      jobId: `bulk:${data.payoutJobUniqueId}`,
       ...opts,
     }),
 
