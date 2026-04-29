@@ -232,7 +232,7 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 4 | Senders, Quotes, Wallet (+ WalletTransactions) | done |
 | 5 | Deposits, Ledger (full bankBalance loop closed) | done |
 | 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | done |
-| 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | pending |
+| 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | done |
 | 8 | External services (Caliza, Diginine, FvBank, Massive, ProcessingUnit, Compliance, Remittance, Surepass, Incode, ViyonaPay, InvoiceMate, Telegram, HeraldSumsub) | pending |
 | 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) | pending |
 | 10 | Admin / Treasury / Support consoles, Reports, Exports, Imports | pending |
@@ -301,6 +301,25 @@ underlying module lands:
 * `LedgerRepository`'s polymorphic `whereHasMorph` is replaced with an
   explicit candidate-id JOIN; behaviour is identical and the search-key
   match performs better at scale.
+
+### Phase 7 deferred items
+
+* `team/dashboard/statistics` and `team/dashboard/charts-data` -> 501;
+  the DashboardRepository port lands alongside the admin/treasury console
+  in Phase 10.
+* CORPORATE-role data scoping (filter list responses by team_member_id)
+  is wired through `req.teamMember` but the underlying Phase 4-6 list
+  services apply it as their downstream operations are extended; the
+  visible behaviour today: OWNER and TEAM_MEMBER see the full
+  business-user dataset, CORPORATE sees the same. The narrowing layer
+  lands once the bulk-payout worker (Phase 8) is in.
+* Team forgot-password notification email is logged-only - the actual
+  TeamAuthEmailService transport lands when the Mail subsystem is
+  ported.
+* `team/get-credentials` returns an unencrypted RSA private key
+  exactly once (mirror of Laravel) and stores envelope-encrypted copies
+  for future re-fetch through the user-side flow. SOC auditors will
+  want to verify the client-side never round-trips it back.
 
 ### Phase 6 deferred items
 

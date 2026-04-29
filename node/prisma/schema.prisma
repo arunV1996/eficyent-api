@@ -90,6 +90,7 @@ model User {
   userServices       UserService[]
   wallets            Wallet[]
   senders            Sender[]
+  teamMembers        TeamMember[]
 
   @@index([merchantId])
   @@index([businessUserId])
@@ -473,8 +474,9 @@ model Sender {
   updatedAt         DateTime @updatedAt      @map("updated_at")
   deletedAt         DateTime? @map("deleted_at")
 
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  documents SenderDocument[]
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents   SenderDocument[]
+  teamMembers TeamMember[]
 
   @@index([userId])
   @@index([clientReferenceId])
@@ -1003,4 +1005,54 @@ model CallbackLog {
 
   @@index([loggableType, loggableId])
   @@map("callback_logs")
+}
+
+// -----------------------------------------------------------------------------
+// Team members (Phase 7)
+// -----------------------------------------------------------------------------
+//
+// Team members log in to the parent business user's account through a
+// dedicated /team/login endpoint. They receive their own opaque token
+// stored in personal_access_tokens with tokenable_type = "App\\Models\\TeamMember".
+//
+// Permission model (mirror of user_role_map / user_permission_map):
+//   role:        ADMIN | OWNER | TEAM_MEMBER (= SUPPORT_MEMBER) | CORPORATE
+//   permission:  INITIATOR | MAKER (= CREATOR) | CHECKER (= APPROVER) | MAKER_CHECKER
+
+model TeamMember {
+  id                BigInt    @id @default(autoincrement())
+  uniqueId          String    @unique @map("unique_id")
+  userId            BigInt    @map("user_id")
+  senderId          BigInt?   @map("sender_id")
+
+  name              String    @db.VarChar(50)
+  email             String    @unique @db.VarChar(50)
+  mobileCountryCode String?   @map("mobile_country_code")
+  mobile            String?
+  password          String
+
+  emailCode         String?   @map("email_code")
+  emailCodeExpiry   String?   @map("email_code_expiry")
+  lastPasswordReset DateTime? @map("last_password_reset")
+
+  // Encrypted-at-rest values (envelope-encrypted via KMS in service layer).
+  apiKey      String? @map("api_key") @db.LongText
+  saltKey     String? @map("salt_key") @db.LongText
+  privateKey  String? @map("private_key") @db.LongText
+  publicKey   String? @map("public_key") @db.LongText
+
+  role        Int     @default(3)
+  permission  Int     @default(2)
+
+  timezone    String  @default("Asia/Kolkata") @db.VarChar(30)
+  status      Int     @default(1)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt      @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender Sender? @relation(fields: [senderId], references: [id])
+
+  @@index([userId])
+  @@map("team_members")
 }

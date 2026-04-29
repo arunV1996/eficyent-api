@@ -20,6 +20,7 @@ import { quotesRoutes } from "./quotes.routes";
 import { walletsRoutes } from "./wallets.routes";
 import { depositsRoutes, retryDepositRoute } from "./deposits.routes";
 import { ledgersRoutes } from "./ledgers.routes";
+import { teamAuthedRoutes, teamPublicRoutes } from "./team.routes";
 
 /**
  * Top-level API router. Mirrors Laravel routes/api.php structure.
@@ -74,6 +75,12 @@ export async function apiRouter(): Promise<Router> {
   // Phase 6 - full BeneficiaryTransaction surface
   r.use("/user/beneficiary-transactions", await payoutRoutes());
   r.use("/user", await payoutPublicRoutes());
+
+  // Phase 7 - TeamMembers / Corporate
+  // Public endpoints live at /corporate/* and /team/* (no leading prefix
+  // wrapper - the route file handles its own paths to mirror Laravel).
+  r.use("/", await teamPublicRoutes());
+  r.use("/team", await teamAuthedRoutes());
 
   return r;
 }

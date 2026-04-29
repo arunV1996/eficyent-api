@@ -337,3 +337,37 @@ export const PAYMENT_PROOF_FIRA = "fira";
 
 // Payout-job status (already had pending/processing/completed/failed)
 export const PAYOUT_JOB_STATUS_REJECTED = 4;
+
+// Team-member roles (mirror of user_role_map).
+export const TEAM_MEMBER_ROLE_ADMIN = 1;
+export const TEAM_MEMBER_ROLE_OWNER = 2;
+// (TEAM_MEMBER_ROLE_SUPPORT_MEMBER, TEAM_MEMBER_ROLE_CORPORATE already defined.)
+
+export const USER_ROLE_MAP: Record<string, number> = {
+  ADMIN: TEAM_MEMBER_ROLE_ADMIN,
+  OWNER: TEAM_MEMBER_ROLE_OWNER,
+  TEAM_MEMBER: TEAM_MEMBER_ROLE_SUPPORT_MEMBER,
+  CORPORATE: TEAM_MEMBER_ROLE_CORPORATE,
+};
+
+export const USER_PERMISSION_MAP: Record<string, number> = {
+  APPROVER: TEAM_MEMBER_PERMISSION_CHECKER,
+  INITIATOR: TEAM_MEMBER_PERMISSION_INITIATOR,
+  CREATOR: TEAM_MEMBER_PERMISSION_MAKER,
+  CREATOR_AND_APPROVER: TEAM_MEMBER_PERMISSION_MAKER_CHECKER,
+};
+
+// Team-member status (already had ACTIVE = 1, INACTIVE = 0).
+export const TEAM_MEMBER_ACTIVE = 1;
+export const TEAM_MEMBER_INACTIVE = 0;
+export const TEAM_MEMBER_DISABLED = 2;
+
+export const TEAM_MEMBER_STATUS_MAP: Record<string, number> = {
+  ACTIVE: TEAM_MEMBER_ACTIVE,
+  INACTIVE: TEAM_MEMBER_INACTIVE,
+  DISABLED: TEAM_MEMBER_DISABLED,
+};
+
+// Sanctum-style tokenable types.
+export const TOKENABLE_USER = "App\\Models\\User";
+export const TOKENABLE_TEAM_MEMBER = "App\\Models\\TeamMember";
