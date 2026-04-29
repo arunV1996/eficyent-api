@@ -232,6 +232,32 @@ model MerchantFee {
   @@map("merchant_fees")
 }
 
+/// Polymorphic fee table introduced by migration 2025_12_29_053714.
+/// `ownerType` + `ownerId` form the morph key. Possible owners:
+///   - "App\\Models\\User"     - user-level fee override
+///   - "App\\Models\\Merchant" - merchant-level fee override
+///   - both null               - global default fee
+model Fee {
+  id        BigInt   @id @default(autoincrement())
+  uniqueId  String   @unique @map("unique_id")
+  ownerType String?  @map("owner_type")
+  ownerId   BigInt?  @map("owner_id")
+  feeName   String   @map("fee_name")
+  feeType   String   @default("3") @map("fee_type")
+  mode      String?
+  feeValue  Decimal  @map("fee_value") @db.Decimal(15, 6)
+  currency1 String?  @map("currency_1") @db.Char(3)
+  currency2 String?  @map("currency_2") @db.Char(3)
+  status    Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  @@index([ownerType, ownerId])
+  @@index([feeName, currency1, currency2])
+  @@index([feeName, mode, currency1])
+  @@map("fees")
+}
+
 // -----------------------------------------------------------------------------
 // beneficiary accounts + transactions (payout path)
 // -----------------------------------------------------------------------------
@@ -404,7 +430,8 @@ model Wallet {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
 
   @@unique([userId, currency])
   @@index([userId, currency])
@@ -429,6 +456,7 @@ model Sender {
   mobile            String?
   dob               DateTime? @db.Date
   country           String?  @db.VarChar(100)
+  nationality       String?
   address1          String?  @map("address_1") @db.VarChar(255)
   address2          String?  @map("address_2") @db.VarChar(255)
   city              String?  @db.VarChar(100)
@@ -444,11 +472,137 @@ model Sender {
   updatedAt         DateTime @updatedAt      @map("updated_at")
   deletedAt         DateTime? @map("deleted_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents SenderDocument[]
 
   @@index([userId])
   @@index([clientReferenceId])
+  @@index([userId, idNumber])
   @@map("senders")
+}
+
+model SenderDocument {
+  id              BigInt   @id @default(autoincrement())
+  uniqueId        String   @unique @map("unique_id")
+  senderId        BigInt   @map("sender_id")
+  documentName    String?  @map("document_name") @db.VarChar(100)
+  documentType    String?  @map("document_type") @db.VarChar(100)
+  documentCountry String?  @map("document_country") @db.VarChar(100)
+  documentFile    String?  @map("document_file") @db.VarChar(255)
+  status          Int      @default(1)
+  verifiedAt      DateTime? @map("verified_at")
+  remarks         String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt      @map("updated_at")
+
+  sender Sender @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([senderId])
+  @@map("sender_documents")
+}
+
+// -----------------------------------------------------------------------------
+// Quotes (Phase 4)
+// -----------------------------------------------------------------------------
+
+model Quote {
+  id                       BigInt   @id @default(autoincrement())
+  uniqueId                 String   @unique @map("unique_id")
+  userId                   BigInt   @map("user_id")
+  beneficiaryAccountId     BigInt?  @map("beneficiary_account_id")
+  virtualAccountId         BigInt?  @map("virtual_account_id")
+  sourceId                 BigInt?  @map("source_id")
+  sourceType               String?  @map("source_type")
+
+  amount                   Decimal  @default(0) @db.Decimal(15, 2)
+  totalSendingAmount       Decimal? @map("total_sending_amount") @db.Decimal(15, 2)
+  commissionType           Int?     @map("commission_type")
+  commissionValue          Decimal  @default(0) @map("commission_value") @db.Decimal(15, 4)
+  commissionAmount         Decimal  @default(0) @map("commission_amount") @db.Decimal(15, 2)
+  externalCommissionAmount Decimal  @default(0) @map("external_commission_amount") @db.Decimal(15, 2)
+  merchantCommissionAmount Decimal  @default(0) @map("merchant_commission_amount") @db.Decimal(15, 2)
+  receivingAmount          Decimal  @default(0) @map("receiving_amount") @db.Decimal(15, 2)
+
+  fxRate                   String?  @map("fx_rate")
+  externalFxRate           String?  @map("external_fx_rate")
+  internalFxRate           String?  @map("internal_fx_rate")
+
+  quoteType                String   @default("FORWARD") @map("quote_type")
+  recipientType            Int      @default(1) @map("recipient_type")
+  recipientCountry         String?  @map("recipient_country") @db.VarChar(10)
+  receivingCurrency        String?  @map("receiving_currency") @db.VarChar(5)
+  paymentRail              String?  @map("payment_rail")
+
+  status                   Int      @default(0)
+  externalType             String   @default("ec") @map("external_type")
+  externalReferenceId      String?  @map("external_reference_id")
+  externalData             Json?    @map("external_data")
+
+  expiresAt                DateTime? @map("expires_at")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt      @map("updated_at")
+
+  walletTransactions WalletTransaction[]
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@index([sourceType, sourceId])
+  @@map("quotes")
+}
+
+// -----------------------------------------------------------------------------
+// WalletTransaction (Phase 4)
+// -----------------------------------------------------------------------------
+
+model WalletTransaction {
+  id                       BigInt   @id @default(autoincrement())
+  uniqueId                 String   @unique @map("unique_id")
+  userId                   BigInt   @map("user_id")
+  walletId                 BigInt   @map("wallet_id")
+  quoteId                  BigInt?  @map("quote_id")
+  beneficiaryTransactionId BigInt?  @map("beneficiary_transaction_id")
+  amount                   Decimal  @default(0) @db.Decimal(15, 2)
+  fees                     Decimal  @default(0) @db.Decimal(15, 2)
+  totalAmount              Decimal  @default(0) @map("total_amount") @db.Decimal(15, 2)
+  type                     Int      @default(1)
+  balanceBefore            Decimal? @map("balance_before") @db.Decimal(15, 2)
+  balanceAfter             Decimal? @map("balance_after") @db.Decimal(15, 2)
+  status                   Int      @default(0)
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt      @map("updated_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  quote  Quote? @relation(fields: [quoteId], references: [id])
+
+  @@index([userId, walletId])
+  @@index([beneficiaryTransactionId])
+  @@map("wallet_transactions")
+}
+
+// -----------------------------------------------------------------------------
+// Ledger (used by Helper::updateLedger - referenced from Phase 4 wallet
+// convert and Phase 5 deposit/payout settlement). Transaction polymorphism
+// (transaction_type + transaction_id) preserved.
+// -----------------------------------------------------------------------------
+
+model Ledger {
+  id                BigInt   @id @default(autoincrement())
+  uniqueId          String   @unique @map("unique_id")
+  userId            BigInt   @map("user_id")
+  virtualAccountId  BigInt?  @map("virtual_account_id")
+  walletId          BigInt?  @map("wallet_id")
+  transactionType   String?  @map("transaction_type")
+  transactionId     BigInt?  @map("transaction_id")
+  balance           Decimal  @default(0) @db.Decimal(15, 2)
+  externalType      String?  @map("external_type")
+  description       String?  @db.Text
+  refundLedgerId    BigInt?  @map("refund_ledger_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt      @map("updated_at")
+
+  @@index([userId, virtualAccountId])
+  @@index([transactionType, transactionId])
+  @@map("ledgers")
 }
 
 model BeneficiaryTransaction {

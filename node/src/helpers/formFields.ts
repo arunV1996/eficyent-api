@@ -594,3 +594,159 @@ export async function updateProfileFormFields(
 export async function siteName(): Promise<string> {
   return (await settingGet<string>("site_name", "Eficyent")) || "Eficyent";
 }
+
+/**
+ * Mirror of FieldsHelper::sender_fields. Cached per-(type, merchantId,
+ * deposit-on/off) tuple - matches the Laravel cache key exactly so two
+ * deployments converge on the same shape.
+ */
+const senderFieldsCache = new Map<
+  string,
+  { value: FieldDef[]; expiresAt: number }
+>();
+const SENDER_FIELDS_TTL_MS = 6 * 60 * 60 * 1000;
+
+interface SenderFieldsContext {
+  type: number;
+  merchantId: bigint | null;
+  remitterDepositEnabled: boolean;
+}
+
+export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]> {
+  const cacheKey = `${ctx.type}:${ctx.merchantId?.toString() ?? "default"}:${
+    ctx.remitterDepositEnabled ? "deposit_on" : "deposit_off"
+  }`;
+  const hit = senderFieldsCache.get(cacheKey);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+
+  const formCtx = await buildContext();
+
+  const common: FieldDef[] = [
+    make("email", "Email", { validation: VALIDATION_PRESETS.email }),
+    make("mobile_country_code", "Mobile Country Code", {
+      values: formCtx.mobile_country_codes,
+    }),
+    make("mobile", "Mobile", { editable: false, validation: VALIDATION_PRESETS.mobile }),
+    make("address_1", "Address", { validation: VALIDATION_PRESETS.address }),
+    make("country", "Country", { values: formCtx.countries }),
+    make("nationality", "Nationality", { values: formCtx.countries }),
+    make("state", "State / Province", {
+      values: formCtx.states,
+      parent_key: "country",
+    }),
+    make("city", "City", { validation: VALIDATION_PRESETS.city }),
+    make("postal_code", "Postal Code", {
+      validation: VALIDATION_PRESETS.postal_code,
+    }),
+    make("source_of_funds", "Source of Funds"),
+    make("id_type", "ID Type"),
+    make("id_number", "ID Number", { validation: VALIDATION_PRESETS.id_number }),
+  ];
+  if (ctx.remitterDepositEnabled) {
+    common.push(make("client_reference_id", "Client Reference ID"));
+  }
+
+  let fields: FieldDef[] = [];
+  if (ctx.type === USER_TYPE_INDIVIDUAL) {
+    const eighteenYearsAgo = new Date();
+    eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+    const maxDate = eighteenYearsAgo.toISOString().slice(0, 10);
+    const individual: FieldDef[] = [
+      make("first_name", "First Name", { validation: VALIDATION_PRESETS.name }),
+      make("middle_name", "Middle Name", {
+        mandatory: false,
+        validation: VALIDATION_PRESETS.name,
+      }),
+      make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
+      make("dob", "Date of Birth", { type: "date", validation: { max_date: maxDate } }),
+    ];
+    fields = [...individual, ...common];
+  } else if (ctx.type === USER_TYPE_BUSINESS) {
+    const business: FieldDef[] = [
+      make("business_name", "Business Name", {
+        validation: VALIDATION_PRESETS.business_name,
+      }),
+    ];
+
+    const owners: FieldDef = make("owners", "Business Owners", {
+      type: "group",
+      repeatable: true,
+      validation: { min_length: 1, max_length: 3 },
+      children: [
+        make("first_name", "First Name", { validation: VALIDATION_PRESETS.name }),
+        make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
+        make("id_type", "ID Type"),
+        make("id_number", "ID Number", {
+          validation: VALIDATION_PRESETS.id_number,
+        }),
+        make("email", "Email", {
+          mandatory: false,
+          validation: VALIDATION_PRESETS.email,
+        }),
+        make("mobile_country_code", "Mobile Country Code", {
+          mandatory: false,
+          values: formCtx.mobile_country_codes,
+        }),
+        make("mobile", "Mobile", {
+          mandatory: false,
+          editable: false,
+          validation: VALIDATION_PRESETS.mobile,
+        }),
+        make("address_1", "Address Line 1", {
+          validation: VALIDATION_PRESETS.address,
+        }),
+        make("address_2", "Address Line 2", {
+          mandatory: false,
+          validation: VALIDATION_PRESETS.address,
+        }),
+        make("country", "Country", { values: formCtx.countries }),
+        make("nationality", "Nationality", { values: formCtx.countries }),
+        make("state", "State", {
+          mandatory: false,
+          values: formCtx.states,
+          parent_key: "country",
+        }),
+        make("city", "City", {
+          mandatory: false,
+          validation: VALIDATION_PRESETS.city,
+        }),
+        make("postal_code", "Postal Code", {
+          mandatory: false,
+          validation: VALIDATION_PRESETS.postal_code,
+        }),
+        make("designation", "Designation"),
+      ],
+    });
+
+    const documents: FieldDef[] = [
+      make("proofs", "Proofs", {
+        type: "group",
+        children: [
+          make("document_file", "Document Front File", {
+            type: "file",
+            validation: {
+              accepted_extensions: ["image/jpeg", "image/png", "image/jpg", "application/pdf"],
+              max_file_size: 5 * 1024 * 1024,
+            },
+          }),
+          make("document_back_file", "Document Back File", {
+            type: "file",
+            mandatory: false,
+            validation: {
+              accepted_extensions: ["image/jpeg", "image/png", "image/jpg", "application/pdf"],
+              max_file_size: 5 * 1024 * 1024,
+            },
+          }),
+        ],
+      }),
+    ];
+
+    fields = [...business, ...common, ...documents, owners];
+  }
+
+  senderFieldsCache.set(cacheKey, {
+    value: fields,
+    expiresAt: Date.now() + SENDER_FIELDS_TTL_MS,
+  });
+  return fields;
+}

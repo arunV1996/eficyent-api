@@ -229,7 +229,7 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 1 | Foundation + Auth + Payout reference module | done |
 | 2 | Profile, VerifyEmail, Subuser, Settings, StaticPages, Lookups | done |
 | 3 | Onboarding (multi-step), VirtualAccount, BeneficiaryAccounts | done |
-| 4 | Senders, Quotes, Wallet (+ WalletTransactions) | pending |
+| 4 | Senders, Quotes, Wallet (+ WalletTransactions) | done |
 | 5 | Deposits (incl. webhook intake), Ledger | pending |
 | 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | pending |
 | 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | pending |
@@ -270,6 +270,21 @@ underlying module lands:
   that covers the canonical USD + non-USD branches. The full per-country
   rule overlay (lookup-driven `country_configurations` + per-merchant
   field whitelists) lands alongside the lookup ingestion job in Phase 8.
+
+### Phase 4 deferred items
+
+* `quotes/store` cross-currency path requires the Massive provider
+  (Phase 8). Same-currency virtual-account quotes and wallet quotes are
+  fully functional now (no external HTTP, transaction-fee path executes).
+* `wallets/convert` writes a Ledger row via the polymorphic
+  `transaction_type` + `transaction_id` pattern but without the full
+  refund chain - that lands in Phase 5 alongside DepositTransaction.
+* `senders/bulk/template` and `senders/bulk/store` -> 501 (Phase 8 Excel).
+* The AED -> INR rate override (env('USD_TO_AED') from Laravel
+  QuoteRepository) lives behind the Massive driver path and re-enables
+  in Phase 8 with the rest of the AED handling.
+* `bankBalance` now includes WalletTransaction credits but still skips
+  DepositTransaction credits - lands in Phase 5.
 
 Each phase keeps API contracts byte-stable and is deployable independently
 behind a feature flag.
