@@ -230,7 +230,7 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 2 | Profile, VerifyEmail, Subuser, Settings, StaticPages, Lookups | done |
 | 3 | Onboarding (multi-step), VirtualAccount, BeneficiaryAccounts | done |
 | 4 | Senders, Quotes, Wallet (+ WalletTransactions) | done |
-| 5 | Deposits (incl. webhook intake), Ledger | pending |
+| 5 | Deposits, Ledger (full bankBalance loop closed) | done |
 | 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | pending |
 | 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | pending |
 | 8 | External services (Caliza, Diginine, FvBank, Massive, ProcessingUnit, Compliance, Remittance, Surepass, Incode, ViyonaPay, InvoiceMate, Telegram, HeraldSumsub) | pending |
@@ -283,8 +283,24 @@ underlying module lands:
 * The AED -> INR rate override (env('USD_TO_AED') from Laravel
   QuoteRepository) lives behind the Massive driver path and re-enables
   in Phase 8 with the rest of the AED handling.
-* `bankBalance` now includes WalletTransaction credits but still skips
-  DepositTransaction credits - lands in Phase 5.
+
+### Phase 5 deferred items
+
+* `bankBalance` is now fully end-to-end:
+    deposits (COMPLETED, scoped by memo for PAYINCOLLECTION merchants)
+    - direct beneficiary debits
+    - quote-routed beneficiary debits
+    - wallet credits via the source quote.
+* `deposits/store` records the row + status history immediately and logs
+  the ProcessingUnit + InvoiceMate + Telegram dispatch intent. The actual
+  external HTTP calls land in Phase 8; the corresponding deposit-completion
+  webhook handlers land in Phase 9.
+* `deposits/retry_deposit` rotates `order_id` and resets status to
+  PROCESSING_UNIT_INITIATED; the redispatch is wired in Phase 8.
+* `deposits/export` and `ledgers/export` -> 501 (PDF/Excel via Phase 8).
+* `LedgerRepository`'s polymorphic `whereHasMorph` is replaced with an
+  explicit candidate-id JOIN; behaviour is identical and the search-key
+  match performs better at scale.
 
 Each phase keeps API contracts byte-stable and is deployable independently
 behind a feature flag.

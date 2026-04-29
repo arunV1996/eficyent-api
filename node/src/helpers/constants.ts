@@ -253,3 +253,42 @@ export const MORPH_MERCHANT = "App\\Models\\Merchant";
 export const MORPH_BENEFICIARY_TRANSACTION = "App\\Models\\BeneficiaryTransaction";
 export const MORPH_DEPOSIT_TRANSACTION = "App\\Models\\DepositTransaction";
 export const MORPH_WALLET_TRANSACTION = "App\\Models\\WalletTransaction";
+
+// Deposits (Phase 5)
+export const DEPOSIT_TRANSACTION_PENDING = 0;
+export const DEPOSIT_TRANSACTION_COMPLETED = 1;
+export const DEPOSIT_TRANSACTION_FAILED = 2;
+export const DEPOSIT_TRANSACTION_REJECTED = 3;
+export const DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED = 4;
+export const DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING = 5;
+export const DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED = 6;
+
+export const DEPOSIT_TRANSACTION_STATUS_MAP: Record<string, number> = {
+  PROCESSING: DEPOSIT_TRANSACTION_PENDING,
+  COMPLETED: DEPOSIT_TRANSACTION_COMPLETED,
+  FAILED: DEPOSIT_TRANSACTION_FAILED,
+};
+
+export const DEPOSIT_TYPE_DEPOSIT = "deposit";
+export const DEPOSIT_TYPE_REFUND = "refund";
+export const DEPOSIT_TYPE_TOPUP = "topup";
+export const DEPOSIT_TYPE_CREDIT = "credit";
+
+export const DEPOSIT_TYPE_MAP: Record<string, string> = {
+  CREDIT: DEPOSIT_TYPE_CREDIT,
+  TOPUP: DEPOSIT_TYPE_TOPUP,
+};
+
+export const DEPOSIT_CURRENCY_TYPES = ["USDC", "USDT", "USD"] as const;
+
+// Transaction-type map (CREDIT/DEBIT) - mirror of transaction_type_map().
+export const TRANSACTION_TYPE_MAP: Record<string, number> = {
+  CREDIT: TRANSACTION_TYPE_CREDIT,
+  DEBIT: TRANSACTION_TYPE_DEBIT,
+};
+
+// Export type
+export const FILE_TYPE_PDF = 1;
+export const FILE_TYPE_EXCEL = 2;
+export const EXPORT_TYPE_PDF = "pdf";
+export const EXPORT_TYPE_EXCEL = "excel";

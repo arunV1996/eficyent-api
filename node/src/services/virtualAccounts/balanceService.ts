@@ -1,6 +1,7 @@
 import { Prisma, User, VirtualAccount, Wallet } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import {
+  DEPOSIT_TRANSACTION_COMPLETED,
   MORPH_VIRTUAL_ACCOUNT,
   TRANSACTION_TYPE_CREDIT,
   TRANSACTION_TYPE_DEBIT,
@@ -9,42 +10,60 @@ import {
 const ZERO = new Prisma.Decimal(0);
 
 /**
- * Mirror of Helper::bankBalance for VirtualAccount.
+ * Mirror of Helper::bankBalance for VirtualAccount (Phase 5: complete).
  *
  *   balance =
- *     sum(deposit_transactions.total_amount where va_id=X & status=COMPLETED)
- *   - sum(beneficiary_transactions.total_amount where quote.source=va)
- *   - sum(quote.total_sending_amount where wallet_transaction.type=CREDIT
- *         and quote.source=va)
+ *       sum(deposit_transactions.total_amount where va_id=X & status=COMPLETED)
+ *     - sum(beneficiary_transactions.total_amount where va_id=X)        (direct)
+ *     - sum(beneficiary_transactions.total_amount where quote.source=va) (via quote)
+ *     - sum(quote.total_sending_amount where wallet_transaction.type=CREDIT
+ *           and quote.source=va)                                          (wallet credits)
  *
- * DepositTransaction lands in Phase 5; that branch returns 0 until then.
- * The Wallet credit branch (re-enabled now that WalletTransaction is in
- * the schema) is the major Phase-4 addition - this unblocks accurate
- * balance previews for users who have converted any portion of a virtual
- * account balance into a wallet.
+ * The PAYINCOLLECTION variant scopes deposit credits by user.memo - matching
+ * the original Laravel branch exactly.
  */
 export async function computeBankBalance(
   user: User,
   virtualAccount: VirtualAccount,
 ): Promise<Prisma.Decimal> {
-  const quotes = await prisma().quote.findMany({
-    where: {
-      sourceType: MORPH_VIRTUAL_ACCOUNT,
-      sourceId: virtualAccount.id,
-    },
-    select: { id: true, totalSendingAmount: true },
-  });
-  const quoteIds = quotes.map((q) => q.id);
+  // Scope deposit credits by memo when the user is a PAYINCOLLECTION
+  // sub-account (mirror of the bankBalance branch in Helper.php).
+  let payinCollection = false;
+  if (user.merchantId) {
+    const merchant = await prisma().merchant.findFirst({
+      where: { uniqueId: user.merchantId },
+    });
+    if (merchant?.type === 4 /* MERCHANT_TYPE_PAYINCOLLECTION */) {
+      payinCollection = true;
+    }
+  }
 
-  const debits = await prisma().beneficiaryTransaction.aggregate({
-    where: { userId: user.id, virtualAccountId: virtualAccount.id },
-    _sum: { totalAmount: true },
-  });
-  const directDebits = debits._sum.totalAmount ?? ZERO;
+  const depositWhere: Prisma.DepositTransactionWhereInput = {
+    userId: user.id,
+    virtualAccountId: virtualAccount.id,
+    status: DEPOSIT_TRANSACTION_COMPLETED,
+    ...(payinCollection && user.memo ? { memo: user.memo } : {}),
+  };
+
+  const [depositAgg, directDebitAgg, quotes] = await Promise.all([
+    prisma().depositTransaction.aggregate({
+      where: depositWhere,
+      _sum: { totalAmount: true },
+    }),
+    prisma().beneficiaryTransaction.aggregate({
+      where: { userId: user.id, virtualAccountId: virtualAccount.id },
+      _sum: { totalAmount: true },
+    }),
+    prisma().quote.findMany({
+      where: { sourceType: MORPH_VIRTUAL_ACCOUNT, sourceId: virtualAccount.id },
+      select: { id: true, totalSendingAmount: true },
+    }),
+  ]);
 
   let payouts = ZERO;
   let walletCredits = ZERO;
-  if (quoteIds.length > 0) {
+  if (quotes.length > 0) {
+    const quoteIds = quotes.map((q) => q.id);
     const payoutAgg = await prisma().beneficiaryTransaction.aggregate({
       where: { userId: user.id, quoteId: { in: quoteIds } },
       _sum: { totalAmount: true },
@@ -67,15 +86,14 @@ export async function computeBankBalance(
     }
   }
 
-  // TODO Phase 5: subtract direct deposit credits (deposit_transactions)
-  return ZERO.minus(directDebits).minus(payouts).minus(walletCredits);
+  return (depositAgg._sum.totalAmount ?? ZERO)
+    .minus(directDebitAgg._sum.totalAmount ?? ZERO)
+    .minus(payouts)
+    .minus(walletCredits);
 }
 
 /**
  * Mirror of Helper::getWalletBalance.
- *   credits  = sum(wallet_transactions.total_amount where type=CREDIT)
- *   debits   = sum(wallet_transactions.total_amount where type=DEBIT)
- *   balance  = credits - debits
  */
 export async function getWalletBalance(
   user: User,

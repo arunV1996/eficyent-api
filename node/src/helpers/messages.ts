@@ -20,6 +20,7 @@ export const ApiSuccessMessages: Record<number, string> = {
   113: "Account validation completed.",
   107: "Quote created successfully.",
   108: "Wallet conversion completed.",
+  118: "Deposit retry triggered.",
 };
 
 export const ApiErrorMessages: Record<number, string> = {
@@ -49,8 +50,12 @@ export const ApiErrorMessages: Record<number, string> = {
   167: "Wallet not found.",
   169: "Wallet is not active.",
   172: "Wallet currency does not match the receiving currency.",
+  124: "Deposit transaction not found.",
+  149: "Ledger not found.",
+  165: "Failed to generate export.",
   186: "Either remitter_id or id_number - not both.",
   195: "C2B (consumer to business) is not supported.",
+  202: "Admin wallet not found.",
   109: "File upload failed.",
   110: "Missing X-Api-Key header.",
   111: "Missing X-Api-Signature header.",
