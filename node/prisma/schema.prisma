@@ -192,13 +192,21 @@ model UserDocument {
 // -----------------------------------------------------------------------------
 
 model Merchant {
-  id        BigInt   @id @default(autoincrement())
-  uniqueId  String   @unique @map("unique_id")
-  name      String?
-  type      Int
-  status    Int      @default(1)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  userId       BigInt?  @map("user_id")
+  name         String?
+  email        String?  @unique
+  apiKey       String?  @map("api_key") @db.LongText
+  saltKey      String?  @map("salt_key") @db.LongText
+  privateKey   String?  @map("private_key") @db.LongText
+  publicKey    String?  @map("public_key") @db.LongText
+  callbackUrl  String?  @map("callback_url") @db.LongText
+  type         Int
+  status       Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
 
   settings MerchantSetting[]
   fees     MerchantFee[]

@@ -8,6 +8,9 @@ import { processBulkPayout } from "./handlers/bulkPayoutHandler";
 import { processCallback } from "./handlers/callbackHandler";
 import { processFxRates } from "./handlers/fxRatesHandler";
 import { processIdempotencyReaper } from "./handlers/idempotencyReaperHandler";
+import { processCalizaWebhook } from "./handlers/calizaWebhookHandler";
+import { processDiginineWebhook } from "./handlers/diginineWebhookHandler";
+import { processDebitNotification } from "./handlers/debitNotificationHandler";
 
 /**
  * Worker registry. Each entry binds a queue to a handler with the
@@ -54,6 +57,21 @@ const definitions: WorkerDef[] = [
     queue: QueueNames.IdempotencyReaper,
     concurrency: 1,
     handler: processIdempotencyReaper,
+  },
+  {
+    queue: QueueNames.CalizaWebhook,
+    concurrency: env().BULLMQ_CALIZA_WEBHOOK_CONCURRENCY,
+    handler: processCalizaWebhook,
+  },
+  {
+    queue: QueueNames.DiginineWebhook,
+    concurrency: env().BULLMQ_DIGININE_WEBHOOK_CONCURRENCY,
+    handler: processDiginineWebhook,
+  },
+  {
+    queue: QueueNames.DebitNotification,
+    concurrency: env().BULLMQ_DEBIT_NOTIFICATION_CONCURRENCY,
+    handler: processDebitNotification,
   },
   // Remaining queues (deposit, compliance, remittance, ...) are wired up
   // alongside their respective controller conversions in subsequent phases.

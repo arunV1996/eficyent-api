@@ -19,14 +19,26 @@ export interface BulkPayoutJobPayload {
 }
 
 export interface CallbackJobPayload {
-  url: string;
+  userId: string;
+  eventType: string;
   payload: Record<string, unknown>;
-  headers?: Record<string, string>;
-  externalReferenceId?: string;
+  beneficiaryTransactionUniqueId?: string;
 }
 
 export interface FxRatesJobPayload {
   triggeredBy: "cron" | "api";
+}
+
+export interface CalizaWebhookJobPayload {
+  data: Record<string, unknown>;
+}
+
+export interface DiginineWebhookJobPayload {
+  data: Record<string, unknown>;
+}
+
+export interface DebitNotificationJobPayload {
+  beneficiaryTransactionId: string;
 }
 
 async function enqueue(
@@ -60,4 +72,16 @@ export const Dispatch = {
 
   fxRates: (data: FxRatesJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.FxRates, "RefreshFxRates", data, opts),
+
+  calizaWebhook: (data: CalizaWebhookJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.CalizaWebhook, "ProcessCalizaWebhook", data, opts),
+
+  diginineWebhook: (data: DiginineWebhookJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.DiginineWebhook, "ProcessDiginineWebhook", data, opts),
+
+  debitNotification: (data: DebitNotificationJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.DebitNotification, "SendDebitNotification", data, {
+      jobId: `debit:${data.beneficiaryTransactionId}`,
+      ...opts,
+    }),
 };

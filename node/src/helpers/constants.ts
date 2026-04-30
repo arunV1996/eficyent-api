@@ -376,3 +376,20 @@ export const TOKENABLE_TEAM_MEMBER = "App\\Models\\TeamMember";
 export const ID_VERIFIED_BY_HERALD_SUMSUB = "hs";
 export const ID_VERIFIED_BY_SUREPASS = "sp";
 export const ID_VERIFIED_BY_INCODE = "ic";
+
+// Callback event names emitted to merchant white-label endpoints
+// (mirror of Laravel CALLBACK_* defines). Phase 9.
+export const CALLBACK_PAYOUT_SUCCESS = "PAYOUT_SUCCESS";
+export const CALLBACK_PAYOUT_REJECTED = "PAYOUT_REJECTED";
+export const CALLBACK_PAYOUT_FAILED = "PAYOUT_FAILED";
+export const CALLBACK_DEPOSIT_SUCCESS = "DEPOSIT_SUCCESS";
+export const CALLBACK_DEPOSIT_FAILED = "DEPOSIT_FAILED";
+export const CALLBACK_VIRTUAL_ACCOUNT_CREATED = "VIRTUAL_ACCOUNT_CREATED";
+export const CALLBACK_RESPONSE = "callback";
+
+// External-service-call audit `call_for` value for inbound webhooks. Phase 9.
+export const EXTERNAL_CALL_FOR_CALLBACK = "callback";
+
+// Loggable polymorphic morph types for callback_logs
+// (mirrors Laravel BeneficiaryTransaction::loggable() polymorphic).
+export const MORPH_BENEFICIARY_TRANSACTION_CALLBACK_LOG = "App\\Models\\BeneficiaryTransaction";

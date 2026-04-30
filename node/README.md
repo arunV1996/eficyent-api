@@ -213,8 +213,10 @@ For 1M users:
 * [x] Build-only production image, non-root user
 * [x] AWS Secrets Manager bootstrap, no plaintext secrets in env
 * [ ] WAF rules at ALB / CloudFront (deploy-time, not in this repo)
-* [ ] Per-merchant request signing for white-label callbacks - lands when
-      Callbacks/* services are ported.
+* [ ] Per-merchant request signing for white-label callbacks - the
+      Callbacks/* dispatcher is ported (Phase 9). Signing is gated
+      behind merchant readiness; the salt_key column is in place so
+      enabling it is one-line in `merchantCallbackDispatcher.ts`.
 * [ ] Pen-test items raised by the audit team.
 
 ---
@@ -236,7 +238,7 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 8a | External services - core (HTTP foundation, Telegram, ProcessingUnit, Compliance, Massive, Caliza, FvBank, Diginine) | done |
 | 8b | External services - rest (KYC: HeraldSumsub + Incode + Surepass validation, ViyonaPay, InvoiceMate) | done |
 | 8c | Excel import + PDF/Excel exports + Mail transport + multer file-upload + AED override | done |
-| 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) | pending |
+| 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) + merchant callback dispatcher | done |
 | 10 | Admin / Treasury / Support consoles, Reports, Exports, Imports | pending |
 
 ### Phase 2 deferred items
@@ -353,6 +355,77 @@ underlying module lands:
   account anchor row to PENDING and only flips to CREATED if the
   provider returned `account_number` synchronously (sandbox does;
   production returns it via webhook in Phase 9).
+
+### Phase 9 (delivered)
+
+Phase 9 ports the inbound webhook surface plus the outbound merchant
+callback dispatcher.
+
+* **Inbound webhook routes** (mounted at the API root to mirror the
+  Laravel paths external providers have already registered):
+  - `POST /caliza-webhook` -> 200, queues `ProcessCalizaWebhook` for
+    forwarding to the operator-controlled downstream URL.
+  - `POST /diginine-webhook` -> 200, queues `ProcessDiginineWebhook`.
+  - `POST /ef-webhook` -> verified by the new
+    `fvbankWebhookSignature` middleware (HMAC-SHA256 of the raw body
+    against the FvBank `CLIENT_SECRET`), then 200 + Telegram log.
+  - `POST /compliance/webhook-callback` -> matches on
+    `compliance_data.transaction_id` (JSON path), promotes to
+    `COMPLIANCE_APPROVED` and triggers `ProcessingUnit.make` on PASSED,
+    `COMPLIANCE_REJECTED` on FAILED, writes an external_service_calls
+    audit row regardless of outcome.
+  - `POST /processingunit-webhook` -> dispatches by `module`:
+    - `withdraw` -> updates BeneficiaryTransaction (with the same
+      EVP/COMPLETED-protection rules as Laravel), enqueues
+      `SendCallback` (PAYOUT_SUCCESS/PAYOUT_REJECTED) +
+      `SendDebitNotification` on COMPLETED, runs `createRefund` on
+      first-time FAILED transitions.
+    - `deposit` -> updates DepositTransaction, writes status history,
+      writes a credit ledger row keyed off the polymorphic morph.
+* **FvBank signature middleware**
+  (`middleware/fvbankWebhookSignature.ts`) - mirrors
+  `VerifyFVBankSignature`. Uses the raw request body (captured by an
+  `express.json verify` hook in `index.ts`) for byte-exact HMAC
+  comparison so canonical JSON drift never breaks verification.
+* **Merchant callback dispatcher**
+  (`services/callbacks/merchantCallbackDispatcher.ts`) - resolves
+  `users.merchant_id -> merchants.callback_url` and POSTs the
+  Laravel-shaped envelope `{event, data, timestamp}`. The
+  `SendCallback` worker writes a `callback_logs` row (polymorphic on
+  the BeneficiaryTransaction) so deliveries are auditable end-to-end.
+  Schema gained `merchants.callback_url` + `api_key` + `salt_key` +
+  related fields to match the Laravel migration.
+* **Forwarder workers** - `calizaWebhookHandler` and
+  `diginineWebhookHandler` post raw webhook payloads to the operator's
+  downstream service (URL fetched from `Secrets.external("caliza" /
+  "diginine").CALLBACK_URL`) with retries via BullMQ exponential
+  backoff. Telegram notification fires per attempt for ops visibility.
+* **PU status mappers** (`services/processingUnit/statusMap.ts`) -
+  ports `ProcessingUnit_status_map`, `ProcessingUnit_Depositstatus_map`,
+  and `ProcessingUnitServiceMap`. New upstream statuses log a warning
+  and default to PROCESSING so rows never silently freeze.
+* **Compliance.make** now persists the provider response into
+  `compliance_data` so the inbound webhook can match by
+  `compliance_data.transaction_id` (mirrors Laravel
+  `ComplianceService::storeComplianceResponse`).
+
+### Phase 9 deferred items
+
+* **`SendDebitNotification` -> Reports microservice** - the worker is
+  registered and the eligibility gate (status == COMPLETED) is
+  enforced, but the actual HTTP call to the Reports `api/debit_transactions`
+  endpoint lands in Phase 10 alongside the rest of the Reports
+  surface (it needs a separate `Secrets.external("report_server")`
+  bundle and lives in a different SOC scope).
+* **Outbound callback signing** - this Phase 9 dispatcher matches
+  Laravel's unsigned format exactly so existing white-label consumers
+  don't break. When merchants are ready, an `X-Signature` header keyed
+  on `merchants.salt_key` can be added in
+  `merchantCallbackDispatcher.ts` without touching call sites.
+* **Caliza/Diginine native processing** - both providers' Laravel
+  webhook handlers had the bulk of their business logic commented out
+  (status updates happen via the operator's downstream service). The
+  Node ports preserve that exact behavior.
 
 ### Phase 8c (delivered)
 

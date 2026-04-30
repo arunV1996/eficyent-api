@@ -21,6 +21,7 @@ import { walletsRoutes } from "./wallets.routes";
 import { depositsRoutes, retryDepositRoute } from "./deposits.routes";
 import { ledgersRoutes } from "./ledgers.routes";
 import { teamAuthedRoutes, teamPublicRoutes } from "./team.routes";
+import { webhookRoutes } from "./webhooks.routes";
 
 /**
  * Top-level API router. Mirrors Laravel routes/api.php structure.
@@ -81,6 +82,11 @@ export async function apiRouter(): Promise<Router> {
   // wrapper - the route file handles its own paths to mirror Laravel).
   r.use("/", await teamPublicRoutes());
   r.use("/team", await teamAuthedRoutes());
+
+  // Phase 9 - inbound webhooks. Flat paths mirror Laravel's
+  // /caliza-webhook, /diginine-webhook, /ef-webhook,
+  // /compliance/webhook-callback, /processingunit-webhook.
+  r.use("/", webhookRoutes());
 
   return r;
 }

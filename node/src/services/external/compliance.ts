@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { BeneficiaryTransaction, User } from "@prisma/client";
+import { BeneficiaryTransaction, Prisma, User } from "@prisma/client";
 import { call } from "./httpClient";
 import { Secrets } from "../../config/secrets";
 import { getRedis } from "../../config/redis";
@@ -172,12 +172,18 @@ export const Compliance = {
         return;
       }
 
-      if (updateStatus) {
-        await prisma().beneficiaryTransaction.update({
-          where: { id: txn.id },
-          data: { status: BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED },
-        });
-      }
+      // Mirror Laravel ComplianceService::storeComplianceResponse - we
+      // persist the provider response into compliance_data so the inbound
+      // webhook can match by `compliance_data.transaction_id`.
+      await prisma().beneficiaryTransaction.update({
+        where: { id: txn.id },
+        data: {
+          complianceData: response.data as Prisma.InputJsonValue,
+          ...(updateStatus
+            ? { status: BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED }
+            : {}),
+        },
+      });
       logger.info({ txnId: txn.uniqueId }, "Compliance.make accepted");
     } catch (err) {
       logger.error({ err, txnId: txn.uniqueId }, "Compliance.make threw");
