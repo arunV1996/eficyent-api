@@ -233,7 +233,9 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 5 | Deposits, Ledger (full bankBalance loop closed) | done |
 | 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | done |
 | 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | done |
-| 8 | External services (Caliza, Diginine, FvBank, Massive, ProcessingUnit, Compliance, Remittance, Surepass, Incode, ViyonaPay, InvoiceMate, Telegram, HeraldSumsub) | pending |
+| 8a | External services - core (HTTP foundation, Telegram, ProcessingUnit, Compliance, Massive, Caliza, FvBank, Diginine) | done |
+| 8b | External services - rest (KYC: Sumsub/Incode/Surepass, ViyonaPay, InvoiceMate, HeraldSumsub) | pending |
+| 8c | Excel import + PDF/Excel exports + Mail transport + multer file-upload | pending |
 | 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) | pending |
 | 10 | Admin / Treasury / Support consoles, Reports, Exports, Imports | pending |
 
@@ -339,6 +341,34 @@ underlying module lands:
   wired and writes back into Wallet (credit) or DepositTransaction (refund
   type) + Ledger; downstream notifications (Telegram, callbacks) land in
   Phases 8/9.
+
+### Phase 8a deferred items
+
+* **KYC providers (Sumsub, Incode, Surepass)** - the `onboarding/stepThree`
+  KYC handoff still returns `id_verification_url: null`; the providers
+  themselves are not yet ported. Phase 8b ports the KycFactory.
+* **InvoiceMate** - `Helper::notifyAccounts` / `SendToInvoiceMateJob` are
+  still no-ops. Phase 8b ports both the InvoiceMate client and the
+  BullMQ worker that fans out deposit + payout events to it.
+* **ViyonaPay, HeraldSumsub** - rare-corridor providers; ported in 8b.
+* **Excel import + PDF/Excel exports** - all `bulk/template`, `bulk/store`,
+  `export`, `download_list` endpoints still return 501. Phase 8c brings
+  in `xlsx`/`exceljs` for import and `pdfkit`/`puppeteer` for receipt
+  rendering. The bulk-payout queue worker stub also lands then; its
+  Phase 6 enqueue path is fully wired and waiting.
+* **Mail transport** - `UserAuthEmailService.*` and `TeamAuthEmailService.*`
+  still log instead of sending email. Phase 8c wires nodemailer +
+  SES/Mailgun via the queue.
+* **multer file uploads** - all binary uploads currently use base64 data
+  URLs only. Phase 8c adds true multipart with multer.
+* **Caliza VirtualAccount synchronous response** - the driver writes the
+  account anchor row to PENDING and only flips to CREATED if the
+  provider returned `account_number` synchronously (sandbox does;
+  production returns it via webhook in Phase 9).
+* **AED -> INR rate override** that Laravel applies in the QuoteRepository
+  hot-path is not yet replicated; the Massive driver returns the raw
+  rate and the controller leaves the override for the AED corridor as a
+  pending fix.
 
 Each phase keeps API contracts byte-stable and is deployable independently
 behind a feature flag.

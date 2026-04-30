@@ -16,6 +16,8 @@ import { s3Service } from "../../services/storage/s3Service";
 import { calcDepositCommissions } from "../../services/commissions/commissionsService";
 import { depositTransactionResource } from "../../services/deposits/depositResource";
 import { logger } from "../../helpers/logger";
+import { TelegramNotifier } from "../../services/external/telegram";
+import { ProcessingUnit } from "../../services/external/processingUnit";
 import {
   DepositCreateInput,
   DepositListInput,
@@ -256,17 +258,23 @@ export const depositController = {
       return dep;
     });
 
-    // External-service dispatch (ProcessingUnit createDeposit + InvoiceMate
-    // notify_accounts + Telegram) lands in Phase 8/9. We log the intent so
-    // operations dashboards have a continuous trail until then.
-    logger.info(
-      {
-        userId: req.user.id.toString(),
-        depositId: created.uniqueId,
-        external: va.externalType,
-      },
-      "Deposit created - ProcessingUnit/InvoiceMate dispatch deferred to Phase 8",
-    );
+    // External-service dispatch - Phase 8a wires:
+    //   - Telegram notifier  (best-effort, non-blocking)
+    //   - ProcessingUnit createDeposit (best-effort, status updates async)
+    // InvoiceMate notify_accounts lands in Phase 8b.
+    void Promise.all([
+      TelegramNotifier.depositReceived({
+        id: created.uniqueId,
+        user: req.user.firstName ?? req.user.email,
+        amount: created.totalAmount.toString(),
+        currency: va.currency,
+        status: "PROCESSING",
+        created_at: created.createdAt.toISOString(),
+      }),
+      ProcessingUnit.createDeposit(created),
+    ]).catch((err) => {
+      logger.warn({ err, depositId: created.uniqueId }, "post-deposit dispatch error");
+    });
 
     return sendResponse(res, "Deposit created successfully.", 200, {
       deposit_transaction: depositTransactionResource(created),
@@ -291,17 +299,19 @@ export const depositController = {
     if (!transaction) throw new ApiException(124);
 
     if (transaction.status === DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED) {
-      await prisma().depositTransaction.update({
+      const updated = await prisma().depositTransaction.update({
         where: { id: transaction.id },
         data: {
           orderId: generateOrderId(),
           status: DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
         },
       });
-      logger.info(
-        { uniqueId: transaction.uniqueId },
-        "Order id rotated - ProcessingUnit redispatch deferred to Phase 8",
-      );
+      void ProcessingUnit.createDeposit(updated).catch((err: unknown) => {
+        logger.warn(
+          { err, depositId: updated.uniqueId },
+          "ProcessingUnit redispatch failed (background)",
+        );
+      });
     } else {
       logger.info(
         { uniqueId: transaction.uniqueId, status: transaction.status },

@@ -101,16 +101,48 @@ export const lookupsController = {
 
   async refreshRates(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(401, undefined, 401);
-    // The refresh path requires the Massive quote provider to be ported
-    // (Phase 8). For Phase 2 we surface a clean 501 rather than a silent
-    // failure - clients can fall back to the cached `get-rates` data.
-    const _validated = req.body as RefreshRateInput;
-    void _validated;
-    throw new ApiException(
-      501,
-      "FX rate refresh is not yet available in the Node port - use cached rates from /lookups/get-rates.",
-      501,
-    );
+    const validated = req.body as RefreshRateInput;
+    const { Massive } = await import("../../services/external/massive");
+    const { prisma } = await import("../../db/prisma");
+
+    const supported = await prisma().supportedCountry.findFirst({
+      where: { currency: validated.to_currency, status: 1 },
+    });
+    if (!supported) throw new ApiException(189);
+
+    const rate = await Massive.rate({
+      amount: 1,
+      from_currency: validated.from_currency,
+      to_currency: validated.to_currency,
+    });
+    if (!rate.success || rate.fx_rate === null) throw new ApiException(189);
+
+    const fxRate = String(rate.fx_rate);
+    const cached = await prisma().fxRate.upsert({
+      where: {
+        fx_rate_pair: {
+          fromCurrency: rate.from_currency,
+          toCurrency: validated.to_currency,
+          provider: "em",
+        },
+      },
+      create: {
+        fromCurrency: rate.from_currency,
+        toCurrency: validated.to_currency,
+        provider: "em",
+        rate: fxRate,
+      },
+      update: { rate: fxRate },
+    });
+
+    return sendResponse(res, "", 200, {
+      rate: {
+        from_currency: cached.fromCurrency,
+        to_currency: cached.toCurrency,
+        fx_rate: Number(cached.rate).toFixed(4),
+        last_updated: cached.updatedAt.toISOString(),
+      },
+    });
   },
 
   depositLookups(req: Request, res: Response): Response {

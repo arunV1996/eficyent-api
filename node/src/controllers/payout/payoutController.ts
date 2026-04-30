@@ -433,10 +433,13 @@ export const payoutController = {
     if (!retryable.includes(transaction.status)) throw new ApiException(201);
 
     if (transaction.status === BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED) {
-      logger.info(
-        { txnId: transaction.uniqueId },
-        "Compliance retry deferred to Phase 8",
-      );
+      const user = await prisma().user.findUnique({
+        where: { id: transaction.userId },
+      });
+      if (user) {
+        const { Compliance } = await import("../../services/external/compliance");
+        await Compliance.make(transaction, user);
+      }
     } else if (
       transaction.status === BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED
     ) {

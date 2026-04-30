@@ -339,14 +339,53 @@ export const beneficiaryAccountsController = {
       });
     }
 
-    // External call to ProcessingUnit lands in Phase 8. For Phase 3 we surface
-    // a clean 501 so clients can fall back to manual entry. The DB path above
-    // still serves cached results from earlier validations.
-    throw new ApiException(
-      501,
-      "Account validation provider is not wired up in the Node port yet (Phase 8).",
-      501,
+    // Live ProcessingUnit call (Phase 8a wired). The provider replies
+    // with a normalised account-validation row that we persist for
+    // future cache hits.
+    const { ProcessingUnit } = await import(
+      "../../services/external/processingUnit"
     );
+    const merchant = req.user.merchantId
+      ? await prisma().merchant.findFirst({
+          where: { uniqueId: req.user.merchantId },
+        })
+      : null;
+    const result = await ProcessingUnit.validateAccount({
+      merchant_email: req.user.email,
+      merchant_name: merchant?.name ?? req.user.firstName ?? req.user.email,
+      account_number: body.account_number,
+      ifsc_code: body.ifsc,
+    });
+    if (!result.success || !result.data) {
+      throw new ApiException(
+        179,
+        result.message || "Account validation failed.",
+        502,
+      );
+    }
+    const data = result.data as Record<string, unknown>;
+    const created = await prisma().beneficiaryAccountValidation.create({
+      data: {
+        uniqueId: uniqueId(24),
+        userId: req.user.id,
+        accountName: (data.account_name as string) ?? null,
+        accountNumber: (data.account_number as string) ?? body.account_number,
+        code: (data.ifsc_code as string) ?? body.ifsc,
+        validationService: "pu",
+        externalReferenceId: (data.client_id as string) ?? null,
+        externalStatus: (data.status as string) ?? null,
+        externalData: data as never,
+        remarks: (data.message as string) ?? null,
+        isAccountExists:
+          String(data.is_account_exists ?? "NO").toUpperCase() === "YES" ? 1 : 0,
+        isNreAccount:
+          String(data.is_nre_account ?? "NO").toUpperCase() === "YES" ? 1 : 0,
+        status: 1,
+      },
+    });
+    return sendResponse(res, apiSuccess(113), 113, {
+      account: shapeValidation(created),
+    });
   },
 
   /** Bulk import / template export - Excel-based, lands in Phase 8. */

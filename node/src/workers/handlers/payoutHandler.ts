@@ -12,6 +12,10 @@ import {
   PAYOUT_JOB_STATUS_PROCESSING,
 } from "../../helpers/constants";
 import { PayoutJobPayload } from "../../queues/dispatchers";
+import { ProcessingUnit } from "../../services/external/processingUnit";
+import { Compliance } from "../../services/external/compliance";
+import { TelegramNotifier } from "../../services/external/telegram";
+import { settingGet } from "../../services/settings/settingsService";
 
 /**
  * Mirror of Laravel's ProcessBulkPayout / payout dispatch path. Drives a
@@ -89,6 +93,32 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
       }),
     ]);
 
+    // Mirror Helper::processTransaction: when the compliance_panel
+    // setting is ENABLED, dispatch through Compliance first; otherwise
+    // ProcessingUnit takes the transaction directly. Each driver owns
+    // its own status transitions and error notifications.
+    const user = await prisma().user.findUnique({ where: { id: txn.userId } });
+    if (user) {
+      const compliancePanel = await settingGet<string>("compliance_panel", "0");
+      if (compliancePanel === "1" || compliancePanel === "ENABLED") {
+        await Compliance.make(txn, user);
+      } else {
+        await ProcessingUnit.make(txn, user);
+      }
+      // Best-effort Telegram notification on creation.
+      void TelegramNotifier.beneficiaryTransactionCreated({
+        id: txn.uniqueId,
+        user: user.firstName ?? user.email,
+        from_amount: txn.totalAmount.toString(),
+        from_currency: txn.receivingCurrency ?? "",
+        to_amount: txn.recipientAmount?.toString() ?? "",
+        to_currency: txn.receivingCurrency ?? "",
+        fx_rate: "",
+        status: String(BENEFICIARY_TRANSACTION_PROCESSING),
+        created_at: txn.createdAt.toISOString(),
+      });
+    }
+
     await prisma().payoutJob.update({
       where: { uniqueId: payoutJobUniqueId },
       data: {
@@ -97,7 +127,7 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
         beneficiaryTransactionId: txn.id,
       },
     });
-    reqLogger.info("Payout transitioned to PROCESSING (external dispatch in Phase 8)");
+    reqLogger.info("Payout dispatched to ProcessingUnit/Compliance");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     reqLogger.error({ err }, "Payout job error");
