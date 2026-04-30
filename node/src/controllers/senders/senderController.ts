@@ -311,18 +311,106 @@ export const senderController = {
     return sendResponse(res, "Sender deleted successfully.", 133);
   },
 
-  bulkTemplate(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Sender bulk template is not yet available in the Node port (Phase 8).",
-      501,
+  /**
+   * Mirror of SenderRepository::template - emits a bulk sender upload
+   * XLSX with the dropdowns built from the sender form fields.
+   */
+  async bulkTemplate(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    const type = Number((req.query as { type?: number }).type ?? 1);
+    const merchant = req.user.merchantId
+      ? await prisma().merchant.findFirst({
+          where: { uniqueId: req.user.merchantId },
+        })
+      : null;
+    const fields = await senderFields({
+      type,
+      merchantId: merchant?.id ?? null,
+      remitterDepositEnabled: await isRemitterDepositEnabled(req.user),
+    });
+    const { flattenFormFields, generateBulkTemplate } = await import(
+      "../../services/exports/excelImportService"
     );
+    const flat = flattenFormFields({ remitter: fields }, ["remitter"]);
+    const buffer = await generateBulkTemplate(flat, "Senders");
+    const url = await s3Service.upload(
+      {
+        buffer,
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        extension: "xlsx",
+      },
+      "exports/sender-templates",
+    );
+    return sendResponse(res, "Template ready.", 200, { url });
   },
-  bulkStore(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Sender bulk import is not yet available in the Node port (Phase 8).",
-      501,
+
+  /**
+   * Mirror of SenderRepository::bulk_store. Validates each row through the
+   * dynamic form fields + SenderValidator and creates one Sender per row.
+   */
+  async bulkStore(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    const fileField = (req.body as { file?: string }).file;
+    if (!fileField || !fileField.startsWith("data:")) {
+      throw new ApiException(422, "Excel file (multipart 'file') required.", 422);
+    }
+    const buffer = Buffer.from(fileField.split(",")[1] ?? "", "base64");
+    const type = Number((req.body as { type?: number }).type ?? 1);
+    const merchant = req.user.merchantId
+      ? await prisma().merchant.findFirst({
+          where: { uniqueId: req.user.merchantId },
+        })
+      : null;
+    const depositEnabled = await isRemitterDepositEnabled(req.user);
+    const fields = await senderFields({
+      type,
+      merchantId: merchant?.id ?? null,
+      remitterDepositEnabled: depositEnabled,
+    });
+    const { flattenFormFields, processExcel } = await import(
+      "../../services/exports/excelImportService"
     );
+    const flat = flattenFormFields({ remitter: fields }, ["remitter"]);
+    const result = await processExcel(buffer, flat, async (payload, rowNumber) => {
+      const { validateAndNormalizeSender } = await import(
+        "../../services/senders/senderNormalizer"
+      );
+      const normalized = await validateAndNormalizeSender(
+        payload.remitter as Record<string, unknown>,
+        req.user!,
+        depositEnabled,
+      );
+      return { row: rowNumber, sender: normalized };
+    });
+    if (result.errors.length > 0) {
+      return sendResponse(res, "Bulk import failed.", 200, {
+        errors: result.errors,
+      });
+    }
+
+    const created: { row: number; remitter_id: string }[] = [];
+    for (const row of result.validatedRows) {
+      const sender = await prisma().sender.create({
+        data: {
+          uniqueId: uniqueId(24),
+          userId: req.user.id,
+          firstName: (row.sender.first_name as string) ?? null,
+          lastName: (row.sender.last_name as string) ?? null,
+          email: (row.sender.email as string) ?? null,
+          mobile: (row.sender.mobile as string) ?? null,
+          country: (row.sender.country as string) ?? null,
+          idType: (row.sender.id_type as string) ?? null,
+          idNumber: (row.sender.id_number as string) ?? null,
+          type: row.sender.type,
+          status: 1,
+        },
+      });
+      created.push({ row: row.row, remitter_id: sender.uniqueId });
+    }
+    return sendResponse(res, "Bulk import accepted.", 200, {
+      success: created,
+      errors: [],
+    });
   },
 };

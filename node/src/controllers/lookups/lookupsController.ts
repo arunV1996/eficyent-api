@@ -110,24 +110,35 @@ export const lookupsController = {
     });
     if (!supported) throw new ApiException(189);
 
+    // Massive only quotes USD as source. AED rates are derived from USD
+    // by dividing by env USD_TO_AED. Mirrors LookupRepository::createFxRate.
     const rate = await Massive.rate({
       amount: 1,
-      from_currency: validated.from_currency,
+      from_currency: "USD",
       to_currency: validated.to_currency,
     });
     if (!rate.success || rate.fx_rate === null) throw new ApiException(189);
 
-    const fxRate = String(rate.fx_rate);
+    const isAed = validated.from_currency.toUpperCase() === "AED";
+    const { convertUsdRateToAed } = await import(
+      "../../services/quotes/aedOverride"
+    );
+    const finalRate = isAed
+      ? convertUsdRateToAed(rate.fx_rate, validated.to_currency)
+      : rate.fx_rate;
+    const finalFromCurrency = isAed ? "AED" : rate.from_currency;
+
+    const fxRate = String(finalRate);
     const cached = await prisma().fxRate.upsert({
       where: {
         fx_rate_pair: {
-          fromCurrency: rate.from_currency,
+          fromCurrency: finalFromCurrency,
           toCurrency: validated.to_currency,
           provider: "em",
         },
       },
       create: {
-        fromCurrency: rate.from_currency,
+        fromCurrency: finalFromCurrency,
         toCurrency: validated.to_currency,
         provider: "em",
         rate: fxRate,

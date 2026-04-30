@@ -388,20 +388,105 @@ export const beneficiaryAccountsController = {
     });
   },
 
-  /** Bulk import / template export - Excel-based, lands in Phase 8. */
-  bulkTemplate(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Bulk template export is not yet available in the Node port (Phase 8).",
-      501,
+  /**
+   * Mirror of BeneficiaryAccountRepository::template - emits a bulk
+   * beneficiary-account upload XLSX with the dropdowns built from the
+   * beneficiary form fields.
+   */
+  async bulkTemplate(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    const q = req.query as unknown as FormFieldsQueryInput;
+    const fields = await beneficiaryFormFields({
+      country: q.country,
+      currency: q.currency,
+      type: q.type,
+    });
+    const { flattenFormFields, generateBulkTemplate } = await import(
+      "../../services/exports/excelImportService"
     );
+    const flat = flattenFormFields({ beneficiary: fields }, ["beneficiary"]);
+    const buffer = await generateBulkTemplate(flat, "Beneficiaries");
+    const { s3Service } = await import("../../services/storage/s3Service");
+    const url = await s3Service.upload(
+      {
+        buffer,
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        extension: "xlsx",
+      },
+      "exports/beneficiary-templates",
+    );
+    return sendResponse(res, "Template ready.", 200, { url });
   },
-  bulkStore(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Bulk import is not yet available in the Node port (Phase 8).",
-      501,
+
+  /**
+   * Mirror of BeneficiaryAccountRepository::bulk_store. Validates each
+   * row through the dynamic form fields + BeneficiaryValidator and
+   * creates one BeneficiaryAccount per row.
+   */
+  async bulkStore(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    const fileField = (req.body as { file?: string }).file;
+    if (!fileField || !fileField.startsWith("data:")) {
+      throw new ApiException(422, "Excel file (multipart 'file') required.", 422);
+    }
+    const buffer = Buffer.from(fileField.split(",")[1] ?? "", "base64");
+    const country = String((req.body as { country?: string }).country ?? "");
+    const currency = String((req.body as { currency?: string }).currency ?? "");
+    const type = Number((req.body as { type?: number }).type ?? 1);
+
+    const beneficiary = await beneficiaryFormFields({ country, currency, type });
+    const { flattenFormFields, processExcel } = await import(
+      "../../services/exports/excelImportService"
     );
+    const fields = flattenFormFields({ beneficiary }, ["beneficiary"]);
+
+    const result = await processExcel(buffer, fields, async (payload, rowNumber) => {
+      const { validateAndNormalize } = await import(
+        "../../services/beneficiaryAccounts/beneficiaryNormalizer"
+      );
+      payload.beneficiary.country = country;
+      payload.beneficiary.currency = currency;
+      const ben = await validateAndNormalize(
+        payload.beneficiary as Record<string, unknown>,
+        req.user!,
+      );
+      return { row: rowNumber, beneficiary: ben };
+    });
+
+    if (result.errors.length > 0) {
+      return sendResponse(res, "Bulk import failed.", 200, {
+        errors: result.errors,
+      });
+    }
+
+    const created: { row: number; beneficiary_id: string }[] = [];
+    for (const row of result.validatedRows) {
+      const ben = await prisma().beneficiaryAccount.create({
+        data: {
+          uniqueId: uniqueId(24),
+          userId: req.user.id,
+          country: String(row.beneficiary.beneficiaryAccount.country ?? country),
+          currency: String(row.beneficiary.beneficiaryAccount.currency ?? currency),
+          firstName:
+            (row.beneficiary.beneficiaryAccount.first_name as string) ?? null,
+          lastName:
+            (row.beneficiary.beneficiaryAccount.last_name as string) ?? null,
+          email: (row.beneficiary.beneficiaryAccount.email as string) ?? null,
+          accountNumber:
+            (row.beneficiary.beneficiaryAccount.account_number as string) ?? null,
+          accountName:
+            (row.beneficiary.beneficiaryAccount.account_name as string) ?? null,
+          bankName: (row.beneficiary.beneficiaryAccount.bank_name as string) ?? null,
+          status: 1,
+        },
+      });
+      created.push({ row: row.row, beneficiary_id: ben.uniqueId });
+    }
+    return sendResponse(res, "Bulk import accepted.", 200, {
+      success: created,
+      errors: [],
+    });
   },
 };
 

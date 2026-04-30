@@ -283,12 +283,83 @@ export const depositController = {
     });
   },
 
-  export(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Deposit export is not yet available in the Node port (Phase 8).",
-      501,
+  /**
+   * Mirror of DepositTransactionRepository::export. Builds the same row
+   * shape as DepositTransactionResource and writes either a PDF or XLSX.
+   * The result is uploaded to S3 and the temporary URL returned.
+   */
+  async export(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    const q = req.query as unknown as DepositListInput;
+    const fileType = String((req.query as { type?: string }).type ?? "pdf").toLowerCase();
+
+    // Reuse the same filter logic as index() but no pagination.
+    const status =
+      q.status && q.status in DEPOSIT_TRANSACTION_STATUS_MAP
+        ? DEPOSIT_TRANSACTION_STATUS_MAP[q.status]
+        : null;
+    let virtualAccountId: bigint | null = null;
+    if (q.bank_account_id) {
+      const va = await prisma().virtualAccount.findFirst({
+        where: { uniqueId: q.bank_account_id, userId: req.user.id },
+      });
+      if (!va) throw new ApiException(120);
+      virtualAccountId = va.id;
+    }
+    const where: Prisma.DepositTransactionWhereInput = {
+      userId: req.user.id,
+      ...(status !== null ? { status } : {}),
+      ...(virtualAccountId !== null ? { virtualAccountId } : {}),
+      ...(q.type ? { type: q.type } : {}),
+      ...(q.from_date && q.to_date
+        ? {
+            createdAt: {
+              gte: new Date(`${q.from_date}T00:00:00Z`),
+              lte: new Date(`${q.to_date}T23:59:59Z`),
+            },
+          }
+        : {}),
+    };
+    const rows = await prisma().depositTransaction.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+
+    const exportRows = rows.map((r) => ({
+      unique_id: r.uniqueId,
+      amount: r.amount.toString(),
+      total_amount: r.totalAmount.toString(),
+      currency: r.depositCurrency ?? "",
+      status: String(r.status),
+      type: r.type,
+      memo: r.memo ?? "",
+      external_reference_id: r.externalReferenceId ?? "",
+      created_at: r.createdAt.toISOString(),
+    }));
+
+    const ts = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 15);
+    let buffer: Buffer;
+    let contentType: string;
+    let extension: string;
+    if (fileType === "excel" || fileType === "xlsx") {
+      const { generateExcel } = await import("../../services/exports/excelExport");
+      buffer = await generateExcel(exportRows, { sheetTitle: "Deposits" });
+      contentType =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      extension = "xlsx";
+    } else {
+      const { generateBulkTransactionsPdf } = await import(
+        "../../services/exports/pdfReceipt"
+      );
+      buffer = await generateBulkTransactionsPdf(exportRows, "Deposits");
+      contentType = "application/pdf";
+      extension = "pdf";
+    }
+    const url = await s3Service.upload(
+      { buffer, contentType, extension },
+      "exports/deposits",
     );
+    return sendResponse(res, "", 200, { url });
   },
 
   async retryDeposit(req: Request, res: Response): Promise<Response> {

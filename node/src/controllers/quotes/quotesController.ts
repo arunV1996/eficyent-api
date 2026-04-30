@@ -22,6 +22,7 @@ import {
   calcTransactionCommissions,
 } from "../../services/commissions/commissionsService";
 import { QuoteFactory } from "../../services/external/quoteFactory";
+import { applyAedOverrideToQuote } from "../../services/quotes/aedOverride";
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -144,7 +145,7 @@ async function buildResponse(
 
   // Cross-currency: Massive provider (Phase 8 stub throws).
   const driver = QuoteFactory.resolve(EXTERNAL_TYPE_MASSIVE);
-  const driverResp = await driver.create(
+  const rawDriverResp = await driver.create(
     {
       amount: body.amount,
       receiving_currency: body.receiving_currency,
@@ -157,6 +158,7 @@ async function buildResponse(
     },
     { id: userId },
   );
+  const driverResp = applyAedOverrideToQuote(rawDriverResp, source.row.currency);
 
   const fx = await calcFxCommissions(
     {

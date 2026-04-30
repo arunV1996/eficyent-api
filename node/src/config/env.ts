@@ -92,6 +92,8 @@ const envSchema = z.object({
   BULLMQ_DEFAULT_ATTEMPTS: numberFromString(5),
   BULLMQ_DEFAULT_BACKOFF_MS: numberFromString(2_000),
 
+  USD_TO_AED: numberFromString(2.67),
+
   CRON_FX_RATES: z.string().default("*/30 * * * *"),
   CRON_CHECK_BENEFICIARY_TXN_STATUS: z.string().default("*/5 * * * *"),
   CRON_DIGININE_COUNTRY_SYNC: z.string().default("0 3 * * *"),

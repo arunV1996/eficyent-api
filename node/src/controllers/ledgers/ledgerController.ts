@@ -133,12 +133,68 @@ export const ledgerController = {
     return sendResponse(res, "", 200, { ledger: ledgerResource(enriched) });
   },
 
-  export(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Ledger export is not yet available in the Node port (Phase 8).",
-      501,
+  async export(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    const q = req.query as unknown as LedgerListInput;
+    const fileType = String((req.query as { type?: string }).type ?? "pdf").toLowerCase();
+
+    const where: Prisma.LedgerWhereInput = { userId: req.user.id };
+    if (q.from_date && q.to_date) {
+      where.createdAt = {
+        gte: new Date(`${q.from_date}T00:00:00Z`),
+        lte: new Date(`${q.to_date}T23:59:59Z`),
+      };
+    }
+    if (q.bank_account_id) {
+      const va = await prisma().virtualAccount.findFirst({
+        where: { uniqueId: q.bank_account_id, userId: req.user.id },
+      });
+      if (va) where.virtualAccountId = va.id;
+    }
+    if (q.wallet_id) {
+      const wallet = await prisma().wallet.findFirst({
+        where: { uniqueId: q.wallet_id, userId: req.user.id },
+      });
+      if (wallet) where.walletId = wallet.id;
+    }
+
+    const rows = await prisma().ledger.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+    const exportRows = rows.map((r) => ({
+      unique_id: r.uniqueId,
+      transaction_type: r.transactionType ?? "",
+      transaction_id: r.transactionId ? r.transactionId.toString() : "",
+      balance: r.balance.toString(),
+      external_type: r.externalType ?? "",
+      description: r.description ?? "",
+      created_at: r.createdAt.toISOString(),
+    }));
+
+    const { s3Service } = await import("../../services/storage/s3Service");
+    let buffer: Buffer;
+    let contentType: string;
+    let extension: string;
+    if (fileType === "excel" || fileType === "xlsx") {
+      const { generateExcel } = await import("../../services/exports/excelExport");
+      buffer = await generateExcel(exportRows, { sheetTitle: "Ledgers" });
+      contentType =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      extension = "xlsx";
+    } else {
+      const { generateBulkTransactionsPdf } = await import(
+        "../../services/exports/pdfReceipt"
+      );
+      buffer = await generateBulkTransactionsPdf(exportRows, "Ledgers");
+      contentType = "application/pdf";
+      extension = "pdf";
+    }
+    const url = await s3Service.upload(
+      { buffer, contentType, extension },
+      "exports/ledgers",
     );
+    return sendResponse(res, "", 200, { url });
   },
 };
 

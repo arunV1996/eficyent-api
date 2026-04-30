@@ -235,7 +235,7 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | done |
 | 8a | External services - core (HTTP foundation, Telegram, ProcessingUnit, Compliance, Massive, Caliza, FvBank, Diginine) | done |
 | 8b | External services - rest (KYC: HeraldSumsub + Incode + Surepass validation, ViyonaPay, InvoiceMate) | done |
-| 8c | Excel import + PDF/Excel exports + Mail transport + multer file-upload | pending |
+| 8c | Excel import + PDF/Excel exports + Mail transport + multer file-upload + AED override | done |
 | 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) | pending |
 | 10 | Admin / Treasury / Support consoles, Reports, Exports, Imports | pending |
 
@@ -281,10 +281,10 @@ underlying module lands:
 * `wallets/convert` writes a Ledger row via the polymorphic
   `transaction_type` + `transaction_id` pattern but without the full
   refund chain - that lands in Phase 5 alongside DepositTransaction.
-* `senders/bulk/template` and `senders/bulk/store` -> 501 (Phase 8 Excel).
+* `senders/bulk/template` and `senders/bulk/store` -> delivered in Phase 8c.
 * The AED -> INR rate override (env('USD_TO_AED') from Laravel
-  QuoteRepository) lives behind the Massive driver path and re-enables
-  in Phase 8 with the rest of the AED handling.
+  QuoteRepository) -> delivered in Phase 8c via
+  `services/quotes/aedOverride.ts`.
 
 ### Phase 5 deferred items
 
@@ -299,7 +299,8 @@ underlying module lands:
   webhook handlers land in Phase 9.
 * `deposits/retry_deposit` rotates `order_id` and resets status to
   PROCESSING_UNIT_INITIATED; the redispatch is wired in Phase 8.
-* `deposits/export` and `ledgers/export` -> 501 (PDF/Excel via Phase 8).
+* `deposits/export` and `ledgers/export` -> delivered in Phase 8c
+  (PDF/Excel via `services/exports/*`).
 * `LedgerRepository`'s polymorphic `whereHasMorph` is replaced with an
   explicit candidate-id JOIN; behaviour is identical and the search-key
   match performs better at scale.
@@ -315,9 +316,8 @@ underlying module lands:
   visible behaviour today: OWNER and TEAM_MEMBER see the full
   business-user dataset, CORPORATE sees the same. The narrowing layer
   lands once the bulk-payout worker (Phase 8) is in.
-* Team forgot-password notification email is logged-only - the actual
-  TeamAuthEmailService transport lands when the Mail subsystem is
-  ported.
+* Team forgot-password notification email -> delivered in Phase 8c
+  (`services/email/teamAuthEmailService.ts` over nodemailer).
 * `team/get-credentials` returns an unencrypted RSA private key
   exactly once (mirror of Laravel) and stores envelope-encrypted copies
   for future re-fetch through the user-side flow. SOC auditors will
@@ -334,7 +334,8 @@ underlying module lands:
   Quote + BeneficiaryAccount + Sender + BeneficiaryTransaction lands in
   Phase 8 alongside the external service drivers.
 * `beneficiary-transactions/export` (PDF receipt) and `download` (bulk
-  PDF/Excel) and `bulk/template` -> 501 (Phase 8 mpdf/excel).
+  PDF/Excel) and `bulk/template` -> delivered in Phase 8c
+  (`services/exports/pdfReceipt.ts` + `excelImportService.ts`).
 * `retry_external_service` for COMPLIANCE_INITIATION_FAILED transitions is
   logged-only; the actual ComplianceService::make call lands in Phase 8.
 * Polymorphic refund chain (`createRefund` for cancel + reject) is fully
@@ -348,24 +349,38 @@ underlying module lands:
   Sumsub-relay product) rather than direct Sumsub. The HeraldSumsub
   driver is ported here; native Sumsub would only be needed if you
   switch from Herald.
-* **Excel import + PDF/Excel exports** - all `bulk/template`, `bulk/store`,
-  `export`, `download_list` endpoints still return 501. Phase 8c brings
-  in `xlsx`/`exceljs` for import and `pdfkit`/`puppeteer` for receipt
-  rendering. The bulk-payout queue worker stub also lands then; its
-  Phase 6 enqueue path is fully wired and waiting.
-* **Mail transport** - `UserAuthEmailService.*` and `TeamAuthEmailService.*`
-  still log instead of sending email. Phase 8c wires nodemailer +
-  SES/Mailgun via the queue.
-* **multer file uploads** - all binary uploads currently use base64 data
-  URLs only. Phase 8c adds true multipart with multer.
 * **Caliza VirtualAccount synchronous response** - the driver writes the
   account anchor row to PENDING and only flips to CREATED if the
   provider returned `account_number` synchronously (sandbox does;
   production returns it via webhook in Phase 9).
-* **AED -> INR rate override** that Laravel applies in the QuoteRepository
-  hot-path is not yet replicated; the Massive driver returns the raw
-  rate and the controller leaves the override for the AED corridor as a
-  pending fix.
+
+### Phase 8c (delivered)
+
+Phase 8c closes the remaining external-services items:
+
+* **Excel import + PDF/Excel exports** - replaces every 501 in
+  `deposits/export`, `ledgers/export`, `payout/export`,
+  `payout/download-list`, `payout/template`, `payout/bulk/store`,
+  `beneficiaries/bulk/template`, `beneficiaries/bulk/store`,
+  `senders/bulk/template`, `senders/bulk/store` with real
+  `exceljs`/`pdfkit` based generators.
+  - `services/exports/excelImportService.ts` - dynamic-fields row
+    validator with hidden machine-key row + lookup sheet for dropdowns.
+  - `services/exports/pdfReceipt.ts` - single-receipt + bulk-table PDFs.
+  - `services/exports/excelExport.ts` - generic table-to-XLSX exporter.
+* **Mail transport** - `UserAuthEmailService.*` and
+  `TeamAuthEmailService.*` now ship through `services/email/mailer.ts`
+  (a single shared nodemailer transport, credentials from
+  Secrets.mail()) using HTML templates in `services/email/templates.ts`.
+* **multer file uploads** - `middleware/fileUpload.ts` accepts
+  multipart/form-data with `memoryStorage`, 8 MiB / 6-file limits, then
+  inlines each upload as a base64 data URL on `req.body` so existing
+  handlers don't need to know about transport.
+* **AED -> INR rate override** - `services/quotes/aedOverride.ts`
+  replicates the Laravel `convertUSDratetoAED` helper. Wired into
+  `quotesController.buildResponse` (cross-currency VirtualAccount
+  path), `lookupsController.refreshRates`, and the `RefreshFxRates`
+  cron handler. Configurable via `USD_TO_AED` env (defaults to 2.67).
 
 Each phase keeps API contracts byte-stable and is deployable independently
 behind a feature flag.

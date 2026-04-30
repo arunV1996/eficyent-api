@@ -497,36 +497,277 @@ export const payoutController = {
     });
   },
 
-  export(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Transaction receipt PDF is not yet available in the Node port (Phase 8).",
-      501,
+  /**
+   * Mirror of BeneficiaryTransactionRepository::downloadReceipt -
+   * generates a PDF receipt for a single transaction and uploads it to S3.
+   */
+  async export(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    const q = req.query as unknown as PayoutShowInput;
+    const txn = await findOneByAnyId(req.user.id, q);
+    if (!txn) throw new ApiException(124);
+
+    const sender = txn.senderId
+      ? await prisma().sender.findUnique({ where: { id: txn.senderId } })
+      : null;
+    const userInfo = await prisma().userInformation.findUnique({
+      where: { userId: req.user.id },
+    });
+
+    const senderName = sender
+      ? `${sender.firstName ?? ""} ${sender.lastName ?? ""}`.trim()
+      : `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim();
+
+    const { generateReceiptPdf, safeReceipt } = await import(
+      "../../services/exports/pdfReceipt"
     );
+    const buffer = await generateReceiptPdf(
+      safeReceipt({
+        unique_id: txn.uniqueId,
+        created_at: txn.createdAt.toISOString(),
+        name: senderName,
+        amount: txn.recipientAmount?.toString() ?? "",
+        currency: txn.receivingCurrency ?? "",
+        purpose_of_payment: txn.purposeOfPayment ?? "",
+        fx_rate: txn.quote?.fxRate ?? "",
+        status: String(txn.status),
+        remarks: txn.remarks ?? "",
+        beneficiary_name:
+          txn.beneficiaryAccount?.businessName ??
+          `${txn.beneficiaryAccount?.firstName ?? ""} ${
+            txn.beneficiaryAccount?.lastName ?? ""
+          }`.trim(),
+        account_number: txn.beneficiaryAccount?.accountNumber ?? "",
+        bank_name: txn.beneficiaryAccount?.bankName ?? "",
+        bank_code: txn.beneficiaryAccount?.swiftCode ?? "",
+        routing_number: txn.beneficiaryAccount?.routingNumber ?? "",
+        sender_name: senderName,
+        sender_address: sender?.address1 ?? userInfo?.address1 ?? "",
+        sender_city: sender?.city ?? userInfo?.city ?? "",
+        sender_state: sender?.state ?? userInfo?.state ?? "",
+        sender_postal_code: sender?.postalCode ?? userInfo?.postalCode ?? "",
+        sender_country: sender?.country ?? userInfo?.country ?? "",
+        utr_no: txn.externalReferenceId ?? "",
+        txn_ref_no: txn.txnRefNo ?? "",
+      }),
+    );
+    const { s3Service } = await import("../../services/storage/s3Service");
+    const url = await s3Service.upload(
+      { buffer, contentType: "application/pdf", extension: "pdf" },
+      "exports/transaction-receipts",
+    );
+    return sendResponse(res, "Transaction receipt generated.", 200, { url });
   },
 
-  downloadList(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Bulk transaction export PDF/Excel is not yet available in the Node port (Phase 8).",
-      501,
+  /**
+   * Mirror of BeneficiaryTransactionRepository::export_list - bulk export
+   * of a transaction list as PDF or XLSX.
+   */
+  async downloadList(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    const q = req.query as unknown as PayoutListInput;
+    const fileType = String((req.query as { type?: string }).type ?? "pdf").toLowerCase();
+    const where = await listWhere(req.user, q);
+    const rows = await prisma().beneficiaryTransaction.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: { beneficiaryAccount: true, quote: true },
+    });
+    const exportRows = rows.map((r) => ({
+      txn_ref_no: r.txnRefNo ?? "",
+      client_ref_no: r.clientReferenceId ?? "",
+      unique_id: r.uniqueId,
+      sending_amount: r.totalAmount.toString(),
+      receiving_amount: r.recipientAmount?.toString() ?? "",
+      receiving_currency: r.receivingCurrency ?? "",
+      fx_rate: r.quote?.fxRate ?? "",
+      commission_amount: r.commissionAmount.toString(),
+      account_number: r.beneficiaryAccount?.accountNumber ?? "",
+      status: String(r.status),
+      remarks: r.remarks ?? "",
+      created_at: r.createdAt.toISOString(),
+    }));
+
+    const { s3Service } = await import("../../services/storage/s3Service");
+    let buffer: Buffer;
+    let contentType: string;
+    let extension: string;
+    if (fileType === "excel" || fileType === "xlsx") {
+      const { generateExcel } = await import("../../services/exports/excelExport");
+      buffer = await generateExcel(exportRows, {
+        sheetTitle: "BeneficiaryTransactions",
+      });
+      contentType =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      extension = "xlsx";
+    } else {
+      const { generateBulkTransactionsPdf } = await import(
+        "../../services/exports/pdfReceipt"
+      );
+      buffer = await generateBulkTransactionsPdf(
+        exportRows,
+        "Beneficiary Transactions",
+      );
+      contentType = "application/pdf";
+      extension = "pdf";
+    }
+    const url = await s3Service.upload(
+      { buffer, contentType, extension },
+      "exports/beneficiary-transactions",
     );
+    return sendResponse(res, "Bulk export generated.", 200, { url });
   },
 
-  payoutTemplate(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Bulk payout template export is not yet available in the Node port (Phase 8).",
-      501,
+  /**
+   * Mirror of BeneficiaryTransactionRepository::template. Builds a bulk
+   * payout template XLSX with dropdowns from the form fields.
+   */
+  async payoutTemplate(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    const q = req.query as unknown as GetFormFieldsInput;
+    const parties = resolvePartyTypes(q.type);
+    const beneficiary = await beneficiaryFormFields({
+      country: q.country,
+      currency: q.currency,
+      type: parties.beneficiary_type,
+    });
+    const quote = await quoteFormFields();
+    const merchantRow = req.user.merchantId
+      ? await prisma().merchant.findFirst({
+          where: { uniqueId: req.user.merchantId },
+        })
+      : null;
+    const remitter = await senderFields({
+      type: parties.remitter_type,
+      merchantId: merchantRow?.id ?? null,
+      remitterDepositEnabled: await isRemitterDepositEnabled(req.user.merchantId),
+    });
+
+    const { flattenFormFields, generateBulkTemplate } = await import(
+      "../../services/exports/excelImportService"
     );
+    const flat = flattenFormFields(
+      { quote, beneficiary, remitter },
+      ["quote", "beneficiary", "remitter"],
+    );
+    const buffer = await generateBulkTemplate(flat, "Payouts");
+    const { s3Service } = await import("../../services/storage/s3Service");
+    const url = await s3Service.upload(
+      {
+        buffer,
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        extension: "xlsx",
+      },
+      "exports/payout-templates",
+    );
+    return sendResponse(res, "Template ready.", 200, { url });
   },
 
-  bulkStore(_req: Request, _res: Response): never {
-    throw new ApiException(
-      501,
-      "Bulk payout import is not yet available in the Node port (Phase 8).",
-      501,
+  /**
+   * Mirror of BeneficiaryTransactionRepository::bulk_store. Validates
+   * each row through the dynamic field rules and the BeneficiaryValidator;
+   * successful rows enqueue a PayoutJob carrying the row payload to the
+   * bulk-payout worker (Phase 6 already wired the worker).
+   */
+  async bulkStore(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+    // multer middleware places the uploaded XLSX as a base64 data URL on
+    // req.body.file.
+    const fileField = (req.body as { file?: string }).file;
+    if (!fileField || !fileField.startsWith("data:")) {
+      throw new ApiException(422, "Excel file (multipart 'file') required.", 422);
+    }
+    const buffer = Buffer.from(fileField.split(",")[1] ?? "", "base64");
+
+    const country = String((req.body as { country?: string }).country ?? "");
+    const currency = String((req.body as { currency?: string }).currency ?? "");
+    const type = Number((req.body as { type?: number }).type ?? 1);
+
+    const beneficiary = await beneficiaryFormFields({ country, currency, type });
+    const quote = await quoteFormFields();
+    const merchantRow = req.user.merchantId
+      ? await prisma().merchant.findFirst({ where: { uniqueId: req.user.merchantId } })
+      : null;
+    const remitter = await senderFields({
+      type,
+      merchantId: merchantRow?.id ?? null,
+      remitterDepositEnabled: await isRemitterDepositEnabled(req.user.merchantId),
+    });
+
+    const {
+      flattenFormFields,
+      processExcel,
+    } = await import("../../services/exports/excelImportService");
+    const fields = flattenFormFields(
+      { quote, beneficiary, remitter },
+      ["quote", "beneficiary", "remitter"],
     );
+    const result = await processExcel(buffer, fields, async (payload, rowNumber) => {
+      const { validateAndNormalize } = await import(
+        "../../services/beneficiaryAccounts/beneficiaryNormalizer"
+      );
+      const { validateAndNormalizeSender } = await import(
+        "../../services/senders/senderNormalizer"
+      );
+      payload.beneficiary.country = country;
+      payload.beneficiary.currency = currency;
+      const ben = await validateAndNormalize(
+        payload.beneficiary as Record<string, unknown>,
+        req.user!,
+      );
+      const sen = await validateAndNormalizeSender(
+        payload.remitter as Record<string, unknown>,
+        req.user!,
+        await isRemitterDepositEnabled(req.user!.merchantId),
+      );
+      return {
+        row: rowNumber,
+        beneficiary: ben,
+        remitter: sen,
+        amount: payload.quote.amount ?? "",
+        remarks: payload.quote.remarks ?? null,
+        txn_ref_no: payload.quote.txn_ref_no ?? null,
+      };
+    });
+
+    if (result.errors.length > 0) {
+      return sendResponse(res, "Bulk import failed.", 200, {
+        errors: result.errors,
+      });
+    }
+
+    // Enqueue one PayoutJob per row (the bulk-payout worker materialises
+    // the quote + beneficiary + sender + transaction).
+    const { Dispatch } = await import("../../queues/dispatchers");
+    const created: { row: number; payout_job_id: string }[] = [];
+    for (const row of result.validatedRows) {
+      const job = await prisma().payoutJob.create({
+        data: {
+          uniqueId: uniqueId(24),
+          userId: req.user.id,
+          rowNumber: row.row,
+          amount: row.amount ? new Prisma.Decimal(String(row.amount)) : null,
+          status: 0,
+          payload: {
+            source: "bulk",
+            beneficiary: row.beneficiary,
+            remitter: row.remitter,
+            transaction: { amount: row.amount, remarks: row.remarks, txn_ref_no: row.txn_ref_no },
+          } as Prisma.InputJsonValue,
+        },
+      });
+      await Dispatch.bulkPayout({
+        payoutJobUniqueId: job.uniqueId,
+        userId: req.user.id.toString(),
+      });
+      created.push({ row: row.row, payout_job_id: job.uniqueId });
+    }
+
+    return sendResponse(res, "Bulk import accepted.", 200, {
+      success: created,
+      errors: [],
+    });
   },
 
   async requestProof(req: Request, res: Response): Promise<Response> {

@@ -69,17 +69,17 @@ export const teamForgotPasswordController = {
       where: { email: body.email },
     });
     if (!member) throw new ApiException(102);
-    await prisma().teamMember.update({
+    const updated = await prisma().teamMember.update({
       where: { id: member.id },
       data: {
         emailCode: generateEmailCode(),
         emailCodeExpiry: generateEmailCodeExpiry(10),
       },
     });
-    logger.info(
-      { teamMemberId: member.id.toString(), to: member.email, template: "team_forgot_password" },
-      "Team forgot-password email queued (placeholder)",
+    const { TeamAuthEmailService } = await import(
+      "../../services/email/teamAuthEmailService"
     );
+    await TeamAuthEmailService.forgotPassword(updated);
     return sendResponse(res, apiSuccess(109), 109, { email: member.email });
   },
 
