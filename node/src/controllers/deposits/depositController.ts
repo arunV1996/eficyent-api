@@ -18,6 +18,7 @@ import { depositTransactionResource } from "../../services/deposits/depositResou
 import { logger } from "../../helpers/logger";
 import { TelegramNotifier } from "../../services/external/telegram";
 import { ProcessingUnit } from "../../services/external/processingUnit";
+import { InvoiceMate } from "../../services/external/invoiceMate";
 import {
   DepositCreateInput,
   DepositListInput,
@@ -258,10 +259,10 @@ export const depositController = {
       return dep;
     });
 
-    // External-service dispatch - Phase 8a wires:
-    //   - Telegram notifier  (best-effort, non-blocking)
-    //   - ProcessingUnit createDeposit (best-effort, status updates async)
-    // InvoiceMate notify_accounts lands in Phase 8b.
+    // External-service dispatch (best-effort, non-blocking):
+    //   - Telegram notifier
+    //   - ProcessingUnit createDeposit
+    //   - InvoiceMate makeDeposit  (Phase 8b)
     void Promise.all([
       TelegramNotifier.depositReceived({
         id: created.uniqueId,
@@ -272,6 +273,7 @@ export const depositController = {
         created_at: created.createdAt.toISOString(),
       }),
       ProcessingUnit.createDeposit(created),
+      InvoiceMate.makeDeposit(created),
     ]).catch((err) => {
       logger.warn({ err, depositId: created.uniqueId }, "post-deposit dispatch error");
     });

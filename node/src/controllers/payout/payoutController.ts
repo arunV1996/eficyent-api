@@ -163,6 +163,26 @@ export const payoutController = {
     const q = req.query as unknown as PayoutShowInput;
     const txn = await findOneByAnyId(req.user.id, q);
     if (!txn) throw new ApiException(124);
+
+    // External re-poll on the ViyonaPay corridor. Best-effort - the row
+    // we serve back is read fresh after the provider call has had a
+    // chance to mutate it. Other providers (Caliza/Diginine/FvBank)
+    // notify status changes via webhook (Phase 9), so they don't get a
+    // pull-side re-poll here.
+    if (txn.externalType === "ep" && txn.externalReferenceId) {
+      try {
+        const { ViyonaPay } = await import("../../services/external/viyonaPay");
+        await ViyonaPay.checkTransactionStatus({
+          external_reference_id: txn.externalReferenceId,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, txnId: txn.uniqueId },
+          "ViyonaPay status re-poll failed",
+        );
+      }
+    }
+
     return sendResponse(res, "Transaction fetched.", 200, {
       beneficiary_transaction: beneficiaryTransactionResource(txn),
     });

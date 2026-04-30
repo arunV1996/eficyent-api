@@ -371,3 +371,8 @@ export const TEAM_MEMBER_STATUS_MAP: Record<string, number> = {
 // Sanctum-style tokenable types.
 export const TOKENABLE_USER = "App\\Models\\User";
 export const TOKENABLE_TEAM_MEMBER = "App\\Models\\TeamMember";
+
+// KYC service tags (mirror Laravel ID_VERIFIED_BY_*).
+export const ID_VERIFIED_BY_HERALD_SUMSUB = "hs";
+export const ID_VERIFIED_BY_SUREPASS = "sp";
+export const ID_VERIFIED_BY_INCODE = "ic";

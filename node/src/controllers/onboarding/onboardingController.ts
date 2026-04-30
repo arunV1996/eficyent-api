@@ -320,16 +320,25 @@ export const onboardingController = {
       user: userResource(resultUser as unknown as User, METHOD_ONBOARDING_STEP_THREE),
     };
 
-    // KYC handoff for individuals (Phase 8 owns the actual provider call;
-    // here we honor the configured kyc_service setting and surface the URL).
+    // KYC handoff for individuals - mirror of Laravel's
+    // Api\\OnboardingController::stepThree branch.
     if (resultUser && (resultUser as User).userType === USER_TYPE_INDIVIDUAL) {
       const kycService = await settingGet<string>("kyc_service", "");
       if (kycService && kycService !== ID_VERIFIED_BY_ADMIN) {
-        logger.info(
-          { userId: (resultUser as User).id.toString(), provider: kycService },
-          "KYC handoff requested (stub - actual external call lands in Phase 8)",
-        );
-        data.id_verification_url = null;
+        try {
+          const { KycFactory } = await import(
+            "../../services/external/kycFactory"
+          );
+          const driver = KycFactory.resolve(kycService);
+          const url = await driver.make(resultUser as User);
+          data.id_verification_url = url || null;
+        } catch (err) {
+          logger.error(
+            { err, userId: (resultUser as User).id.toString(), provider: kycService },
+            "KYC handoff failed - returning empty URL",
+          );
+          data.id_verification_url = null;
+        }
       }
     }
 

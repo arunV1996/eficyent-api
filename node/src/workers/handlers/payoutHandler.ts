@@ -15,6 +15,7 @@ import { PayoutJobPayload } from "../../queues/dispatchers";
 import { ProcessingUnit } from "../../services/external/processingUnit";
 import { Compliance } from "../../services/external/compliance";
 import { TelegramNotifier } from "../../services/external/telegram";
+import { InvoiceMate } from "../../services/external/invoiceMate";
 import { settingGet } from "../../services/settings/settingsService";
 
 /**
@@ -105,7 +106,7 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
       } else {
         await ProcessingUnit.make(txn, user);
       }
-      // Best-effort Telegram notification on creation.
+      // Best-effort Telegram notification + InvoiceMate accounting.
       void TelegramNotifier.beneficiaryTransactionCreated({
         id: txn.uniqueId,
         user: user.firstName ?? user.email,
@@ -117,6 +118,7 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
         status: String(BENEFICIARY_TRANSACTION_PROCESSING),
         created_at: txn.createdAt.toISOString(),
       });
+      void InvoiceMate.makePayout(txn, user);
     }
 
     await prisma().payoutJob.update({

@@ -94,8 +94,23 @@ export const profileController = {
       user.idVerification !== IDENTITY_VERIFICATION_COMPLETED &&
       user.idVerifiedBy
     ) {
-      // KYC re-poll lives in Phase 8; for now we just re-read the user row
-      // so any callback-driven updates are reflected.
+      // Mirror of ProfileController::check_user_status: ask the configured
+      // KYC provider for the current status. The driver mutates the user
+      // row when the upstream status maps to one of our enum values.
+      try {
+        const { KycFactory } = await import(
+          "../../services/external/kycFactory"
+        );
+        const driver = KycFactory.resolve(user.idVerifiedBy);
+        await driver.status(user);
+      } catch (err) {
+        // Best-effort - never fail the user-status fetch on a provider
+        // outage.
+        logger.warn(
+          { err, userId: user.id.toString() },
+          "KYC re-poll failed - returning cached status",
+        );
+      }
       user =
         (await prisma().user.findUnique({ where: { id: user.id } })) ?? user;
     }

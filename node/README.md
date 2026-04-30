@@ -234,7 +234,7 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | done |
 | 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | done |
 | 8a | External services - core (HTTP foundation, Telegram, ProcessingUnit, Compliance, Massive, Caliza, FvBank, Diginine) | done |
-| 8b | External services - rest (KYC: Sumsub/Incode/Surepass, ViyonaPay, InvoiceMate, HeraldSumsub) | pending |
+| 8b | External services - rest (KYC: HeraldSumsub + Incode + Surepass validation, ViyonaPay, InvoiceMate) | done |
 | 8c | Excel import + PDF/Excel exports + Mail transport + multer file-upload | pending |
 | 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) | pending |
 | 10 | Admin / Treasury / Support consoles, Reports, Exports, Imports | pending |
@@ -342,15 +342,12 @@ underlying module lands:
   type) + Ledger; downstream notifications (Telegram, callbacks) land in
   Phases 8/9.
 
-### Phase 8a deferred items
+### Phase 8b deferred items
 
-* **KYC providers (Sumsub, Incode, Surepass)** - the `onboarding/stepThree`
-  KYC handoff still returns `id_verification_url: null`; the providers
-  themselves are not yet ported. Phase 8b ports the KycFactory.
-* **InvoiceMate** - `Helper::notifyAccounts` / `SendToInvoiceMateJob` are
-  still no-ops. Phase 8b ports both the InvoiceMate client and the
-  BullMQ worker that fans out deposit + payout events to it.
-* **ViyonaPay, HeraldSumsub** - rare-corridor providers; ported in 8b.
+* **Sumsub native** - the upstream Laravel code uses HeraldSumsub (a
+  Sumsub-relay product) rather than direct Sumsub. The HeraldSumsub
+  driver is ported here; native Sumsub would only be needed if you
+  switch from Herald.
 * **Excel import + PDF/Excel exports** - all `bulk/template`, `bulk/store`,
   `export`, `download_list` endpoints still return 501. Phase 8c brings
   in `xlsx`/`exceljs` for import and `pdfkit`/`puppeteer` for receipt
