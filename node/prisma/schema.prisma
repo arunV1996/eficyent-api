@@ -650,6 +650,7 @@ model BeneficiaryTransaction {
   complianceData      Json?    @map("compliance_data")
   complianceStatus    Int      @default(0) @map("compliance_status")
   complianceNotes     String?  @map("compliance_notes")
+  remittanceData      Json?    @map("remittance_data")
 
   status              Int      @default(0)
   createdAt           DateTime @default(now()) @map("created_at")

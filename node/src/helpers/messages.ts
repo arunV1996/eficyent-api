@@ -24,6 +24,8 @@ export const ApiSuccessMessages: Record<number, string> = {
   114: "Proof requested.",
   115: "Proof fetched.",
   118: "Retry triggered.",
+  116: "Compliance sync job dispatched successfully",
+  117: "Remittance sync job dispatched successfully",
   176: "Job retry queued.",
 };
 

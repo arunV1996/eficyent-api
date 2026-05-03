@@ -27,6 +27,8 @@ export const QueueNames = {
   CalizaWebhook: "caliza-webhook",
   DiginineWebhook: "diginine-webhook",
   DebitNotification: "debit-notification",
+  ComplianceBatch: "compliance-transactions-batch",
+  RemittanceBatch: "stable-coin-remittance-batch",
 } as const;
 
 export type QueueName = (typeof QueueNames)[keyof typeof QueueNames];

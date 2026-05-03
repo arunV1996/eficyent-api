@@ -27,6 +27,11 @@ import { walletController } from "../controllers/wallets/walletController";
 import { depositController } from "../controllers/deposits/depositController";
 import { ledgerController } from "../controllers/ledgers/ledgerController";
 import { payoutController } from "../controllers/payout/payoutController";
+import { teamDashboardController } from "../controllers/team/teamDashboardController";
+import {
+  ChartsDataQuerySchema,
+  StatisticsQuerySchema,
+} from "../validators/dashboard/dashboardValidators";
 
 // Shared validators.
 import {
@@ -496,25 +501,17 @@ export async function teamAuthedRoutes(): Promise<Router> {
     asyncHandler(lookupsController.banks),
   );
 
-  // ----- Dashboard stub - DashboardController port lands alongside the
-  //       admin/treasury console in Phase 10. For now we surface a clean
-  //       501 so the Phase 7 surface compiles end-to-end. ----------------
-  r.get("/dashboard/statistics", (_req, res) => {
-    res.status(501).json({
-      status: false,
-      code: 501,
-      message: "Dashboard statistics will land in Phase 10.",
-      data: null,
-    });
-  });
-  r.get("/dashboard/charts-data", (_req, res) => {
-    res.status(501).json({
-      status: false,
-      code: 501,
-      message: "Dashboard charts will land in Phase 10.",
-      data: null,
-    });
-  });
+  // ----- Dashboard (Phase 10) -----
+  r.get(
+    "/dashboard/statistics",
+    validate({ query: StatisticsQuerySchema }),
+    asyncHandler(teamDashboardController.statistics),
+  );
+  r.get(
+    "/dashboard/charts-data",
+    validate({ query: ChartsDataQuerySchema }),
+    asyncHandler(teamDashboardController.chartsData),
+  );
 
   // ----- Wallets -----
   r.get(

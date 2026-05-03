@@ -239,7 +239,7 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 8b | External services - rest (KYC: HeraldSumsub + Incode + Surepass validation, ViyonaPay, InvoiceMate) | done |
 | 8c | Excel import + PDF/Excel exports + Mail transport + multer file-upload + AED override | done |
 | 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) + merchant callback dispatcher | done |
-| 10 | Admin / Treasury / Support consoles, Reports, Exports, Imports | pending |
+| 10 | Dashboards (user + team) + ComplianceAlign + RemittanceAlign + Reports microservice client | done |
 
 ### Phase 2 deferred items
 
@@ -355,6 +355,71 @@ underlying module lands:
   account anchor row to PENDING and only flips to CREATED if the
   provider returned `account_number` synchronously (sandbox does;
   production returns it via webhook in Phase 9).
+
+### Phase 10 (delivered)
+
+Phase 10 is the final piece: dashboards, operator-triggered batch
+jobs, and the Reports microservice integration that closes out the
+SendDebitNotification flow Phase 9 stubbed.
+
+* **Dashboards** - `GET /user/dashboard/statistics` and
+  `/charts-data` (and the team-side mirrors `/team/dashboard/...`)
+  ported byte-stable. Both endpoints flow through
+  `services/dashboards/dashboardService.ts`:
+  - `statistics()` returns total + today buckets keyed by status
+    (success / failed / pending / rejected) with the same
+    `formatted_amount` envelope ("$ 1234.56") via `Setting::get`.
+  - `chartsData()` returns last-N-day amount buckets + per-status
+    counts in the exact Laravel JSON shape.
+  - CORPORATE-role narrowing scopes results to the team-member's own
+    transactions when invoked via the team route.
+  - Optional `bank_account_id` / `wallet_id` filters resolve through
+    `quote.source_id`; passing both returns zero rows (matches
+    Laravel's `whereHas` semantics exactly).
+* **ComplianceAlign + RemittanceAlign** - public operator endpoints
+  (`POST /compliance/align`, `POST /stable-coin-remittance/align`)
+  enqueue a batch job and return 200 immediately:
+  - `complianceBatchHandler` walks
+    `beneficiary_transactions WHERE compliance_data IS NULL` and
+    runs `Compliance.make(txn, user, false)` against each, sleeping
+    between rows (settings: `compliance_transactions_limit`,
+    `compliance_batch_sleep_ms`).
+  - `remittanceBatchHandler` mirrors that flow against
+    `remittance_data` using the new `Remittance` external service.
+* **Remittance external service** (`services/external/remittance.ts`)
+  ports the C2C / B2B payload split (with UBO ownership_percentage
+  rebalancing for businesses) and posts to Herald's
+  `/api/v1/initiate_withdrawal`. Provider response is persisted into
+  `beneficiary_transactions.remittance_data` so the batch job skips
+  already-processed rows.
+* **Reports microservice client** (`services/reports/reportClient.ts`
+  + `debitNotification.ts`) - shared header-keyed auth client that
+  routes through the audited httpClient (full
+  `external_service_calls` audit trail). The Phase 9
+  `debitNotificationHandler` stub is now wired to call
+  `api/debit_transactions` with the ViyonaPay / Diginine payload
+  shapes from Laravel SendDebitNotification (including the AED
+  wallet-currency override for Diginine).
+* **Schema** - `BeneficiaryTransaction.remittanceData` JSON column
+  added to mirror the Laravel migration.
+* **New BullMQ queues** - `compliance-transactions-batch`,
+  `stable-coin-remittance-batch` with env-tunable concurrency.
+
+### Phase 10 deferred items
+
+* **ProcessingUnit::sync()** - the Laravel ExecuteComplianceBatchJob
+  also calls `ProcessingUnit::sync()` for transactions that have
+  passed compliance. The compliance side of the batch is ported; the
+  PU sync RPC depends on `BeneficiaryTransactionService::sync()`
+  which is a wider piece of the BeneficiaryTransaction surface that
+  hasn't been needed for any user-facing endpoint to date. Logged as
+  a TODO inside `complianceBatchHandler.ts`. Does not affect the API
+  surface.
+* **Admin / Treasury / Support consoles** - the original Laravel
+  surface lives under separate route files and was scoped out of
+  the public API conversion (operator-only Filament panels). When
+  those are migrated, they will reuse the same dashboard/align
+  services already in place.
 
 ### Phase 9 (delivered)
 

@@ -22,6 +22,8 @@ import { depositsRoutes, retryDepositRoute } from "./deposits.routes";
 import { ledgersRoutes } from "./ledgers.routes";
 import { teamAuthedRoutes, teamPublicRoutes } from "./team.routes";
 import { webhookRoutes } from "./webhooks.routes";
+import { dashboardRoutes } from "./dashboard.routes";
+import { alignRoutes } from "./align.routes";
 
 /**
  * Top-level API router. Mirrors Laravel routes/api.php structure.
@@ -87,6 +89,12 @@ export async function apiRouter(): Promise<Router> {
   // /caliza-webhook, /diginine-webhook, /ef-webhook,
   // /compliance/webhook-callback, /processingunit-webhook.
   r.use("/", webhookRoutes());
+
+  // Phase 10 - dashboards (user-side + team-side already mounted under
+  // /team) and operator-triggered align endpoints. Align routes are
+  // public to mirror Laravel exactly; deploy behind WAF / IP allowlist.
+  r.use("/user/dashboard", await dashboardRoutes());
+  r.use("/", alignRoutes());
 
   return r;
 }

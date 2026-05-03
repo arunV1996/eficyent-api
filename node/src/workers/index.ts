@@ -11,6 +11,8 @@ import { processIdempotencyReaper } from "./handlers/idempotencyReaperHandler";
 import { processCalizaWebhook } from "./handlers/calizaWebhookHandler";
 import { processDiginineWebhook } from "./handlers/diginineWebhookHandler";
 import { processDebitNotification } from "./handlers/debitNotificationHandler";
+import { processComplianceBatch } from "./handlers/complianceBatchHandler";
+import { processRemittanceBatch } from "./handlers/remittanceBatchHandler";
 
 /**
  * Worker registry. Each entry binds a queue to a handler with the
@@ -73,8 +75,16 @@ const definitions: WorkerDef[] = [
     concurrency: env().BULLMQ_DEBIT_NOTIFICATION_CONCURRENCY,
     handler: processDebitNotification,
   },
-  // Remaining queues (deposit, compliance, remittance, ...) are wired up
-  // alongside their respective controller conversions in subsequent phases.
+  {
+    queue: QueueNames.ComplianceBatch,
+    concurrency: env().BULLMQ_COMPLIANCE_BATCH_CONCURRENCY,
+    handler: processComplianceBatch,
+  },
+  {
+    queue: QueueNames.RemittanceBatch,
+    concurrency: env().BULLMQ_REMITTANCE_BATCH_CONCURRENCY,
+    handler: processRemittanceBatch,
+  },
 ];
 
 export async function startWorkers(): Promise<void> {

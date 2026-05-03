@@ -41,6 +41,14 @@ export interface DebitNotificationJobPayload {
   beneficiaryTransactionId: string;
 }
 
+export interface ComplianceBatchJobPayload {
+  triggeredBy: "api" | "cron";
+}
+
+export interface RemittanceBatchJobPayload {
+  triggeredBy: "api" | "cron";
+}
+
 async function enqueue(
   name: QueueName,
   jobName: string,
@@ -82,6 +90,18 @@ export const Dispatch = {
   debitNotification: (data: DebitNotificationJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.DebitNotification, "SendDebitNotification", data, {
       jobId: `debit:${data.beneficiaryTransactionId}`,
+      ...opts,
+    }),
+
+  complianceBatch: (data: ComplianceBatchJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.ComplianceBatch, "ExecuteComplianceBatch", data, {
+      jobId: `compliance-batch:${Date.now()}`,
+      ...opts,
+    }),
+
+  remittanceBatch: (data: RemittanceBatchJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.RemittanceBatch, "ExecuteRemittanceBatch", data, {
+      jobId: `remittance-batch:${Date.now()}`,
       ...opts,
     }),
 };
