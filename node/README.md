@@ -81,56 +81,88 @@ image but different command overrides.
 
 ## AWS Secrets Manager + KMS
 
-All sensitive configuration is loaded from AWS Secrets Manager at process start
-by `src/config/secrets.ts`. The only env vars required to bootstrap are:
+The API has TWO boot modes; they share the same code path through
+`src/config/secrets.ts` and `src/config/kms.ts`:
 
-* `AWS_REGION`
-* `KMS_KEY_ID` (CMK alias)
-* `SECRET_ID_*` (one per secret bundle - see `.env.example`)
+| Mode | Triggered by | Secrets source | KMS |
+|---|---|---|---|
+| **LOCAL** | `DATABASE_URL` set in env | env vars | local AES-256-GCM (key derived from `APP_KEY`) |
+| **PROD** | `SECRET_ID_BUNDLE` set in env | one bundled AWS Secrets Manager secret | real KMS when `KMS_KEY_ID` is set |
 
-### Proposed secret naming convention
+Local mode requires zero AWS credentials. Prod mode is the only way to
+get real KMS + Secrets Manager. The two modes are independent of each
+other (you cannot mix, only one path runs per process).
 
-| Secret ID | Purpose |
-|---|---|
-| `eficyent/<env>/app` | App key, request signing secret, FvBank webhook secret |
-| `eficyent/<env>/db` | DB host/port/user/pass/db |
-| `eficyent/<env>/redis` | Redis host/port/auth/tls |
-| `eficyent/<env>/auth` | TOKEN_PEPPER, PASSWORD_PEPPER, SIGNATURE_SECRET, MERCHANT_SIGNATURE_SECRET |
-| `eficyent/<env>/aws` | S3 bucket + region (non-credential) |
-| `eficyent/<env>/mail` | SMTP/SES creds |
-| `eficyent/<env>/external/<provider>` | One bundle per provider (caliza, diginine, fvbank, ...) |
+> Tip: KMS_KEY_ID is OPTIONAL even in prod mode. Leave it empty on
+> staging boxes where you don't want to provision a CMK; encrypted
+> columns will use the local AES key. The ciphertext is tagged with
+> the `v1d` prefix so it is NEVER confused with KMS-encrypted rows
+> (`v1` prefix). Switching between the two requires re-encrypting
+> existing rows.
 
-`<env>` is one of `production`, `staging`, `sandbox`, `dev`.
+### Bundled secret JSON shape (PROD mode)
+
+Set `SECRET_ID_BUNDLE` to one Secrets Manager secret whose
+`SecretString` is exactly this JSON:
+
+```json
+{
+  "app":   { "APP_KEY": "<base64-32>", "REQUEST_SIGNING_SECRET": "<hex-32>", "FVBANK_WEBHOOK_SECRET": "<hex-32>" },
+  "db":    { "host": "...", "port": 3306, "database": "...", "username": "...", "password": "...", "ssl": true },
+  "redis": { "host": "...", "port": 6379, "password": "...", "tls": true, "username": "default" },
+  "auth":  { "TOKEN_PEPPER": "<hex-32>", "PASSWORD_PEPPER": "<hex-32>", "SIGNATURE_SECRET": "<hex-32>", "MERCHANT_SIGNATURE_SECRET": "<hex-32>" },
+  "aws":   { "S3_BUCKET": "...", "S3_REGION": "us-east-1", "S3_USE_PATH_STYLE": false },
+  "mail":  { "host": "...", "port": 587, "username": "...", "password": "...", "from": "no-reply@..." },
+  "external": {
+    "caliza":          { "URL": "...", "API_KEY": "...", "CALLBACK_URL": "..." },
+    "diginine":        { "URL": "...", "API_KEY": "...", "CALLBACK_URL": "..." },
+    "fvbank":          { "URL": "...", "API_KEY": "...", "CLIENT_SECRET": "..." },
+    "massive":         { "URL": "...", "API_KEY": "...", "GET_QUOTE_ENDPOINT": "/quote" },
+    "compliance":      { "URL": "...", "API_KEY": "...", "CREATE_TRANSACTION_ENDPOINT": "/transactions" },
+    "processing_unit": { "URL": "...", "API_KEY": "...", "API_SECRET": "..." },
+    "report_server":   { "BASE_URL": "...", "HEADER_KEY": "x-api-key", "HEADER_VALUE": "...", "VIYONAPAY": "...", "DIGININE": "..." }
+  }
+}
+```
+
+Generate the random values with `openssl rand -hex 32` /
+`openssl rand -base64 32`. The secret is cached in memory for
+`SECRETS_CACHE_TTL_MS` (default 5 min); call `Secrets.invalidate()`
+from a runbook script after rotation.
 
 ### KMS at-rest encryption
 
-Use `src/config/kms.ts` envelope encryption for any column the SOC audit
+`src/config/kms.ts` envelope-encrypts any column the SOC audit
 considers sensitive:
 
 * `users.tfa_secret`
 * `users.private_key`, `users.public_key`, `users.salt_key`
-* External service tokens (`external_service_calls.request_payload` if it
-  contains card data, etc.)
+* External service tokens
 
-The CMK is referenced by alias only - `alias/eficyent/<env>/app` - so key
-rotation policy is enforced in KMS, not application code. EC2/ECS/EKS task
-roles must be granted `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`
-on this CMK, plus `secretsmanager:GetSecretValue` on the secret IDs above.
+When `KMS_KEY_ID` is set, the CMK is referenced by alias or ARN; key
+rotation is enforced in KMS, not in app code. When unset, a local
+AES-256-GCM key derived from `APP_KEY` is used (local-only). Switching
+between the two requires re-encrypting any existing ciphertext rows.
 
-### IAM (least privilege)
+### IAM (least privilege, PROD mode)
 
-Workers and API may share the same role; minimum required policy:
+API and worker may share the same role; minimum required policy:
 
 ```json
 {
   "Effect": "Allow",
   "Action": ["secretsmanager:GetSecretValue"],
-  "Resource": "arn:aws:secretsmanager:<region>:<account>:secret:eficyent/<env>/*"
+  "Resource": "<arn-of-SECRET_ID_BUNDLE>"
 },
 {
   "Effect": "Allow",
   "Action": ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey"],
-  "Resource": "arn:aws:kms:<region>:<account>:key/<cmk-uuid>"
+  "Resource": "<arn-of-KMS_KEY_ID>"
+},
+{
+  "Effect": "Allow",
+  "Action": ["s3:GetObject", "s3:PutObject"],
+  "Resource": "arn:aws:s3:::<aws.S3_BUCKET>/*"
 }
 ```
 
@@ -525,26 +557,17 @@ behind a feature flag.
 
 ---
 
-## Local development setup
+## Local development setup (LOCAL mode)
 
-The API has two distinct boot modes:
-
-* **Dev mode** - flipped on by setting `DATABASE_URL` in `.env`. AWS
-  Secrets Manager is bypassed entirely; every secret bundle reads from
-  env vars instead. KMS-encrypted columns use a local AES-256-GCM key
-  derived from `APP_KEY`. **AWS credentials are not required.**
-* **Production mode** - `DATABASE_URL` is unset, all secrets load from
-  AWS Secrets Manager via the `SECRET_ID_*` env vars, and KMS does
-  real envelope encryption. The host must have an instance role with
-  Secrets Manager + KMS permissions.
+LOCAL mode is triggered by setting `DATABASE_URL` in `.env`. AWS is
+bypassed entirely - no AWS credentials needed. KMS is bypassed too
+(encrypted columns use a local AES-256-GCM key derived from `APP_KEY`).
 
 ### 0. One-time machine prerequisites
 
 * Node 22+ and npm 10+ (`node --version`, `npm --version`).
-* MySQL 8.x running on `127.0.0.1:3306`.
-* Redis 7.x running on `127.0.0.1:6379`.
-* (Optional) the Laravel Prisma schema source-of-truth in `../Laravel/`
-  if you plan to regenerate the schema with `prisma db pull`.
+* MySQL 8.x on `127.0.0.1:3306`.
+* Redis 7.x on `127.0.0.1:6379`.
 
 If you don't already have MySQL + Redis, the quickest path is Docker:
 
@@ -564,22 +587,57 @@ git clone <this repo>
 cd eficyent-api/node
 
 cp .env.example .env
-# Open .env and uncomment the entire "DEV MODE" block at the bottom.
-# Fill in DATABASE_URL with your MySQL credentials and at minimum:
+# Open .env and uncomment the entire "LOCAL MODE" block at the bottom.
+# Fill in DATABASE_URL with your MySQL creds and (at minimum):
 #   TOKEN_PEPPER, PASSWORD_PEPPER, APP_KEY
-# Generate each with:
-#   openssl rand -hex 32           # for TOKEN_PEPPER, PASSWORD_PEPPER, *_SECRET
+# Generate them with:
+#   openssl rand -hex 32           # for *_PEPPER, *_SECRET
 #   openssl rand -base64 32        # for APP_KEY
+# Leave KMS_KEY_ID empty (or commented out).
+# Make sure SECRET_ID_BUNDLE is NOT set in LOCAL mode.
 
 npm install
+```
+
+A copy-paste-ready `.env` for a fresh local machine:
+
+```bash
+NODE_ENV=dev
+APP_NAME=Eficyent
+APP_ENV=dev
+APP_URL=http://localhost:8080
+PORT=8080
+TRUST_PROXY=1
+LOG_LEVEL=info
+CORS_ORIGINS=http://localhost:3000
+APP_IS_SANDBOX=false
+
+# LOCAL mode trigger
+DATABASE_URL="mysql://root:devroot@127.0.0.1:3306/eficyent_node"
+
+# Redis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_TLS=false
+
+# Auth pepper / app key (replace with your own openssl values)
+TOKEN_PEPPER=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+PASSWORD_PEPPER=ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100
+SIGNATURE_SECRET=11112222333344445555666677778888
+MERCHANT_SIGNATURE_SECRET=88887777666655554444333322221111
+APP_KEY=replace-me-with-openssl-rand-base64-32
+
+# KMS empty -> local AES-256-GCM crypto
+KMS_KEY_ID=
 ```
 
 ### 2. Apply the schema
 
 ```bash
 npx prisma generate
-npx prisma migrate deploy   # runs all migrations against the DB
-# OR for a from-scratch dev DB that you can iterate on:
+npx prisma migrate deploy   # runs migrations against the DB
+# OR for a fresh dev DB you can iterate on:
 npx prisma migrate dev --name init
 ```
 
@@ -600,61 +658,52 @@ npm run dev:worker   # BullMQ worker in a second terminal
 
 Hit `http://localhost:8080/api/health` - you should get `{"status":true,"code":200,...}`.
 
-### 4. Optional dev configurations
+### 4. Optional LOCAL configurations
 
 | What you want to test | Set in `.env` |
 |---|---|
 | Mail templates | `MAIL_HOST=localhost MAIL_PORT=1025` and run [MailHog](https://github.com/mailhog/MailHog) |
 | S3 uploads | `S3_BUCKET=...` `S3_REGION=...` and `S3_USE_PATH_STYLE=true` for MinIO |
-| External providers (Caliza, FvBank, etc.) | `EXTERNAL_<PROVIDER>_JSON='{"...":"..."}'` |
-| Real AWS Secrets Manager (staging-like) | Comment out `DATABASE_URL`, set the `SECRET_ID_*` vars, run `aws sso login` (or set `AWS_PROFILE`) so the SDK can pick up creds |
+| External providers (Caliza, FvBank, ...) | `EXTERNAL_<PROVIDER>_JSON='{"URL":"...", "API_KEY":"..."}'` |
+| Real AWS Secrets Manager (staging-like) | Unset `DATABASE_URL`, set `SECRET_ID_BUNDLE`, run `aws sso login` (or set `AWS_PROFILE`) so the SDK can pick up creds |
 
-### 5. Common dev errors
+### 5. Common LOCAL errors
 
 | Symptom | Fix |
 |---|---|
-| `CredentialsProviderError: Could not load credentials from any providers` | `DATABASE_URL` is not set in `.env`, so the API tried to load secrets from AWS. Add `DATABASE_URL=mysql://...` and uncomment the dev block. |
+| `CredentialsProviderError: Could not load credentials from any providers` | `DATABASE_URL` is not set in `.env`, so the API tried to load the bundled secret from AWS. Add `DATABASE_URL=mysql://...` and uncomment the LOCAL block. |
+| `Neither DATABASE_URL nor SECRET_ID_BUNDLE is set` | Same root cause as above. |
 | `Authentication failed against database server` | Wrong creds in `DATABASE_URL`. Special characters in the password must be URL-encoded (`@` -> `%40`, `:` -> `%3A`). |
 | `ECONNREFUSED 127.0.0.1:6379` | Redis not running. `docker start eficyent-redis`. |
-| `Invalid environment configuration: KMS_KEY_ID: ...` | You're on an older clone. `git pull`; `KMS_KEY_ID` is now optional. |
-| `Secret eficyent/dev/redis has no SecretString` | `DATABASE_URL` is set but you're hitting an env-secret path. `git pull` to get the dev fallbacks. |
+| `Invalid envelope format` after switching from LOCAL to PROD | Encrypted columns were written with the local AES key (`v1d` prefix); KMS can't decrypt them. Re-create the affected rows OR keep `KMS_KEY_ID` empty. |
 
 ---
 
-## Production deployment
+## Production deployment (PROD mode)
+
+PROD mode loads everything from one bundled AWS Secrets Manager secret.
+KMS is optional but recommended.
 
 ### A. Provision the AWS-side artefacts
 
-1. **Secrets Manager bundles** (one secret per bundle, JSON value):
-   ```
-   eficyent/<env>/app    -> {"APP_KEY":"...", "REQUEST_SIGNING_SECRET":"...", "FVBANK_WEBHOOK_SECRET":"..."}
-   eficyent/<env>/db     -> {"host":"...","port":3306,"database":"...","username":"...","password":"...","ssl":true}
-   eficyent/<env>/redis  -> {"host":"...","port":6379,"password":"...","tls":true,"username":"default"}
-   eficyent/<env>/auth   -> {"TOKEN_PEPPER":"...","PASSWORD_PEPPER":"...","SIGNATURE_SECRET":"...","MERCHANT_SIGNATURE_SECRET":"..."}
-   eficyent/<env>/aws    -> {"S3_BUCKET":"...","S3_REGION":"us-east-1","S3_USE_PATH_STYLE":false}
-   eficyent/<env>/mail   -> {"host":"...","port":587,"username":"...","password":"...","from":"no-reply@..."}
-   eficyent/<env>/external/<provider>  -> per-provider object (URL, API_KEY, ...)
-   ```
-   Generate the random values with `openssl rand -hex 32` /
-   `openssl rand -base64 32`. Pepper rotation requires a re-hash of
-   stored passwords - do it during a planned maintenance window.
+1. **Secrets Manager secret** - one secret, any name. Paste the JSON
+   shape from the AWS Secrets Manager + KMS section above into the
+   `SecretString`. Note the secret ARN/name; that's what
+   `SECRET_ID_BUNDLE` points at.
 
-2. **KMS CMK** with `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`
-   permissions on the application's IAM role. Set `KMS_KEY_ID` to the
-   key ARN or alias (e.g. `alias/eficyent/production/app`).
+2. **KMS CMK** (optional but recommended) - any symmetric AES_256 key.
+   Grant the application's IAM role
+   `kms:Encrypt`/`Decrypt`/`GenerateDataKey` on it. Set `KMS_KEY_ID`
+   to the key ARN or alias (e.g. `alias/eficyent/production/app`).
+   Leave it empty to fall back to local AES.
 
-3. **IAM role** for the API/worker host with:
-   ```
-   secretsmanager:GetSecretValue   on the eficyent/<env>/* secrets
-   kms:Decrypt + Encrypt + GenerateDataKey   on the CMK above
-   s3:GetObject + PutObject        on the S3_BUCKET
-   ```
+3. **IAM role** for the API/worker host (see the IAM block above).
 
-4. **MySQL** (Aurora MySQL 8 / RDS / managed) with `ssl: true`.
+4. **MySQL** (RDS / Aurora MySQL 8) with `ssl: true`.
 
-5. **Redis** (ElastiCache or Upstash) with TLS + auth.
+5. **Redis** (ElastiCache / Upstash) with TLS + auth.
 
-### B. Deploy steps
+### B. Build + deploy
 
 ```bash
 # Build (TypeScript -> dist/, regenerates Prisma client)
@@ -664,15 +713,15 @@ npm run build
 # Apply migrations (run once per release, idempotent)
 npx prisma migrate deploy
 
-# Start the API + workers (one process each, or use process manager)
+# Start the API + workers (one process each, or use a process manager)
 node dist/index.js          # HTTP API
 node dist/worker.js         # BullMQ worker (run >= 2 replicas)
 ```
 
 ### C. Production-only env
 
-Set ONLY these in your hosting environment (everything else lives in
-Secrets Manager):
+Set ONLY these on your hosting environment - everything else lives
+inside the bundled Secrets Manager secret:
 
 ```
 NODE_ENV=production
@@ -682,22 +731,20 @@ PORT=8080
 TRUST_PROXY=1
 
 AWS_REGION=us-east-1
-KMS_KEY_ID=arn:aws:kms:us-east-1:<acct>:key/<uuid>
 
-SECRET_ID_APP=eficyent/production/app
-SECRET_ID_DB=eficyent/production/db
-SECRET_ID_REDIS=eficyent/production/redis
-SECRET_ID_AUTH=eficyent/production/auth
-SECRET_ID_AWS=eficyent/production/aws
-SECRET_ID_MAIL=eficyent/production/mail
-SECRET_ID_EXTERNAL_PREFIX=eficyent/production/external
+# Bundled secret
+SECRET_ID_BUNDLE=arn:aws:secretsmanager:us-east-1:<acct>:secret:eficyent-api-<env>-XXXX
+SECRETS_CACHE_TTL_MS=300000
+
+# KMS (optional - leave empty to use local AES on this host)
+KMS_KEY_ID=arn:aws:kms:us-east-1:<acct>:key/<uuid>
 
 CORS_ORIGINS=https://app.example.com,https://admin.example.com
 LOG_LEVEL=info
 ```
 
 Do **NOT** set `DATABASE_URL` in production - that flag puts the
-process into dev mode and bypasses Secrets Manager + KMS.
+process into LOCAL mode and bypasses Secrets Manager.
 
 ### D. Health checks + smoke test
 
@@ -708,13 +755,16 @@ curl https://api.eficyent.example.com/api/health
 
 ### E. Operational runbook
 
-* **Rotating a secret**: update the JSON in Secrets Manager, then
-  either roll the pods or `POST` to an internal `/admin/secrets/invalidate`
-  endpoint (not yet exposed publicly - call `Secrets.invalidate()` from
-  a scripted runbook for now). Cache TTL is `SECRETS_CACHE_TTL_MS`
-  (default 5 min).
+* **Rotating a secret**: update the JSON in Secrets Manager. The
+  cache TTL is `SECRETS_CACHE_TTL_MS` (default 5 min); rolling the
+  pods picks the new value up immediately.
 * **Replaying webhooks**: BullMQ retains failed jobs for 30 days. Use
   Bull dashboard or `bullmq-cli` to retry a stuck `payout` /
   `processingunit-webhook` job.
 * **Rolling deploys**: workers are idempotent (BullMQ jobIds dedupe).
   API pods can be rolled freely; sessions are Redis-backed.
+* **Switching KMS on/off**: the ciphertext prefix (`v1` vs `v1d`)
+  records which key encrypted each row, so the two can coexist
+  during a migration. To re-encrypt existing rows, run a one-shot
+  script that decrypts under the old mode and re-encrypts under the
+  new.

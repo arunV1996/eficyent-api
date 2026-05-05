@@ -6,56 +6,33 @@ import { env } from "./env";
 import { logger } from "../helpers/logger";
 
 /**
- * Secret bundles fetched from AWS Secrets Manager. Each bundle is a JSON
- * document stored under a single secret ID, keyed by SECRET_ID_* env vars.
+ * One bundled secret stored in AWS Secrets Manager. Set
+ * `SECRET_ID_BUNDLE` (env var) to the secret's ARN or name. The secret's
+ * `SecretString` MUST be a JSON document with this exact shape:
  *
- * Required secret JSON shapes (proposed convention):
- *
- *   eficyent/<env>/app:
- *     {
- *       "APP_KEY": "<base64 32 bytes>",
- *       "REQUEST_SIGNING_SECRET": "<hex>",
- *       "FVBANK_WEBHOOK_SECRET": "<hex>"
+ *   {
+ *     "app":   { "APP_KEY": "...", "REQUEST_SIGNING_SECRET": "...", "FVBANK_WEBHOOK_SECRET": "..." },
+ *     "db":    { "host": "...", "port": 3306, "database": "...", "username": "...", "password": "...", "ssl": true },
+ *     "redis": { "host": "...", "port": 6379, "password": "...", "tls": true, "username": "default" },
+ *     "auth":  { "TOKEN_PEPPER": "...", "PASSWORD_PEPPER": "...", "SIGNATURE_SECRET": "...", "MERCHANT_SIGNATURE_SECRET": "..." },
+ *     "aws":   { "S3_BUCKET": "...", "S3_REGION": "us-east-1", "S3_USE_PATH_STYLE": false },
+ *     "mail":  { "host": "...", "port": 587, "username": "...", "password": "...", "from": "no-reply@..." },
+ *     "external": {
+ *        "caliza":   { "URL": "...", "API_KEY": "...", "CALLBACK_URL": "..." },
+ *        "diginine": { ... },
+ *        "fvbank":   { "CLIENT_SECRET": "..." },
+ *        "report_server": { "BASE_URL": "...", "HEADER_KEY": "x-api-key", "HEADER_VALUE": "...", "VIYONAPAY": "...", "DIGININE": "..." },
+ *        "<other-provider>": { ... }
  *     }
+ *   }
  *
- *   eficyent/<env>/db:
- *     {
- *       "host": "...", "port": 3306,
- *       "database": "...", "username": "...", "password": "...",
- *       "ssl": true
- *     }
+ * The bundle is cached in memory with TTL = SECRETS_CACHE_TTL_MS.
+ * IAM credentials come from the EC2/ECS/EKS instance role - we never
+ * read AWS access keys from environment variables.
  *
- *   eficyent/<env>/redis:
- *     {
- *       "host": "...", "port": 6379,
- *       "password": "...", "tls": true,
- *       "username": "default"
- *     }
- *
- *   eficyent/<env>/auth:
- *     {
- *       "TOKEN_PEPPER": "<hex 32 bytes>",
- *       "PASSWORD_PEPPER": "<hex 32 bytes>",
- *       "SIGNATURE_SECRET": "<hex>",
- *       "MERCHANT_SIGNATURE_SECRET": "<hex>"
- *     }
- *
- *   eficyent/<env>/aws:
- *     {
- *       "S3_BUCKET": "...",
- *       "S3_REGION": "us-east-1",
- *       "S3_USE_PATH_STYLE": false
- *     }
- *
- *   eficyent/<env>/mail:
- *     { "host": "...", "port": 587, "username": "...", "password": "...", "from": "no-reply@..." }
- *
- *   eficyent/<env>/external/<provider>:
- *     provider-specific shape, e.g. caliza, diginine, fvbank, sumsub, incode, ...
- *
- * All bundles are cached in memory with TTL = SECRETS_CACHE_TTL_MS.
- * IAM credentials come from the EC2/ECS/EKS instance role - we never read
- * AWS access keys from environment variables.
+ * For local development set `DATABASE_URL` instead of
+ * `SECRET_ID_BUNDLE`; AWS will be skipped entirely and every value
+ * is read from env vars (see env.ts).
  */
 
 export interface DbSecret {
@@ -119,27 +96,37 @@ function smClient(): SecretsManagerClient {
 }
 
 /**
- * Dev mode is signalled by `DATABASE_URL` being set in env. When true,
- * Secrets.* methods read from env vars instead of AWS Secrets Manager
- * so devs can run the API locally without AWS credentials.
- *
- * Production MUST leave DATABASE_URL unset and rely on Secrets Manager.
+ * Local mode: when DATABASE_URL is set, every Secrets.* call reads from
+ * env vars instead of AWS Secrets Manager so the API can run without
+ * AWS credentials. Production MUST leave DATABASE_URL unset and set
+ * SECRET_ID_BUNDLE instead.
  */
-function useDevSecrets(): boolean {
+function useLocalSecrets(): boolean {
   return Boolean(process.env.DATABASE_URL);
 }
 
-async function fetchSecret<T>(secretId: string | undefined): Promise<T> {
+interface BundledSecret {
+  app?: AppSecret;
+  db?: DbSecret;
+  redis?: RedisSecret;
+  auth?: AuthSecret;
+  aws?: AwsSecret;
+  mail?: MailSecret;
+  external?: Record<string, Record<string, unknown>>;
+}
+
+async function loadBundle(): Promise<BundledSecret> {
+  const secretId = env().SECRET_ID_BUNDLE;
   if (!secretId) {
     throw new Error(
-      "AWS Secrets Manager bundle requested but SECRET_ID_* env var is not set. " +
-        "Either set the SECRET_ID for this bundle in production, or set DATABASE_URL " +
-        "in dev to enable env-based secrets.",
+      "Neither DATABASE_URL nor SECRET_ID_BUNDLE is set. Set DATABASE_URL " +
+        "for local development, or SECRET_ID_BUNDLE to your AWS Secrets " +
+        "Manager secret ARN/name for staging/production.",
     );
   }
   const cached = cache.get(secretId);
   if (cached && cached.expiresAt > Date.now()) {
-    return cached.value as T;
+    return cached.value as BundledSecret;
   }
   const command = new GetSecretValueCommand({ SecretId: secretId });
   const response = await smClient().send(command);
@@ -147,10 +134,10 @@ async function fetchSecret<T>(secretId: string | undefined): Promise<T> {
   if (!raw) {
     throw new Error(`Secret ${secretId} has no SecretString`);
   }
-  let parsed: T;
+  let parsed: BundledSecret;
   try {
-    parsed = JSON.parse(raw) as T;
-  } catch (err) {
+    parsed = JSON.parse(raw) as BundledSecret;
+  } catch {
     throw new Error(`Secret ${secretId} is not valid JSON`);
   }
   cache.set(secretId, {
@@ -158,6 +145,20 @@ async function fetchSecret<T>(secretId: string | undefined): Promise<T> {
     expiresAt: Date.now() + env().SECRETS_CACHE_TTL_MS,
   });
   return parsed;
+}
+
+function requireBundleSlice<K extends keyof BundledSecret>(
+  bundle: BundledSecret,
+  key: K,
+): NonNullable<BundledSecret[K]> {
+  const v = bundle[key];
+  if (!v) {
+    throw new Error(
+      `SECRET_ID_BUNDLE is missing required "${key}" key. See node/README.md ` +
+        `for the expected JSON shape.`,
+    );
+  }
+  return v as NonNullable<BundledSecret[K]>;
 }
 
 // ------- Dev-mode fallbacks (read straight from env) -------------------------
@@ -215,46 +216,46 @@ function devMail(): MailSecret {
 
 export const Secrets = {
   async app(): Promise<AppSecret> {
-    if (useDevSecrets()) return devApp();
-    return fetchSecret<AppSecret>(env().SECRET_ID_APP);
+    if (useLocalSecrets()) return devApp();
+    return requireBundleSlice(await loadBundle(), "app");
   },
   async db(): Promise<DbSecret> {
-    // db is only consulted by bootstrapSecrets in production. In dev,
-    // DATABASE_URL is read directly by Prisma, so this path is unused.
-    return fetchSecret<DbSecret>(env().SECRET_ID_DB);
+    if (useLocalSecrets()) {
+      // Prisma reads DATABASE_URL directly; this path is only consulted
+      // by bootstrapSecrets() in production.
+      throw new Error("Secrets.db() called in local mode - Prisma reads DATABASE_URL directly");
+    }
+    return requireBundleSlice(await loadBundle(), "db");
   },
   async redis(): Promise<RedisSecret> {
-    if (useDevSecrets()) return devRedis();
-    return fetchSecret<RedisSecret>(env().SECRET_ID_REDIS);
+    if (useLocalSecrets()) return devRedis();
+    return requireBundleSlice(await loadBundle(), "redis");
   },
   async auth(): Promise<AuthSecret> {
-    if (useDevSecrets()) return devAuth();
-    return fetchSecret<AuthSecret>(env().SECRET_ID_AUTH);
+    if (useLocalSecrets()) return devAuth();
+    return requireBundleSlice(await loadBundle(), "auth");
   },
   async aws(): Promise<AwsSecret> {
-    if (useDevSecrets()) return devAws();
-    return fetchSecret<AwsSecret>(env().SECRET_ID_AWS);
+    if (useLocalSecrets()) return devAws();
+    return requireBundleSlice(await loadBundle(), "aws");
   },
   async mail(): Promise<MailSecret> {
-    if (useDevSecrets()) return devMail();
-    return fetchSecret<MailSecret>(env().SECRET_ID_MAIL);
+    if (useLocalSecrets()) return devMail();
+    return requireBundleSlice(await loadBundle(), "mail");
   },
   /**
-   * External provider secrets. In dev, looks for an env var
-   * `EXTERNAL_<PROVIDER_UPPER>_JSON` containing the JSON bundle. Most
-   * dev workflows don't need these (only required when actually
-   * invoking the external provider), so missing env values throw a
-   * clear error pointing at the offender.
+   * External provider secrets. Local mode reads `EXTERNAL_<PROVIDER>_JSON`
+   * env vars; production reads `bundle.external[<provider>]` from the
+   * SECRET_ID_BUNDLE secret.
    */
   async external<T extends Record<string, unknown>>(provider: string): Promise<T> {
-    if (useDevSecrets()) {
+    if (useLocalSecrets()) {
       const key = `EXTERNAL_${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_JSON`;
       const raw = process.env[key];
       if (!raw) {
         throw new Error(
-          `External provider "${provider}" is not configured. Set env ${key} ` +
-            `to a JSON object with that provider's keys (or unset DATABASE_URL ` +
-            `to switch to AWS Secrets Manager mode).`,
+          `External provider "${provider}" is not configured locally. Set env ${key} ` +
+            `to a JSON object with that provider's keys.`,
         );
       }
       try {
@@ -263,13 +264,14 @@ export const Secrets = {
         throw new Error(`Env ${key} is not valid JSON`);
       }
     }
-    const prefix = env().SECRET_ID_EXTERNAL_PREFIX;
-    if (!prefix) {
+    const fromBundle = (await loadBundle()).external?.[provider];
+    if (!fromBundle) {
       throw new Error(
-        "SECRET_ID_EXTERNAL_PREFIX is not set - cannot resolve external provider secrets",
+        `External provider "${provider}" not found in SECRET_ID_BUNDLE.external. ` +
+          `Add it to the bundled secret.`,
       );
     }
-    return fetchSecret<T>(`${prefix}/${provider}`);
+    return fromBundle as T;
   },
   invalidate(secretId?: string): void {
     if (secretId) cache.delete(secretId);
@@ -308,15 +310,22 @@ export async function bootstrapSecrets(): Promise<void> {
     return;
   }
 
-  logger.info({ event: "secrets.fetch" }, "Loading secrets from AWS Secrets Manager");
+  const bundleId = env().SECRET_ID_BUNDLE;
+  if (!bundleId) {
+    throw new Error(
+      "Production boot requires SECRET_ID_BUNDLE to point at the bundled " +
+        "AWS Secrets Manager secret (or set DATABASE_URL for local mode).",
+    );
+  }
+  logger.info(
+    { event: "secrets.fetch", id: bundleId },
+    "Loading bundled secret from AWS Secrets Manager",
+  );
 
-  // Load all required bundles concurrently. Any failure aborts boot.
-  const [db] = await Promise.all([
-    Secrets.db(),
-    Secrets.app(),
-    Secrets.auth(),
-    Secrets.redis(),
-  ]);
+  // Warm the cache and pull DB credentials. The first loadBundle() call
+  // also primes app/redis/auth/aws/mail/external for the rest of the
+  // process lifecycle.
+  const db = await Secrets.db();
 
   // Inject DB URL for Prisma. Prisma reads this from process.env at client init.
   process.env.DATABASE_URL = buildDatabaseUrl(db);
