@@ -81,72 +81,126 @@ image but different command overrides.
 
 ## AWS Secrets Manager + KMS
 
-The API has TWO boot modes; they share the same code path through
-`src/config/secrets.ts` and `src/config/kms.ts`:
+`src/config/secrets.ts` resolves every config value with a single rule:
 
-| Mode | Triggered by | Secrets source | KMS |
-|---|---|---|---|
-| **LOCAL** | `DATABASE_URL` set in env | env vars | local AES-256-GCM (key derived from `APP_KEY`) |
-| **PROD** | `SECRET_ID_BUNDLE` set in env | one bundled AWS Secrets Manager secret | real KMS when `KMS_KEY_ID` is set |
+> **SECRET > ENV > built-in default**
 
-Local mode requires zero AWS credentials. Prod mode is the only way to
-get real KMS + Secrets Manager. The two modes are independent of each
-other (you cannot mix, only one path runs per process).
+The bundled AWS Secrets Manager secret is a flat JSON object (the same
+format AWS shows you in the "Plaintext" tab; identical to the
+"Key/value" UI mode). When `SECRET_ID_BUNDLE` is set, the secret is
+fetched once at boot, cached for `SECRETS_CACHE_TTL_MS`, and any
+matching key takes priority over the corresponding env var. When
+`SECRET_ID_BUNDLE` is unset, every value is read from env.
 
-> Tip: KMS_KEY_ID is OPTIONAL even in prod mode. Leave it empty on
-> staging boxes where you don't want to provision a CMK; encrypted
-> columns will use the local AES key. The ciphertext is tagged with
-> the `v1d` prefix so it is NEVER confused with KMS-encrypted rows
-> (`v1` prefix). Switching between the two requires re-encrypting
-> existing rows.
+> **Adding a new key** in AWS Secrets Manager (or env) works
+> automatically with no code change. External-provider lookups scan
+> all `EXTERNAL_<PROVIDER>_*` keys at request time.
 
-### Bundled secret JSON shape (PROD mode)
+### Recognised flat keys
 
-Set `SECRET_ID_BUNDLE` to one Secrets Manager secret whose
-`SecretString` is exactly this JSON:
+```
+APP layer                APP_KEY  REQUEST_SIGNING_SECRET  FVBANK_WEBHOOK_SECRET
+Database                 DATABASE_URL  (or)
+                         DB_HOST  DB_PORT  DB_DATABASE  DB_USERNAME  DB_PASSWORD  DB_SSL
+Redis                    REDIS_HOST  REDIS_PORT  REDIS_PASSWORD  REDIS_USERNAME  REDIS_TLS  REDIS_DB
+Auth peppers             TOKEN_PEPPER  PASSWORD_PEPPER  SIGNATURE_SECRET  MERCHANT_SIGNATURE_SECRET
+AWS                      S3_BUCKET  S3_REGION  S3_USE_PATH_STYLE
+Mail                     MAIL_HOST  MAIL_PORT  MAIL_USERNAME  MAIL_PASSWORD  MAIL_FROM
+External providers       EXTERNAL_<PROVIDER>_<KEY>
+                         e.g. EXTERNAL_MASSIVE_URL  EXTERNAL_COMPLIANCE_TIMEOUT_SEC
+```
+
+Provider names map directly to the prefix (uppercased, alphanumeric
+preserved): `caliza`, `compliance`, `diginine`, `fvbank`,
+`herald_sumsub`, `incode`, `invoicemate`, `massive`, `processingunit`,
+`remittance`, `report_server`, `surepass`, `telegram`, `viyona_pay`.
+
+### Example bundled secret (flat JSON)
+
+Paste this into the `SecretString` of one Secrets Manager secret and
+point `SECRET_ID_BUNDLE` at its ARN. Special characters in passwords
+(e.g. `@`) do NOT need URL-encoding when using `DB_PASSWORD` -
+`buildDatabaseUrl` encodes them for Prisma.
 
 ```json
 {
-  "app":   { "APP_KEY": "<base64-32>", "REQUEST_SIGNING_SECRET": "<hex-32>", "FVBANK_WEBHOOK_SECRET": "<hex-32>" },
-  "db":    { "host": "...", "port": 3306, "database": "...", "username": "...", "password": "...", "ssl": true },
-  "redis": { "host": "...", "port": 6379, "password": "...", "tls": true, "username": "default" },
-  "auth":  { "TOKEN_PEPPER": "<hex-32>", "PASSWORD_PEPPER": "<hex-32>", "SIGNATURE_SECRET": "<hex-32>", "MERCHANT_SIGNATURE_SECRET": "<hex-32>" },
-  "aws":   { "S3_BUCKET": "...", "S3_REGION": "us-east-1", "S3_USE_PATH_STYLE": false },
-  "mail":  { "host": "...", "port": 587, "username": "...", "password": "...", "from": "no-reply@..." },
-  "external": {
-    "caliza":          { "URL": "...", "API_KEY": "...", "CALLBACK_URL": "..." },
-    "diginine":        { "URL": "...", "API_KEY": "...", "CALLBACK_URL": "..." },
-    "fvbank":          { "URL": "...", "API_KEY": "...", "CLIENT_SECRET": "..." },
-    "massive":         { "URL": "...", "API_KEY": "...", "GET_QUOTE_ENDPOINT": "/quote" },
-    "compliance":      { "URL": "...", "API_KEY": "...", "CREATE_TRANSACTION_ENDPOINT": "/transactions" },
-    "processing_unit": { "URL": "...", "API_KEY": "...", "API_SECRET": "..." },
-    "report_server":   { "BASE_URL": "...", "HEADER_KEY": "x-api-key", "HEADER_VALUE": "...", "VIYONAPAY": "...", "DIGININE": "..." }
-  }
+  "APP_KEY": "base64:H9G8SXvsFezjgiFPWysfaYd48KFxKQT3Lqb/lETVmls=",
+  "REQUEST_SIGNING_SECRET": "<openssl rand -hex 32>",
+  "FVBANK_WEBHOOK_SECRET":  "<openssl rand -hex 32>",
+
+  "DB_HOST": "127.0.0.1",
+  "DB_PORT": "3306",
+  "DB_DATABASE": "eficyent",
+  "DB_USERNAME": "root",
+  "DB_PASSWORD": "codegama@123",
+  "DB_SSL": "false",
+
+  "REDIS_HOST": "127.0.0.1",
+  "REDIS_PORT": "6379",
+  "REDIS_USERNAME": "default",
+  "REDIS_TLS": "false",
+  "REDIS_DB": "0",
+
+  "TOKEN_PEPPER":              "<openssl rand -hex 32>",
+  "PASSWORD_PEPPER":           "<openssl rand -hex 32>",
+  "SIGNATURE_SECRET":          "<openssl rand -hex 32>",
+  "MERCHANT_SIGNATURE_SECRET": "<openssl rand -hex 32>",
+
+  "S3_BUCKET": "eficyent-staging",
+  "S3_REGION": "us-east-1",
+  "S3_USE_PATH_STYLE": "false",
+
+  "MAIL_HOST": "smtp.mailgun.org",
+  "MAIL_PORT": "587",
+  "MAIL_USERNAME": "support@staging.example.com",
+  "MAIL_PASSWORD": "...",
+  "MAIL_FROM":     "support@staging.example.com",
+
+  "EXTERNAL_MASSIVE_URL": "https://bertdgh-services.herald.exchange",
+  "EXTERNAL_MASSIVE_API_KEY": "...",
+  "EXTERNAL_MASSIVE_GET_QUOTE_ENDPOINT": "/api/v1/exchange/rate",
+
+  "EXTERNAL_COMPLIANCE_URL": "https://sandbox-api-compliance.herald.exchange",
+  "EXTERNAL_COMPLIANCE_API_KEY": "...",
+  "EXTERNAL_COMPLIANCE_CREATE_TRANSACTION_ENDPOINT": "/transactions",
+  "EXTERNAL_COMPLIANCE_EMAIL": "ops@example.com",
+  "EXTERNAL_COMPLIANCE_PASSWORD": "...",
+  "EXTERNAL_COMPLIANCE_ACCESS_TOKEN_ENDPOINT": "/api/v1/auth/login",
+  "EXTERNAL_COMPLIANCE_TIMEOUT_SEC": "90",
+
+  "EXTERNAL_PROCESSINGUNIT_URL": "https://api-eficyent-processing-unit-sandbox.example.com/",
+  "EXTERNAL_PROCESSINGUNIT_API_KEY": "...",
+  "EXTERNAL_PROCESSINGUNIT_API_SECRET": "...",
+
+  "EXTERNAL_REPORT_SERVER_BASE_URL": "https://reports.example.com",
+  "EXTERNAL_REPORT_SERVER_HEADER_KEY": "x-api-key",
+  "EXTERNAL_REPORT_SERVER_HEADER_VALUE": "...",
+  "EXTERNAL_REPORT_SERVER_VIYONAPAY": "...",
+  "EXTERNAL_REPORT_SERVER_DIGININE":  "..."
 }
 ```
 
-Generate the random values with `openssl rand -hex 32` /
-`openssl rand -base64 32`. The secret is cached in memory for
-`SECRETS_CACHE_TTL_MS` (default 5 min); call `Secrets.invalidate()`
-from a runbook script after rotation.
+Values can be JSON strings, numbers, or booleans - all are coerced to
+strings on read. Nested objects in the secret are NOT supported; use
+the flat prefix scheme instead.
 
 ### KMS at-rest encryption
 
 `src/config/kms.ts` envelope-encrypts any column the SOC audit
-considers sensitive:
+considers sensitive (`users.tfa_secret`, `users.private_key`,
+`users.public_key`, `users.salt_key`, external service tokens).
 
-* `users.tfa_secret`
-* `users.private_key`, `users.public_key`, `users.salt_key`
-* External service tokens
+When `KMS_KEY_ID` is set, real KMS is used and the ciphertext carries
+the `v1` prefix. When unset, a local AES-256-GCM key derived from
+`APP_KEY` is used and the ciphertext carries `v1d`. Both prefixes can
+coexist in the same DB during a migration; the decrypt path detects
+which key to use from the prefix.
 
-When `KMS_KEY_ID` is set, the CMK is referenced by alias or ARN; key
-rotation is enforced in KMS, not in app code. When unset, a local
-AES-256-GCM key derived from `APP_KEY` is used (local-only). Switching
-between the two requires re-encrypting any existing ciphertext rows.
+`KMS_KEY_ID` is decoupled from `SECRET_ID_BUNDLE` - you can run with
+real Secrets Manager and local AES, or env-only secrets with real
+KMS, in any combination.
 
-### IAM (least privilege, PROD mode)
-
-API and worker may share the same role; minimum required policy:
+### IAM (least privilege, when SECRET_ID_BUNDLE is set)
 
 ```json
 {
@@ -162,7 +216,7 @@ API and worker may share the same role; minimum required policy:
 {
   "Effect": "Allow",
   "Action": ["s3:GetObject", "s3:PutObject"],
-  "Resource": "arn:aws:s3:::<aws.S3_BUCKET>/*"
+  "Resource": "arn:aws:s3:::<S3_BUCKET>/*"
 }
 ```
 
@@ -557,11 +611,17 @@ behind a feature flag.
 
 ---
 
-## Local development setup (LOCAL mode)
+## Local development setup
 
-LOCAL mode is triggered by setting `DATABASE_URL` in `.env`. AWS is
-bypassed entirely - no AWS credentials needed. KMS is bypassed too
-(encrypted columns use a local AES-256-GCM key derived from `APP_KEY`).
+The same flat-key model serves local and production. The only switches
+are:
+
+* `SECRET_ID_BUNDLE` - set to use AWS Secrets Manager. Unset to read
+  every value from env directly.
+* `KMS_KEY_ID` - set for real KMS, unset for local AES-256-GCM.
+
+For typical laptop development you leave both unset and put values in
+`.env`. No AWS credentials needed.
 
 ### 0. One-time machine prerequisites
 
@@ -587,14 +647,11 @@ git clone <this repo>
 cd eficyent-api/node
 
 cp .env.example .env
-# Open .env and uncomment the entire "LOCAL MODE" block at the bottom.
-# Fill in DATABASE_URL with your MySQL creds and (at minimum):
-#   TOKEN_PEPPER, PASSWORD_PEPPER, APP_KEY
-# Generate them with:
+# Open .env and fill in (at minimum) the DB_*, REDIS_*, APP_KEY,
+# TOKEN_PEPPER, PASSWORD_PEPPER values. Generate randoms with:
 #   openssl rand -hex 32           # for *_PEPPER, *_SECRET
 #   openssl rand -base64 32        # for APP_KEY
-# Leave KMS_KEY_ID empty (or commented out).
-# Make sure SECRET_ID_BUNDLE is NOT set in LOCAL mode.
+# Leave SECRET_ID_BUNDLE and KMS_KEY_ID empty.
 
 npm install
 ```
@@ -603,7 +660,6 @@ A copy-paste-ready `.env` for a fresh local machine:
 
 ```bash
 NODE_ENV=dev
-APP_NAME=Eficyent
 APP_ENV=dev
 APP_URL=http://localhost:8080
 PORT=8080
@@ -612,24 +668,30 @@ LOG_LEVEL=info
 CORS_ORIGINS=http://localhost:3000
 APP_IS_SANDBOX=false
 
-# LOCAL mode trigger
-DATABASE_URL="mysql://root:devroot@127.0.0.1:3306/eficyent_node"
+# AWS off, KMS off
+SECRET_ID_BUNDLE=
+KMS_KEY_ID=
+
+# Database
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=eficyent_node
+DB_USERNAME=root
+DB_PASSWORD=devroot
+DB_SSL=false
 
 # Redis
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
-REDIS_DB=0
 REDIS_TLS=false
+REDIS_DB=0
 
-# Auth pepper / app key (replace with your own openssl values)
+# Auth + app
+APP_KEY=replace-me-with-openssl-rand-base64-32
 TOKEN_PEPPER=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
 PASSWORD_PEPPER=ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100
 SIGNATURE_SECRET=11112222333344445555666677778888
 MERCHANT_SIGNATURE_SECRET=88887777666655554444333322221111
-APP_KEY=replace-me-with-openssl-rand-base64-32
-
-# KMS empty -> local AES-256-GCM crypto
-KMS_KEY_ID=
 ```
 
 ### 2. Apply the schema
@@ -658,48 +720,44 @@ npm run dev:worker   # BullMQ worker in a second terminal
 
 Hit `http://localhost:8080/api/health` - you should get `{"status":true,"code":200,...}`.
 
-### 4. Optional LOCAL configurations
+### 4. Optional configurations
 
 | What you want to test | Set in `.env` |
 |---|---|
 | Mail templates | `MAIL_HOST=localhost MAIL_PORT=1025` and run [MailHog](https://github.com/mailhog/MailHog) |
 | S3 uploads | `S3_BUCKET=...` `S3_REGION=...` and `S3_USE_PATH_STYLE=true` for MinIO |
-| External providers (Caliza, FvBank, ...) | `EXTERNAL_<PROVIDER>_JSON='{"URL":"...", "API_KEY":"..."}'` |
-| Real AWS Secrets Manager (staging-like) | Unset `DATABASE_URL`, set `SECRET_ID_BUNDLE`, run `aws sso login` (or set `AWS_PROFILE`) so the SDK can pick up creds |
+| External providers (Caliza, FvBank, ...) | `EXTERNAL_<PROVIDER>_<KEY>=...` for each value (e.g. `EXTERNAL_MASSIVE_URL=...`) |
+| Real AWS Secrets Manager from your laptop | Set `SECRET_ID_BUNDLE` AND configure AWS creds: `aws configure` (or `aws sso login`, or `AWS_PROFILE`). |
 
-### 5. Common LOCAL errors
+### 5. Common errors
 
 | Symptom | Fix |
 |---|---|
-| `CredentialsProviderError: Could not load credentials from any providers` | `DATABASE_URL` is not set in `.env`, so the API tried to load the bundled secret from AWS. Add `DATABASE_URL=mysql://...` and uncomment the LOCAL block. |
-| `Neither DATABASE_URL nor SECRET_ID_BUNDLE is set` | Same root cause as above. |
-| `Authentication failed against database server` | Wrong creds in `DATABASE_URL`. Special characters in the password must be URL-encoded (`@` -> `%40`, `:` -> `%3A`). |
+| `CredentialsProviderError: Could not load credentials from any providers` | `SECRET_ID_BUNDLE` is set but the SDK has no AWS creds. Either unset `SECRET_ID_BUNDLE` (env-only mode) or run `aws configure` / set `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`. |
+| `Authentication failed against database server` | Wrong DB creds. If you used `DATABASE_URL`, special chars in the password must be URL-encoded (`@` -> `%40`). With `DB_PASSWORD` no encoding is needed. |
 | `ECONNREFUSED 127.0.0.1:6379` | Redis not running. `docker start eficyent-redis`. |
-| `Invalid envelope format` after switching from LOCAL to PROD | Encrypted columns were written with the local AES key (`v1d` prefix); KMS can't decrypt them. Re-create the affected rows OR keep `KMS_KEY_ID` empty. |
+| `External provider "<name>" has no keys configured` | Set `EXTERNAL_<PROVIDER>_<KEY>=...` in env, or add `EXTERNAL_<PROVIDER>_*` keys to the AWS bundled secret. |
+| `Invalid envelope format` after enabling KMS | Encrypted columns were written with the local AES key (`v1d` prefix) and `KMS_KEY_ID` is now set. Re-encrypt the affected rows or roll back `KMS_KEY_ID`. |
 
 ---
 
-## Production deployment (PROD mode)
-
-PROD mode loads everything from one bundled AWS Secrets Manager secret.
-KMS is optional but recommended.
+## Production deployment
 
 ### A. Provision the AWS-side artefacts
 
-1. **Secrets Manager secret** - one secret, any name. Paste the JSON
-   shape from the AWS Secrets Manager + KMS section above into the
-   `SecretString`. Note the secret ARN/name; that's what
+1. **Secrets Manager secret** - one secret, any name. Paste the flat
+   JSON from the AWS Secrets Manager + KMS section above into the
+   `SecretString`. Note the secret ARN; that's what
    `SECRET_ID_BUNDLE` points at.
 
 2. **KMS CMK** (optional but recommended) - any symmetric AES_256 key.
    Grant the application's IAM role
    `kms:Encrypt`/`Decrypt`/`GenerateDataKey` on it. Set `KMS_KEY_ID`
-   to the key ARN or alias (e.g. `alias/eficyent/production/app`).
-   Leave it empty to fall back to local AES.
+   to the key ARN/alias. Leave it empty to fall back to local AES.
 
 3. **IAM role** for the API/worker host (see the IAM block above).
 
-4. **MySQL** (RDS / Aurora MySQL 8) with `ssl: true`.
+4. **MySQL** (RDS / Aurora MySQL 8) with `DB_SSL=true`.
 
 5. **Redis** (ElastiCache / Upstash) with TLS + auth.
 
@@ -720,8 +778,8 @@ node dist/worker.js         # BullMQ worker (run >= 2 replicas)
 
 ### C. Production-only env
 
-Set ONLY these on your hosting environment - everything else lives
-inside the bundled Secrets Manager secret:
+Set ONLY these on your hosting environment - every secret value
+lives inside the bundled Secrets Manager secret:
 
 ```
 NODE_ENV=production
@@ -731,8 +789,6 @@ PORT=8080
 TRUST_PROXY=1
 
 AWS_REGION=us-east-1
-
-# Bundled secret
 SECRET_ID_BUNDLE=arn:aws:secretsmanager:us-east-1:<acct>:secret:eficyent-api-<env>-XXXX
 SECRETS_CACHE_TTL_MS=300000
 
@@ -743,8 +799,8 @@ CORS_ORIGINS=https://app.example.com,https://admin.example.com
 LOG_LEVEL=info
 ```
 
-Do **NOT** set `DATABASE_URL` in production - that flag puts the
-process into LOCAL mode and bypasses Secrets Manager.
+Any value present in env that isn't in the AWS secret fills the gap;
+the secret always wins for keys that exist in both.
 
 ### D. Health checks + smoke test
 
@@ -755,16 +811,18 @@ curl https://api.eficyent.example.com/api/health
 
 ### E. Operational runbook
 
-* **Rotating a secret**: update the JSON in Secrets Manager. The
-  cache TTL is `SECRETS_CACHE_TTL_MS` (default 5 min); rolling the
-  pods picks the new value up immediately.
+* **Adding a new key**: update the JSON in Secrets Manager (or env)
+  - no code change needed for any `EXTERNAL_*` provider key, or for
+  any value the consumer reads via `cfg()`. The cache TTL is
+  `SECRETS_CACHE_TTL_MS` (default 5 min); rolling the pods picks the
+  new value up immediately.
+* **Rotating a secret**: same as above - just edit the JSON.
 * **Replaying webhooks**: BullMQ retains failed jobs for 30 days. Use
   Bull dashboard or `bullmq-cli` to retry a stuck `payout` /
   `processingunit-webhook` job.
 * **Rolling deploys**: workers are idempotent (BullMQ jobIds dedupe).
   API pods can be rolled freely; sessions are Redis-backed.
 * **Switching KMS on/off**: the ciphertext prefix (`v1` vs `v1d`)
-  records which key encrypted each row, so the two can coexist
-  during a migration. To re-encrypt existing rows, run a one-shot
-  script that decrypts under the old mode and re-encrypts under the
-  new.
+  records which key encrypted each row, so the two coexist during a
+  migration. To re-encrypt existing rows, run a one-shot script that
+  decrypts under the old mode and re-encrypts under the new.

@@ -48,54 +48,24 @@ const envSchema = z.object({
 
   AWS_REGION: z.string().default("us-east-1"),
 
-  // KMS is OPTIONAL. When KMS_KEY_ID is unset, encrypted columns use a
-  // local AES-256-GCM key derived from APP_KEY (intended for local
-  // development only). In production set KMS_KEY_ID to a real KMS key
-  // ARN/alias.
+  // KMS_KEY_ID is OPTIONAL. When unset, encrypted columns use a local
+  // AES-256-GCM key derived from APP_KEY (intended for local dev). In
+  // production set this to a real KMS key ARN/alias.
   KMS_KEY_ID: z.string().optional(),
 
-  // Two loading modes:
-  //   1. DATABASE_URL set        -> local mode, every value from env
-  //   2. SECRET_ID_BUNDLE set    -> one AWS Secrets Manager secret holds
-  //                                 {app,db,redis,auth,aws,mail,external}
+  // SECRET_ID_BUNDLE is OPTIONAL. When set, the named AWS Secrets
+  // Manager secret is loaded as a flat key/value map and takes
+  // priority over env vars for any matching key. When unset, every
+  // value is read from env. See src/config/secrets.ts for the
+  // recognised keys.
   SECRET_ID_BUNDLE: z.string().optional(),
   SECRETS_CACHE_TTL_MS: numberFromString(5 * 60_000),
 
-  // Dev/local mode: when DATABASE_URL is set we skip AWS Secrets Manager
-  // and read the bundles below directly from env. NEVER set these in
-  // production - leave them empty and rely on Secrets Manager.
+  // DATABASE_URL is read by Prisma at client init. Either set it
+  // directly here (or in the AWS secret), or set the DB_HOST/PORT/
+  // DATABASE/USERNAME/PASSWORD/SSL keys and bootstrapSecrets composes
+  // a URL from them.
   DATABASE_URL: z.string().optional(),
-
-  // Redis (dev fallback)
-  REDIS_HOST: z.string().optional(),
-  REDIS_PORT: numberFromString(6379),
-  REDIS_PASSWORD: z.string().optional(),
-  REDIS_USERNAME: z.string().optional(),
-  REDIS_DB: numberFromString(0),
-  REDIS_TLS: boolish(false),
-
-  // Auth (dev fallback). Generate with `openssl rand -hex 32`.
-  TOKEN_PEPPER: z.string().optional(),
-  PASSWORD_PEPPER: z.string().optional(),
-  SIGNATURE_SECRET: z.string().optional(),
-  MERCHANT_SIGNATURE_SECRET: z.string().optional(),
-
-  // App (dev fallback). Generate with `openssl rand -base64 32`.
-  APP_KEY: z.string().optional(),
-  REQUEST_SIGNING_SECRET: z.string().optional(),
-  FVBANK_WEBHOOK_SECRET: z.string().optional(),
-
-  // AWS (dev fallback)
-  S3_BUCKET: z.string().optional(),
-  S3_REGION: z.string().optional(),
-  S3_USE_PATH_STYLE: boolish(false),
-
-  // Mail (dev fallback)
-  MAIL_HOST: z.string().optional(),
-  MAIL_PORT: numberFromString(587),
-  MAIL_USERNAME: z.string().optional(),
-  MAIL_PASSWORD: z.string().optional(),
-  MAIL_FROM: z.string().optional(),
 
   LOG_LEVEL: z.string().default("info"),
 
