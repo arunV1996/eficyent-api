@@ -47,18 +47,52 @@ const envSchema = z.object({
   APP_IS_SANDBOX: boolish(false),
 
   AWS_REGION: z.string().default("us-east-1"),
-  KMS_KEY_ID: z.string().min(1),
+  KMS_KEY_ID: z.string().optional(),
 
-  SECRET_ID_APP: z.string().min(1),
-  SECRET_ID_DB: z.string().min(1),
-  SECRET_ID_REDIS: z.string().min(1),
-  SECRET_ID_AUTH: z.string().min(1),
-  SECRET_ID_AWS: z.string().min(1),
-  SECRET_ID_MAIL: z.string().min(1),
-  SECRET_ID_EXTERNAL_PREFIX: z.string().min(1),
+  SECRET_ID_APP: z.string().optional(),
+  SECRET_ID_DB: z.string().optional(),
+  SECRET_ID_REDIS: z.string().optional(),
+  SECRET_ID_AUTH: z.string().optional(),
+  SECRET_ID_AWS: z.string().optional(),
+  SECRET_ID_MAIL: z.string().optional(),
+  SECRET_ID_EXTERNAL_PREFIX: z.string().optional(),
   SECRETS_CACHE_TTL_MS: numberFromString(5 * 60_000),
 
+  // Dev/local mode: when DATABASE_URL is set we skip AWS Secrets Manager
+  // and read the bundles below directly from env. NEVER set these in
+  // production - leave them empty and rely on Secrets Manager.
   DATABASE_URL: z.string().optional(),
+
+  // Redis (dev fallback)
+  REDIS_HOST: z.string().optional(),
+  REDIS_PORT: numberFromString(6379),
+  REDIS_PASSWORD: z.string().optional(),
+  REDIS_USERNAME: z.string().optional(),
+  REDIS_DB: numberFromString(0),
+  REDIS_TLS: boolish(false),
+
+  // Auth (dev fallback). Generate with `openssl rand -hex 32`.
+  TOKEN_PEPPER: z.string().optional(),
+  PASSWORD_PEPPER: z.string().optional(),
+  SIGNATURE_SECRET: z.string().optional(),
+  MERCHANT_SIGNATURE_SECRET: z.string().optional(),
+
+  // App (dev fallback). Generate with `openssl rand -base64 32`.
+  APP_KEY: z.string().optional(),
+  REQUEST_SIGNING_SECRET: z.string().optional(),
+  FVBANK_WEBHOOK_SECRET: z.string().optional(),
+
+  // AWS (dev fallback)
+  S3_BUCKET: z.string().optional(),
+  S3_REGION: z.string().optional(),
+  S3_USE_PATH_STYLE: boolish(false),
+
+  // Mail (dev fallback)
+  MAIL_HOST: z.string().optional(),
+  MAIL_PORT: numberFromString(587),
+  MAIL_USERNAME: z.string().optional(),
+  MAIL_PASSWORD: z.string().optional(),
+  MAIL_FROM: z.string().optional(),
 
   LOG_LEVEL: z.string().default("info"),
 

@@ -4,8 +4,33 @@ import {
   GenerateDataKeyCommand,
   KMSClient,
 } from "@aws-sdk/client-kms";
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from "crypto";
 import { env } from "./env";
+
+/**
+ * Dev-mode KMS fallback. When DATABASE_URL is set we run without AWS, so
+ * we substitute a local AES-256-GCM key derived from APP_KEY (or a fixed
+ * dev sentinel). Ciphertext is tagged with the v1d prefix so prod can
+ * never accidentally decrypt dev rows and vice versa.
+ *
+ * SECURITY: do NOT set DATABASE_URL in production. The fixed-sentinel
+ * derivation is intentionally insecure and detectable.
+ */
+function useDevKms(): boolean {
+  return Boolean(process.env.DATABASE_URL);
+}
+
+function devKey(): Buffer {
+  const seed = process.env.APP_KEY ?? "dev-app-key-not-for-production";
+  return createHash("sha256").update(seed).digest();
+}
+
+const DEV_PREFIX = "v1d";
 
 /**
  * KMS-backed envelope encryption.
@@ -47,6 +72,17 @@ function b64decode(s: string): Buffer {
 }
 
 export async function encryptEnvelope(plaintext: string): Promise<string> {
+  if (useDevKms()) {
+    const key = devKey();
+    const iv = randomBytes(GCM_IV_BYTES);
+    const cipher = createCipheriv("aes-256-gcm", key, iv);
+    const ct = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return [DEV_PREFIX, b64(iv), b64(Buffer.concat([ct, tag]))].join(":");
+  }
+  if (!env().KMS_KEY_ID) {
+    throw new Error("KMS_KEY_ID not configured (production mode)");
+  }
   const cmd = new GenerateDataKeyCommand({
     KeyId: env().KMS_KEY_ID,
     KeySpec: "AES_256",
@@ -73,6 +109,19 @@ export async function encryptEnvelope(plaintext: string): Promise<string> {
 
 export async function decryptEnvelope(payload: string): Promise<string> {
   const parts = payload.split(":");
+  if (parts[0] === DEV_PREFIX) {
+    if (parts.length !== 3) throw new Error("Invalid dev envelope format");
+    const [, ivB64, ctTagB64] = parts as [string, string, string];
+    const key = devKey();
+    const iv = b64decode(ivB64);
+    const ctTag = b64decode(ctTagB64);
+    const ct = ctTag.subarray(0, ctTag.length - GCM_TAG_BYTES);
+    const tag = ctTag.subarray(ctTag.length - GCM_TAG_BYTES);
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
+    return pt.toString("utf8");
+  }
   if (parts.length !== 4 || parts[0] !== ENVELOPE_PREFIX) {
     throw new Error("Invalid envelope format");
   }
@@ -105,6 +154,10 @@ export async function decryptEnvelope(payload: string): Promise<string> {
  * extra KMS hop is acceptable. Output is base64 of the KMS CiphertextBlob.
  */
 export async function encryptDirect(plaintext: string): Promise<string> {
+  if (useDevKms()) return encryptEnvelope(plaintext);
+  if (!env().KMS_KEY_ID) {
+    throw new Error("KMS_KEY_ID not configured (production mode)");
+  }
   const cmd = new EncryptCommand({
     KeyId: env().KMS_KEY_ID,
     Plaintext: Buffer.from(plaintext, "utf8"),
@@ -115,6 +168,9 @@ export async function encryptDirect(plaintext: string): Promise<string> {
 }
 
 export async function decryptDirect(ciphertext: string): Promise<string> {
+  if (useDevKms() || ciphertext.startsWith(`${DEV_PREFIX}:`) || ciphertext.startsWith(`${ENVELOPE_PREFIX}:`)) {
+    return decryptEnvelope(ciphertext);
+  }
   const cmd = new DecryptCommand({
     CiphertextBlob: b64decode(ciphertext),
     KeyId: env().KMS_KEY_ID,

@@ -525,22 +525,196 @@ behind a feature flag.
 
 ---
 
-## Local development
+## Local development setup
+
+The API has two distinct boot modes:
+
+* **Dev mode** - flipped on by setting `DATABASE_URL` in `.env`. AWS
+  Secrets Manager is bypassed entirely; every secret bundle reads from
+  env vars instead. KMS-encrypted columns use a local AES-256-GCM key
+  derived from `APP_KEY`. **AWS credentials are not required.**
+* **Production mode** - `DATABASE_URL` is unset, all secrets load from
+  AWS Secrets Manager via the `SECRET_ID_*` env vars, and KMS does
+  real envelope encryption. The host must have an instance role with
+  Secrets Manager + KMS permissions.
+
+### 0. One-time machine prerequisites
+
+* Node 22+ and npm 10+ (`node --version`, `npm --version`).
+* MySQL 8.x running on `127.0.0.1:3306`.
+* Redis 7.x running on `127.0.0.1:6379`.
+* (Optional) the Laravel Prisma schema source-of-truth in `../Laravel/`
+  if you plan to regenerate the schema with `prisma db pull`.
+
+If you don't already have MySQL + Redis, the quickest path is Docker:
 
 ```bash
-cp .env.example .env       # fill in values OR rely on Secrets Manager
-docker compose up -d       # mysql + redis
+docker run -d --name eficyent-mysql \
+  -e MYSQL_ROOT_PASSWORD=devroot \
+  -e MYSQL_DATABASE=eficyent_node \
+  -p 3306:3306 mysql:8
+
+docker run -d --name eficyent-redis -p 6379:6379 redis:7
+```
+
+### 1. Install + seed config
+
+```bash
+git clone <this repo>
+cd eficyent-api/node
+
+cp .env.example .env
+# Open .env and uncomment the entire "DEV MODE" block at the bottom.
+# Fill in DATABASE_URL with your MySQL credentials and at minimum:
+#   TOKEN_PEPPER, PASSWORD_PEPPER, APP_KEY
+# Generate each with:
+#   openssl rand -hex 32           # for TOKEN_PEPPER, PASSWORD_PEPPER, *_SECRET
+#   openssl rand -base64 32        # for APP_KEY
+
 npm install
-npx prisma generate
-npx prisma migrate dev     # if you have access to a migrations folder
-npm run dev                # API (tsx watch)
-npm run dev:worker         # worker
 ```
 
-For production:
+### 2. Apply the schema
 
 ```bash
-npm run build
-node dist/index.js         # API
-node dist/worker.js        # worker
+npx prisma generate
+npx prisma migrate deploy   # runs all migrations against the DB
+# OR for a from-scratch dev DB that you can iterate on:
+npx prisma migrate dev --name init
 ```
+
+If you only have the upstream Laravel migrations (no Prisma migrations
+folder yet), introspect the live DB instead:
+
+```bash
+npx prisma db pull
+npx prisma generate
+```
+
+### 3. Run the API + worker
+
+```bash
+npm run dev          # API on :8080 with tsx watch (hot reload)
+npm run dev:worker   # BullMQ worker in a second terminal
+```
+
+Hit `http://localhost:8080/api/health` - you should get `{"status":true,"code":200,...}`.
+
+### 4. Optional dev configurations
+
+| What you want to test | Set in `.env` |
+|---|---|
+| Mail templates | `MAIL_HOST=localhost MAIL_PORT=1025` and run [MailHog](https://github.com/mailhog/MailHog) |
+| S3 uploads | `S3_BUCKET=...` `S3_REGION=...` and `S3_USE_PATH_STYLE=true` for MinIO |
+| External providers (Caliza, FvBank, etc.) | `EXTERNAL_<PROVIDER>_JSON='{"...":"..."}'` |
+| Real AWS Secrets Manager (staging-like) | Comment out `DATABASE_URL`, set the `SECRET_ID_*` vars, run `aws sso login` (or set `AWS_PROFILE`) so the SDK can pick up creds |
+
+### 5. Common dev errors
+
+| Symptom | Fix |
+|---|---|
+| `CredentialsProviderError: Could not load credentials from any providers` | `DATABASE_URL` is not set in `.env`, so the API tried to load secrets from AWS. Add `DATABASE_URL=mysql://...` and uncomment the dev block. |
+| `Authentication failed against database server` | Wrong creds in `DATABASE_URL`. Special characters in the password must be URL-encoded (`@` -> `%40`, `:` -> `%3A`). |
+| `ECONNREFUSED 127.0.0.1:6379` | Redis not running. `docker start eficyent-redis`. |
+| `Invalid environment configuration: KMS_KEY_ID: ...` | You're on an older clone. `git pull`; `KMS_KEY_ID` is now optional. |
+| `Secret eficyent/dev/redis has no SecretString` | `DATABASE_URL` is set but you're hitting an env-secret path. `git pull` to get the dev fallbacks. |
+
+---
+
+## Production deployment
+
+### A. Provision the AWS-side artefacts
+
+1. **Secrets Manager bundles** (one secret per bundle, JSON value):
+   ```
+   eficyent/<env>/app    -> {"APP_KEY":"...", "REQUEST_SIGNING_SECRET":"...", "FVBANK_WEBHOOK_SECRET":"..."}
+   eficyent/<env>/db     -> {"host":"...","port":3306,"database":"...","username":"...","password":"...","ssl":true}
+   eficyent/<env>/redis  -> {"host":"...","port":6379,"password":"...","tls":true,"username":"default"}
+   eficyent/<env>/auth   -> {"TOKEN_PEPPER":"...","PASSWORD_PEPPER":"...","SIGNATURE_SECRET":"...","MERCHANT_SIGNATURE_SECRET":"..."}
+   eficyent/<env>/aws    -> {"S3_BUCKET":"...","S3_REGION":"us-east-1","S3_USE_PATH_STYLE":false}
+   eficyent/<env>/mail   -> {"host":"...","port":587,"username":"...","password":"...","from":"no-reply@..."}
+   eficyent/<env>/external/<provider>  -> per-provider object (URL, API_KEY, ...)
+   ```
+   Generate the random values with `openssl rand -hex 32` /
+   `openssl rand -base64 32`. Pepper rotation requires a re-hash of
+   stored passwords - do it during a planned maintenance window.
+
+2. **KMS CMK** with `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey`
+   permissions on the application's IAM role. Set `KMS_KEY_ID` to the
+   key ARN or alias (e.g. `alias/eficyent/production/app`).
+
+3. **IAM role** for the API/worker host with:
+   ```
+   secretsmanager:GetSecretValue   on the eficyent/<env>/* secrets
+   kms:Decrypt + Encrypt + GenerateDataKey   on the CMK above
+   s3:GetObject + PutObject        on the S3_BUCKET
+   ```
+
+4. **MySQL** (Aurora MySQL 8 / RDS / managed) with `ssl: true`.
+
+5. **Redis** (ElastiCache or Upstash) with TLS + auth.
+
+### B. Deploy steps
+
+```bash
+# Build (TypeScript -> dist/, regenerates Prisma client)
+npm ci --omit=dev
+npm run build
+
+# Apply migrations (run once per release, idempotent)
+npx prisma migrate deploy
+
+# Start the API + workers (one process each, or use process manager)
+node dist/index.js          # HTTP API
+node dist/worker.js         # BullMQ worker (run >= 2 replicas)
+```
+
+### C. Production-only env
+
+Set ONLY these in your hosting environment (everything else lives in
+Secrets Manager):
+
+```
+NODE_ENV=production
+APP_ENV=production
+APP_URL=https://api.eficyent.example.com
+PORT=8080
+TRUST_PROXY=1
+
+AWS_REGION=us-east-1
+KMS_KEY_ID=arn:aws:kms:us-east-1:<acct>:key/<uuid>
+
+SECRET_ID_APP=eficyent/production/app
+SECRET_ID_DB=eficyent/production/db
+SECRET_ID_REDIS=eficyent/production/redis
+SECRET_ID_AUTH=eficyent/production/auth
+SECRET_ID_AWS=eficyent/production/aws
+SECRET_ID_MAIL=eficyent/production/mail
+SECRET_ID_EXTERNAL_PREFIX=eficyent/production/external
+
+CORS_ORIGINS=https://app.example.com,https://admin.example.com
+LOG_LEVEL=info
+```
+
+Do **NOT** set `DATABASE_URL` in production - that flag puts the
+process into dev mode and bypasses Secrets Manager + KMS.
+
+### D. Health checks + smoke test
+
+```bash
+curl https://api.eficyent.example.com/api/health
+# -> {"status":true,"code":200,"message":"ok","data":null}
+```
+
+### E. Operational runbook
+
+* **Rotating a secret**: update the JSON in Secrets Manager, then
+  either roll the pods or `POST` to an internal `/admin/secrets/invalidate`
+  endpoint (not yet exposed publicly - call `Secrets.invalidate()` from
+  a scripted runbook for now). Cache TTL is `SECRETS_CACHE_TTL_MS`
+  (default 5 min).
+* **Replaying webhooks**: BullMQ retains failed jobs for 30 days. Use
+  Bull dashboard or `bullmq-cli` to retry a stuck `payout` /
+  `processingunit-webhook` job.
+* **Rolling deploys**: workers are idempotent (BullMQ jobIds dedupe).
+  API pods can be rolled freely; sessions are Redis-backed.

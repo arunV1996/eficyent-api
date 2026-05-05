@@ -118,7 +118,25 @@ function smClient(): SecretsManagerClient {
   return client;
 }
 
-async function fetchSecret<T>(secretId: string): Promise<T> {
+/**
+ * Dev mode is signalled by `DATABASE_URL` being set in env. When true,
+ * Secrets.* methods read from env vars instead of AWS Secrets Manager
+ * so devs can run the API locally without AWS credentials.
+ *
+ * Production MUST leave DATABASE_URL unset and rely on Secrets Manager.
+ */
+function useDevSecrets(): boolean {
+  return Boolean(process.env.DATABASE_URL);
+}
+
+async function fetchSecret<T>(secretId: string | undefined): Promise<T> {
+  if (!secretId) {
+    throw new Error(
+      "AWS Secrets Manager bundle requested but SECRET_ID_* env var is not set. " +
+        "Either set the SECRET_ID for this bundle in production, or set DATABASE_URL " +
+        "in dev to enable env-based secrets.",
+    );
+  }
   const cached = cache.get(secretId);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value as T;
@@ -142,28 +160,116 @@ async function fetchSecret<T>(secretId: string): Promise<T> {
   return parsed;
 }
 
+// ------- Dev-mode fallbacks (read straight from env) -------------------------
+
+function devApp(): AppSecret {
+  return {
+    APP_KEY: process.env.APP_KEY ?? "dev-app-key-not-for-production",
+    REQUEST_SIGNING_SECRET: process.env.REQUEST_SIGNING_SECRET,
+    FVBANK_WEBHOOK_SECRET: process.env.FVBANK_WEBHOOK_SECRET,
+  };
+}
+
+function devRedis(): RedisSecret {
+  const e = env();
+  return {
+    host: process.env.REDIS_HOST ?? "127.0.0.1",
+    port: e.REDIS_PORT,
+    password: process.env.REDIS_PASSWORD || undefined,
+    username: process.env.REDIS_USERNAME || undefined,
+    db: e.REDIS_DB,
+    tls: e.REDIS_TLS,
+  };
+}
+
+function devAuth(): AuthSecret {
+  return {
+    TOKEN_PEPPER:
+      process.env.TOKEN_PEPPER ??
+      "dev-token-pepper-set-TOKEN_PEPPER-in-env-for-stable-tokens",
+    PASSWORD_PEPPER: process.env.PASSWORD_PEPPER,
+    SIGNATURE_SECRET: process.env.SIGNATURE_SECRET,
+    MERCHANT_SIGNATURE_SECRET: process.env.MERCHANT_SIGNATURE_SECRET,
+  };
+}
+
+function devAws(): AwsSecret {
+  const e = env();
+  return {
+    S3_BUCKET: process.env.S3_BUCKET,
+    S3_REGION: process.env.S3_REGION,
+    S3_USE_PATH_STYLE: e.S3_USE_PATH_STYLE,
+  };
+}
+
+function devMail(): MailSecret {
+  const e = env();
+  return {
+    host: process.env.MAIL_HOST ?? "localhost",
+    port: e.MAIL_PORT,
+    username: process.env.MAIL_USERNAME,
+    password: process.env.MAIL_PASSWORD,
+    from: process.env.MAIL_FROM ?? "no-reply@example.com",
+  };
+}
+
 export const Secrets = {
   async app(): Promise<AppSecret> {
+    if (useDevSecrets()) return devApp();
     return fetchSecret<AppSecret>(env().SECRET_ID_APP);
   },
   async db(): Promise<DbSecret> {
+    // db is only consulted by bootstrapSecrets in production. In dev,
+    // DATABASE_URL is read directly by Prisma, so this path is unused.
     return fetchSecret<DbSecret>(env().SECRET_ID_DB);
   },
   async redis(): Promise<RedisSecret> {
+    if (useDevSecrets()) return devRedis();
     return fetchSecret<RedisSecret>(env().SECRET_ID_REDIS);
   },
   async auth(): Promise<AuthSecret> {
+    if (useDevSecrets()) return devAuth();
     return fetchSecret<AuthSecret>(env().SECRET_ID_AUTH);
   },
   async aws(): Promise<AwsSecret> {
+    if (useDevSecrets()) return devAws();
     return fetchSecret<AwsSecret>(env().SECRET_ID_AWS);
   },
   async mail(): Promise<MailSecret> {
+    if (useDevSecrets()) return devMail();
     return fetchSecret<MailSecret>(env().SECRET_ID_MAIL);
   },
+  /**
+   * External provider secrets. In dev, looks for an env var
+   * `EXTERNAL_<PROVIDER_UPPER>_JSON` containing the JSON bundle. Most
+   * dev workflows don't need these (only required when actually
+   * invoking the external provider), so missing env values throw a
+   * clear error pointing at the offender.
+   */
   async external<T extends Record<string, unknown>>(provider: string): Promise<T> {
-    const id = `${env().SECRET_ID_EXTERNAL_PREFIX}/${provider}`;
-    return fetchSecret<T>(id);
+    if (useDevSecrets()) {
+      const key = `EXTERNAL_${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_JSON`;
+      const raw = process.env[key];
+      if (!raw) {
+        throw new Error(
+          `External provider "${provider}" is not configured. Set env ${key} ` +
+            `to a JSON object with that provider's keys (or unset DATABASE_URL ` +
+            `to switch to AWS Secrets Manager mode).`,
+        );
+      }
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        throw new Error(`Env ${key} is not valid JSON`);
+      }
+    }
+    const prefix = env().SECRET_ID_EXTERNAL_PREFIX;
+    if (!prefix) {
+      throw new Error(
+        "SECRET_ID_EXTERNAL_PREFIX is not set - cannot resolve external provider secrets",
+      );
+    }
+    return fetchSecret<T>(`${prefix}/${provider}`);
   },
   invalidate(secretId?: string): void {
     if (secretId) cache.delete(secretId);
@@ -188,6 +294,10 @@ export function buildDatabaseUrl(secret: DbSecret): string {
 /**
  * Bootstrap secrets at process start. Called once from index.ts and worker.ts.
  * Fails fast if any required bundle cannot be resolved.
+ *
+ * Dev mode (DATABASE_URL set in env) skips AWS entirely - Prisma reads
+ * DATABASE_URL directly, and the rest of the bundles fall back to env vars
+ * via the per-bundle dev fallbacks defined above.
  */
 export async function bootstrapSecrets(): Promise<void> {
   if (env().DATABASE_URL) {
