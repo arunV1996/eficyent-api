@@ -47,15 +47,18 @@ const envSchema = z.object({
   APP_IS_SANDBOX: boolish(false),
 
   AWS_REGION: z.string().default("us-east-1"),
+
+  // KMS is OPTIONAL. When KMS_KEY_ID is unset, encrypted columns use a
+  // local AES-256-GCM key derived from APP_KEY (intended for local
+  // development only). In production set KMS_KEY_ID to a real KMS key
+  // ARN/alias.
   KMS_KEY_ID: z.string().optional(),
 
-  SECRET_ID_APP: z.string().optional(),
-  SECRET_ID_DB: z.string().optional(),
-  SECRET_ID_REDIS: z.string().optional(),
-  SECRET_ID_AUTH: z.string().optional(),
-  SECRET_ID_AWS: z.string().optional(),
-  SECRET_ID_MAIL: z.string().optional(),
-  SECRET_ID_EXTERNAL_PREFIX: z.string().optional(),
+  // Two loading modes:
+  //   1. DATABASE_URL set        -> local mode, every value from env
+  //   2. SECRET_ID_BUNDLE set    -> one AWS Secrets Manager secret holds
+  //                                 {app,db,redis,auth,aws,mail,external}
+  SECRET_ID_BUNDLE: z.string().optional(),
   SECRETS_CACHE_TTL_MS: numberFromString(5 * 60_000),
 
   // Dev/local mode: when DATABASE_URL is set we skip AWS Secrets Manager

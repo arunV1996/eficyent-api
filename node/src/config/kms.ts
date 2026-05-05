@@ -13,16 +13,21 @@ import {
 import { env } from "./env";
 
 /**
- * Dev-mode KMS fallback. When DATABASE_URL is set we run without AWS, so
- * we substitute a local AES-256-GCM key derived from APP_KEY (or a fixed
- * dev sentinel). Ciphertext is tagged with the v1d prefix so prod can
- * never accidentally decrypt dev rows and vice versa.
+ * Local crypto mode: when KMS_KEY_ID is unset we substitute a local
+ * AES-256-GCM key derived from APP_KEY for envelope encryption. This
+ * is decoupled from DATABASE_URL/local mode so production hosts that
+ * have KMS configured still go through real KMS, while local boxes
+ * that don't have AWS at all keep working.
  *
- * SECURITY: do NOT set DATABASE_URL in production. The fixed-sentinel
- * derivation is intentionally insecure and detectable.
+ * Ciphertext is tagged with the `v1d` prefix; KMS-encrypted ciphertext
+ * uses `v1`. The `decryptEnvelope` path detects which based on the
+ * prefix so both can coexist in the same DB during a migration.
+ *
+ * SECURITY: leaving KMS_KEY_ID unset is intended for local dev only.
+ * Production deployments MUST set KMS_KEY_ID to a real KMS key.
  */
-function useDevKms(): boolean {
-  return Boolean(process.env.DATABASE_URL);
+function useLocalCrypto(): boolean {
+  return !env().KMS_KEY_ID;
 }
 
 function devKey(): Buffer {
@@ -72,16 +77,13 @@ function b64decode(s: string): Buffer {
 }
 
 export async function encryptEnvelope(plaintext: string): Promise<string> {
-  if (useDevKms()) {
+  if (useLocalCrypto()) {
     const key = devKey();
     const iv = randomBytes(GCM_IV_BYTES);
     const cipher = createCipheriv("aes-256-gcm", key, iv);
     const ct = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
     const tag = cipher.getAuthTag();
     return [DEV_PREFIX, b64(iv), b64(Buffer.concat([ct, tag]))].join(":");
-  }
-  if (!env().KMS_KEY_ID) {
-    throw new Error("KMS_KEY_ID not configured (production mode)");
   }
   const cmd = new GenerateDataKeyCommand({
     KeyId: env().KMS_KEY_ID,
@@ -154,10 +156,7 @@ export async function decryptEnvelope(payload: string): Promise<string> {
  * extra KMS hop is acceptable. Output is base64 of the KMS CiphertextBlob.
  */
 export async function encryptDirect(plaintext: string): Promise<string> {
-  if (useDevKms()) return encryptEnvelope(plaintext);
-  if (!env().KMS_KEY_ID) {
-    throw new Error("KMS_KEY_ID not configured (production mode)");
-  }
+  if (useLocalCrypto()) return encryptEnvelope(plaintext);
   const cmd = new EncryptCommand({
     KeyId: env().KMS_KEY_ID,
     Plaintext: Buffer.from(plaintext, "utf8"),
@@ -168,7 +167,7 @@ export async function encryptDirect(plaintext: string): Promise<string> {
 }
 
 export async function decryptDirect(ciphertext: string): Promise<string> {
-  if (useDevKms() || ciphertext.startsWith(`${DEV_PREFIX}:`) || ciphertext.startsWith(`${ENVELOPE_PREFIX}:`)) {
+  if (useLocalCrypto() || ciphertext.startsWith(`${DEV_PREFIX}:`) || ciphertext.startsWith(`${ENVELOPE_PREFIX}:`)) {
     return decryptEnvelope(ciphertext);
   }
   const cmd = new DecryptCommand({
