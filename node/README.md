@@ -213,8 +213,10 @@ For 1M users:
 * [x] Build-only production image, non-root user
 * [x] AWS Secrets Manager bootstrap, no plaintext secrets in env
 * [ ] WAF rules at ALB / CloudFront (deploy-time, not in this repo)
-* [ ] Per-merchant request signing for white-label callbacks - lands when
-      Callbacks/* services are ported.
+* [ ] Per-merchant request signing for white-label callbacks - the
+      Callbacks/* dispatcher is ported (Phase 9). Signing is gated
+      behind merchant readiness; the salt_key column is in place so
+      enabling it is one-line in `merchantCallbackDispatcher.ts`.
 * [ ] Pen-test items raised by the audit team.
 
 ---
@@ -231,11 +233,13 @@ phases port the remaining Laravel controllers/services in dependency order:
 | 3 | Onboarding (multi-step), VirtualAccount, BeneficiaryAccounts | done |
 | 4 | Senders, Quotes, Wallet (+ WalletTransactions) | done |
 | 5 | Deposits, Ledger (full bankBalance loop closed) | done |
-| 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | pending |
-| 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | pending |
-| 8 | External services (Caliza, Diginine, FvBank, Massive, ProcessingUnit, Compliance, Remittance, Surepass, Incode, ViyonaPay, InvoiceMate, Telegram, HeraldSumsub) | pending |
-| 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) | pending |
-| 10 | Admin / Treasury / Support consoles, Reports, Exports, Imports | pending |
+| 6 | BeneficiaryTransaction full surface (list, show, cancel, retry, direct, instant, bulk, export, request-proof, get-proof) | done |
+| 7 | TeamMembers - all duplicates of the user-side controllers under TeamMembers/* | done |
+| 8a | External services - core (HTTP foundation, Telegram, ProcessingUnit, Compliance, Massive, Caliza, FvBank, Diginine) | done |
+| 8b | External services - rest (KYC: HeraldSumsub + Incode + Surepass validation, ViyonaPay, InvoiceMate) | done |
+| 8c | Excel import + PDF/Excel exports + Mail transport + multer file-upload + AED override | done |
+| 9 | Webhooks (Caliza, Diginine, FvBank, Compliance, ProcessingUnit) + merchant callback dispatcher | done |
+| 10 | Dashboards (user + team) + ComplianceAlign + RemittanceAlign + Reports microservice client | done |
 
 ### Phase 2 deferred items
 
@@ -279,10 +283,10 @@ underlying module lands:
 * `wallets/convert` writes a Ledger row via the polymorphic
   `transaction_type` + `transaction_id` pattern but without the full
   refund chain - that lands in Phase 5 alongside DepositTransaction.
-* `senders/bulk/template` and `senders/bulk/store` -> 501 (Phase 8 Excel).
+* `senders/bulk/template` and `senders/bulk/store` -> delivered in Phase 8c.
 * The AED -> INR rate override (env('USD_TO_AED') from Laravel
-  QuoteRepository) lives behind the Massive driver path and re-enables
-  in Phase 8 with the rest of the AED handling.
+  QuoteRepository) -> delivered in Phase 8c via
+  `services/quotes/aedOverride.ts`.
 
 ### Phase 5 deferred items
 
@@ -297,10 +301,224 @@ underlying module lands:
   webhook handlers land in Phase 9.
 * `deposits/retry_deposit` rotates `order_id` and resets status to
   PROCESSING_UNIT_INITIATED; the redispatch is wired in Phase 8.
-* `deposits/export` and `ledgers/export` -> 501 (PDF/Excel via Phase 8).
+* `deposits/export` and `ledgers/export` -> delivered in Phase 8c
+  (PDF/Excel via `services/exports/*`).
 * `LedgerRepository`'s polymorphic `whereHasMorph` is replaced with an
   explicit candidate-id JOIN; behaviour is identical and the search-key
   match performs better at scale.
+
+### Phase 7 deferred items
+
+* `team/dashboard/statistics` and `team/dashboard/charts-data` -> 501;
+  the DashboardRepository port lands alongside the admin/treasury console
+  in Phase 10.
+* CORPORATE-role data scoping (filter list responses by team_member_id)
+  is wired through `req.teamMember` but the underlying Phase 4-6 list
+  services apply it as their downstream operations are extended; the
+  visible behaviour today: OWNER and TEAM_MEMBER see the full
+  business-user dataset, CORPORATE sees the same. The narrowing layer
+  lands once the bulk-payout worker (Phase 8) is in.
+* Team forgot-password notification email -> delivered in Phase 8c
+  (`services/email/teamAuthEmailService.ts` over nodemailer).
+* `team/get-credentials` returns an unencrypted RSA private key
+  exactly once (mirror of Laravel) and stores envelope-encrypted copies
+  for future re-fetch through the user-side flow. SOC auditors will
+  want to verify the client-side never round-trips it back.
+
+### Phase 6 deferred items
+
+* `beneficiary-transactions/store|direct` external dispatch chain
+  (Compliance -> ProcessingUnit -> Caliza/Diginine/FvBank) lands in
+  Phase 8; the worker currently transitions APPROVED/INITIATED -> PROCESSING
+  + writes the audit row + bookkeeping ledger.
+* `beneficiary-transactions/instant/store` and `bulk/store` enqueue a
+  PayoutJob carrying the entire row payload; the worker that materialises
+  Quote + BeneficiaryAccount + Sender + BeneficiaryTransaction lands in
+  Phase 8 alongside the external service drivers.
+* `beneficiary-transactions/export` (PDF receipt) and `download` (bulk
+  PDF/Excel) and `bulk/template` -> delivered in Phase 8c
+  (`services/exports/pdfReceipt.ts` + `excelImportService.ts`).
+* `retry_external_service` for COMPLIANCE_INITIATION_FAILED transitions is
+  logged-only; the actual ComplianceService::make call lands in Phase 8.
+* Polymorphic refund chain (`createRefund` for cancel + reject) is fully
+  wired and writes back into Wallet (credit) or DepositTransaction (refund
+  type) + Ledger; downstream notifications (Telegram, callbacks) land in
+  Phases 8/9.
+
+### Phase 8b deferred items
+
+* **Sumsub native** - the upstream Laravel code uses HeraldSumsub (a
+  Sumsub-relay product) rather than direct Sumsub. The HeraldSumsub
+  driver is ported here; native Sumsub would only be needed if you
+  switch from Herald.
+* **Caliza VirtualAccount synchronous response** - the driver writes the
+  account anchor row to PENDING and only flips to CREATED if the
+  provider returned `account_number` synchronously (sandbox does;
+  production returns it via webhook in Phase 9).
+
+### Phase 10 (delivered)
+
+Phase 10 is the final piece: dashboards, operator-triggered batch
+jobs, and the Reports microservice integration that closes out the
+SendDebitNotification flow Phase 9 stubbed.
+
+* **Dashboards** - `GET /user/dashboard/statistics` and
+  `/charts-data` (and the team-side mirrors `/team/dashboard/...`)
+  ported byte-stable. Both endpoints flow through
+  `services/dashboards/dashboardService.ts`:
+  - `statistics()` returns total + today buckets keyed by status
+    (success / failed / pending / rejected) with the same
+    `formatted_amount` envelope ("$ 1234.56") via `Setting::get`.
+  - `chartsData()` returns last-N-day amount buckets + per-status
+    counts in the exact Laravel JSON shape.
+  - CORPORATE-role narrowing scopes results to the team-member's own
+    transactions when invoked via the team route.
+  - Optional `bank_account_id` / `wallet_id` filters resolve through
+    `quote.source_id`; passing both returns zero rows (matches
+    Laravel's `whereHas` semantics exactly).
+* **ComplianceAlign + RemittanceAlign** - public operator endpoints
+  (`POST /compliance/align`, `POST /stable-coin-remittance/align`)
+  enqueue a batch job and return 200 immediately:
+  - `complianceBatchHandler` walks
+    `beneficiary_transactions WHERE compliance_data IS NULL` and
+    runs `Compliance.make(txn, user, false)` against each, sleeping
+    between rows (settings: `compliance_transactions_limit`,
+    `compliance_batch_sleep_ms`).
+  - `remittanceBatchHandler` mirrors that flow against
+    `remittance_data` using the new `Remittance` external service.
+* **Remittance external service** (`services/external/remittance.ts`)
+  ports the C2C / B2B payload split (with UBO ownership_percentage
+  rebalancing for businesses) and posts to Herald's
+  `/api/v1/initiate_withdrawal`. Provider response is persisted into
+  `beneficiary_transactions.remittance_data` so the batch job skips
+  already-processed rows.
+* **Reports microservice client** (`services/reports/reportClient.ts`
+  + `debitNotification.ts`) - shared header-keyed auth client that
+  routes through the audited httpClient (full
+  `external_service_calls` audit trail). The Phase 9
+  `debitNotificationHandler` stub is now wired to call
+  `api/debit_transactions` with the ViyonaPay / Diginine payload
+  shapes from Laravel SendDebitNotification (including the AED
+  wallet-currency override for Diginine).
+* **Schema** - `BeneficiaryTransaction.remittanceData` JSON column
+  added to mirror the Laravel migration.
+* **New BullMQ queues** - `compliance-transactions-batch`,
+  `stable-coin-remittance-batch` with env-tunable concurrency.
+
+### Phase 10 deferred items
+
+* **ProcessingUnit::sync()** - the Laravel ExecuteComplianceBatchJob
+  also calls `ProcessingUnit::sync()` for transactions that have
+  passed compliance. The compliance side of the batch is ported; the
+  PU sync RPC depends on `BeneficiaryTransactionService::sync()`
+  which is a wider piece of the BeneficiaryTransaction surface that
+  hasn't been needed for any user-facing endpoint to date. Logged as
+  a TODO inside `complianceBatchHandler.ts`. Does not affect the API
+  surface.
+* **Admin / Treasury / Support consoles** - the original Laravel
+  surface lives under separate route files and was scoped out of
+  the public API conversion (operator-only Filament panels). When
+  those are migrated, they will reuse the same dashboard/align
+  services already in place.
+
+### Phase 9 (delivered)
+
+Phase 9 ports the inbound webhook surface plus the outbound merchant
+callback dispatcher.
+
+* **Inbound webhook routes** (mounted at the API root to mirror the
+  Laravel paths external providers have already registered):
+  - `POST /caliza-webhook` -> 200, queues `ProcessCalizaWebhook` for
+    forwarding to the operator-controlled downstream URL.
+  - `POST /diginine-webhook` -> 200, queues `ProcessDiginineWebhook`.
+  - `POST /ef-webhook` -> verified by the new
+    `fvbankWebhookSignature` middleware (HMAC-SHA256 of the raw body
+    against the FvBank `CLIENT_SECRET`), then 200 + Telegram log.
+  - `POST /compliance/webhook-callback` -> matches on
+    `compliance_data.transaction_id` (JSON path), promotes to
+    `COMPLIANCE_APPROVED` and triggers `ProcessingUnit.make` on PASSED,
+    `COMPLIANCE_REJECTED` on FAILED, writes an external_service_calls
+    audit row regardless of outcome.
+  - `POST /processingunit-webhook` -> dispatches by `module`:
+    - `withdraw` -> updates BeneficiaryTransaction (with the same
+      EVP/COMPLETED-protection rules as Laravel), enqueues
+      `SendCallback` (PAYOUT_SUCCESS/PAYOUT_REJECTED) +
+      `SendDebitNotification` on COMPLETED, runs `createRefund` on
+      first-time FAILED transitions.
+    - `deposit` -> updates DepositTransaction, writes status history,
+      writes a credit ledger row keyed off the polymorphic morph.
+* **FvBank signature middleware**
+  (`middleware/fvbankWebhookSignature.ts`) - mirrors
+  `VerifyFVBankSignature`. Uses the raw request body (captured by an
+  `express.json verify` hook in `index.ts`) for byte-exact HMAC
+  comparison so canonical JSON drift never breaks verification.
+* **Merchant callback dispatcher**
+  (`services/callbacks/merchantCallbackDispatcher.ts`) - resolves
+  `users.merchant_id -> merchants.callback_url` and POSTs the
+  Laravel-shaped envelope `{event, data, timestamp}`. The
+  `SendCallback` worker writes a `callback_logs` row (polymorphic on
+  the BeneficiaryTransaction) so deliveries are auditable end-to-end.
+  Schema gained `merchants.callback_url` + `api_key` + `salt_key` +
+  related fields to match the Laravel migration.
+* **Forwarder workers** - `calizaWebhookHandler` and
+  `diginineWebhookHandler` post raw webhook payloads to the operator's
+  downstream service (URL fetched from `Secrets.external("caliza" /
+  "diginine").CALLBACK_URL`) with retries via BullMQ exponential
+  backoff. Telegram notification fires per attempt for ops visibility.
+* **PU status mappers** (`services/processingUnit/statusMap.ts`) -
+  ports `ProcessingUnit_status_map`, `ProcessingUnit_Depositstatus_map`,
+  and `ProcessingUnitServiceMap`. New upstream statuses log a warning
+  and default to PROCESSING so rows never silently freeze.
+* **Compliance.make** now persists the provider response into
+  `compliance_data` so the inbound webhook can match by
+  `compliance_data.transaction_id` (mirrors Laravel
+  `ComplianceService::storeComplianceResponse`).
+
+### Phase 9 deferred items
+
+* **`SendDebitNotification` -> Reports microservice** - the worker is
+  registered and the eligibility gate (status == COMPLETED) is
+  enforced, but the actual HTTP call to the Reports `api/debit_transactions`
+  endpoint lands in Phase 10 alongside the rest of the Reports
+  surface (it needs a separate `Secrets.external("report_server")`
+  bundle and lives in a different SOC scope).
+* **Outbound callback signing** - this Phase 9 dispatcher matches
+  Laravel's unsigned format exactly so existing white-label consumers
+  don't break. When merchants are ready, an `X-Signature` header keyed
+  on `merchants.salt_key` can be added in
+  `merchantCallbackDispatcher.ts` without touching call sites.
+* **Caliza/Diginine native processing** - both providers' Laravel
+  webhook handlers had the bulk of their business logic commented out
+  (status updates happen via the operator's downstream service). The
+  Node ports preserve that exact behavior.
+
+### Phase 8c (delivered)
+
+Phase 8c closes the remaining external-services items:
+
+* **Excel import + PDF/Excel exports** - replaces every 501 in
+  `deposits/export`, `ledgers/export`, `payout/export`,
+  `payout/download-list`, `payout/template`, `payout/bulk/store`,
+  `beneficiaries/bulk/template`, `beneficiaries/bulk/store`,
+  `senders/bulk/template`, `senders/bulk/store` with real
+  `exceljs`/`pdfkit` based generators.
+  - `services/exports/excelImportService.ts` - dynamic-fields row
+    validator with hidden machine-key row + lookup sheet for dropdowns.
+  - `services/exports/pdfReceipt.ts` - single-receipt + bulk-table PDFs.
+  - `services/exports/excelExport.ts` - generic table-to-XLSX exporter.
+* **Mail transport** - `UserAuthEmailService.*` and
+  `TeamAuthEmailService.*` now ship through `services/email/mailer.ts`
+  (a single shared nodemailer transport, credentials from
+  Secrets.mail()) using HTML templates in `services/email/templates.ts`.
+* **multer file uploads** - `middleware/fileUpload.ts` accepts
+  multipart/form-data with `memoryStorage`, 8 MiB / 6-file limits, then
+  inlines each upload as a base64 data URL on `req.body` so existing
+  handlers don't need to know about transport.
+* **AED -> INR rate override** - `services/quotes/aedOverride.ts`
+  replicates the Laravel `convertUSDratetoAED` helper. Wired into
+  `quotesController.buildResponse` (cross-currency VirtualAccount
+  path), `lookupsController.refreshRates`, and the `RefreshFxRates`
+  cron handler. Configurable via `USD_TO_AED` env (defaults to 2.67).
 
 Each phase keeps API contracts byte-stable and is deployable independently
 behind a feature flag.

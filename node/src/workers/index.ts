@@ -4,9 +4,15 @@ import { getBullConnection } from "../config/redis";
 import { logger } from "../helpers/logger";
 import { QueueName, QueueNames } from "../queues/queues";
 import { processPayout } from "./handlers/payoutHandler";
+import { processBulkPayout } from "./handlers/bulkPayoutHandler";
 import { processCallback } from "./handlers/callbackHandler";
 import { processFxRates } from "./handlers/fxRatesHandler";
 import { processIdempotencyReaper } from "./handlers/idempotencyReaperHandler";
+import { processCalizaWebhook } from "./handlers/calizaWebhookHandler";
+import { processDiginineWebhook } from "./handlers/diginineWebhookHandler";
+import { processDebitNotification } from "./handlers/debitNotificationHandler";
+import { processComplianceBatch } from "./handlers/complianceBatchHandler";
+import { processRemittanceBatch } from "./handlers/remittanceBatchHandler";
 
 /**
  * Worker registry. Each entry binds a queue to a handler with the
@@ -35,6 +41,11 @@ const definitions: WorkerDef[] = [
     handler: processPayout,
   },
   {
+    queue: QueueNames.BulkPayout,
+    concurrency: env().BULLMQ_BULK_PAYOUT_CONCURRENCY,
+    handler: processBulkPayout,
+  },
+  {
     queue: QueueNames.Callback,
     concurrency: env().BULLMQ_CALLBACK_CONCURRENCY,
     handler: processCallback,
@@ -49,8 +60,31 @@ const definitions: WorkerDef[] = [
     concurrency: 1,
     handler: processIdempotencyReaper,
   },
-  // Remaining queues (deposit, compliance, remittance, ...) are wired up
-  // alongside their respective controller conversions in subsequent phases.
+  {
+    queue: QueueNames.CalizaWebhook,
+    concurrency: env().BULLMQ_CALIZA_WEBHOOK_CONCURRENCY,
+    handler: processCalizaWebhook,
+  },
+  {
+    queue: QueueNames.DiginineWebhook,
+    concurrency: env().BULLMQ_DIGININE_WEBHOOK_CONCURRENCY,
+    handler: processDiginineWebhook,
+  },
+  {
+    queue: QueueNames.DebitNotification,
+    concurrency: env().BULLMQ_DEBIT_NOTIFICATION_CONCURRENCY,
+    handler: processDebitNotification,
+  },
+  {
+    queue: QueueNames.ComplianceBatch,
+    concurrency: env().BULLMQ_COMPLIANCE_BATCH_CONCURRENCY,
+    handler: processComplianceBatch,
+  },
+  {
+    queue: QueueNames.RemittanceBatch,
+    concurrency: env().BULLMQ_REMITTANCE_BATCH_CONCURRENCY,
+    handler: processRemittanceBatch,
+  },
 ];
 
 export async function startWorkers(): Promise<void> {

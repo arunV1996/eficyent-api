@@ -24,6 +24,11 @@ export const QueueNames = {
   PayoutJobReaper: "payout-job-reaper",
   CheckBeneficiaryTxnStatus: "check-beneficiary-txn-status",
   DigineCountrySync: "diginine-country-sync",
+  CalizaWebhook: "caliza-webhook",
+  DiginineWebhook: "diginine-webhook",
+  DebitNotification: "debit-notification",
+  ComplianceBatch: "compliance-transactions-batch",
+  RemittanceBatch: "stable-coin-remittance-batch",
 } as const;
 
 export type QueueName = (typeof QueueNames)[keyof typeof QueueNames];

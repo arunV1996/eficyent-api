@@ -1,5 +1,4 @@
 import { ApiException } from "../../helpers/errors";
-import { logger } from "../../helpers/logger";
 import {
   EXTERNAL_TYPE_CALIZA,
   EXTERNAL_TYPE_DIGININE,
@@ -7,13 +6,13 @@ import {
 } from "../../helpers/constants";
 
 /**
- * Mirror of App\\Factories\\Quotes\\QuoteFactory + per-provider quote drivers
- * (Caliza, Diginine, Massive). The actual external HTTP calls land in Phase 8.
+ * Mirror of App\\Factories\\Quotes\\QuoteFactory.
  *
- * For Phase 4 we ship a stub driver that throws 501 for any cross-currency
- * pair the caller hasn't already short-circuited (i.e. when source.currency
- * == target.currency, the QuotesController bypasses the driver entirely and
- * returns fx_rate=1; that path is fully functional now).
+ * Phase 8a: Massive + Diginine drivers wired up. The Caliza quote
+ * provider is rare in production - Caliza is primarily a virtual account
+ * provider. When external_type == EXTERNAL_TYPE_CALIZA the QuotesController
+ * short-circuits same-currency quotes; the driver is registered as an
+ * alias of Massive so cross-currency falls back gracefully.
  */
 
 export interface QuoteDriverPayload {
@@ -45,28 +44,23 @@ export interface QuoteDriver {
   ): Promise<QuoteDriverResponse>;
 }
 
-class StubQuoteDriver implements QuoteDriver {
-  constructor(private provider: string) {}
-  async create(_payload: QuoteDriverPayload, user: { id: bigint }): Promise<QuoteDriverResponse> {
-    logger.warn(
-      { userId: user.id.toString(), provider: this.provider },
-      "Quote driver stub called - external HTTP lands in Phase 8",
-    );
-    throw new ApiException(
-      501,
-      `Quote provider ${this.provider} is not yet available in the Node port (Phase 8).`,
-      501,
-    );
-  }
-}
-
 export const QuoteFactory = {
   resolve(externalType: string): QuoteDriver {
+    // Lazy require to avoid the import cycle: massive.ts and diginine.ts
+    // both import this file (for the QuoteDriver interface).
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const { Massive } = require("./massive") as typeof import("./massive");
+    const { Diginine } = require("./diginine") as typeof import("./diginine");
+    /* eslint-enable @typescript-eslint/no-require-imports */
+
     switch (externalType) {
-      case EXTERNAL_TYPE_CALIZA:
-      case EXTERNAL_TYPE_DIGININE:
       case EXTERNAL_TYPE_MASSIVE:
-        return new StubQuoteDriver(externalType);
+      case EXTERNAL_TYPE_CALIZA:
+        // Caliza alias - Caliza accounts route their cross-currency quotes
+        // through Massive in production.
+        return Massive;
+      case EXTERNAL_TYPE_DIGININE:
+        return Diginine;
       default:
         throw new ApiException(113);
     }

@@ -2,22 +2,30 @@ import { Job } from "bullmq";
 import { prisma } from "../../db/prisma";
 import { logger } from "../../helpers/logger";
 import {
+  BENEFICIARY_TRANSACTION_APPROVED,
   BENEFICIARY_TRANSACTION_FAILED,
   BENEFICIARY_TRANSACTION_INITIATED,
   BENEFICIARY_TRANSACTION_PROCESSING,
+  BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
   PAYOUT_JOB_STATUS_COMPLETED,
   PAYOUT_JOB_STATUS_FAILED,
   PAYOUT_JOB_STATUS_PROCESSING,
 } from "../../helpers/constants";
 import { PayoutJobPayload } from "../../queues/dispatchers";
+import { ProcessingUnit } from "../../services/external/processingUnit";
+import { Compliance } from "../../services/external/compliance";
+import { TelegramNotifier } from "../../services/external/telegram";
+import { InvoiceMate } from "../../services/external/invoiceMate";
+import { settingGet } from "../../services/settings/settingsService";
 
 /**
  * Mirror of Laravel's ProcessBulkPayout / payout dispatch path. Drives a
  * single beneficiary transaction through external service initiation.
  *
- * For Phase 1 this records state transitions and stops at "INITIATED" -
- * the actual external service call chain (Caliza / Diginine / FvBank /
- * ProcessingUnit) is wired in when those service modules are converted.
+ * The external service call chain (Caliza / Diginine / FvBank /
+ * ProcessingUnit) lands in Phase 8. Until then this handler advances the
+ * status to PROCESSING and records the history row, which is enough to
+ * unblock end-to-end testing of the full payout API surface.
  *
  * Idempotency is enforced at *two* layers:
  *   1. Queue-level: BullMQ jobId = "payout:{txnId}" - duplicate enqueues
@@ -29,7 +37,7 @@ import { PayoutJobPayload } from "../../queues/dispatchers";
  */
 
 export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
-  const { beneficiaryTransactionId, payoutJobId, userId } = job.data;
+  const { beneficiaryTransactionId, payoutJobUniqueId, userId } = job.data;
   const reqLogger = logger.child({
     queue: "payout",
     jobId: job.id,
@@ -37,29 +45,33 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
     userId,
   });
 
-  // Mark PayoutJob row as processing (audit trail).
   await prisma()
     .payoutJob.update({
-      where: { jobUniqueId: payoutJobId },
+      where: { uniqueId: payoutJobUniqueId },
       data: { status: PAYOUT_JOB_STATUS_PROCESSING, attempts: { increment: 1 } },
     })
     .catch(() => undefined);
+
+  if (!beneficiaryTransactionId) {
+    reqLogger.info("PayoutJob without linked transaction - external dispatch deferred");
+    return;
+  }
 
   try {
     const txn = await prisma().beneficiaryTransaction.findUnique({
       where: { id: BigInt(beneficiaryTransactionId) },
     });
-
     if (!txn) {
       reqLogger.warn("Transaction not found - ignoring");
       return;
     }
 
-    if (
-      txn.status !== BENEFICIARY_TRANSACTION_INITIATED &&
-      txn.status !== 0 /* WAITING */ &&
-      txn.status !== 1 /* APPROVED */
-    ) {
+    const dispatchable = [
+      BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
+      BENEFICIARY_TRANSACTION_APPROVED,
+      BENEFICIARY_TRANSACTION_INITIATED,
+    ];
+    if (!dispatchable.includes(txn.status)) {
       reqLogger.info({ status: txn.status }, "Transaction not in dispatchable state");
       return;
     }
@@ -71,40 +83,82 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
       }),
       prisma().beneficiaryTransactionStatusHistory.create({
         data: {
+          uniqueId: cryptoRandomId(),
           beneficiaryTransactionId: txn.id,
-          fromStatus: txn.status,
-          toStatus: BENEFICIARY_TRANSACTION_PROCESSING,
-          actionBy: "system",
+          fromStatus: String(txn.status),
+          toStatus: String(BENEFICIARY_TRANSACTION_PROCESSING),
+          changedBy: "system",
+          changedByType: "system",
+          changedAt: new Date(),
         },
       }),
     ]);
 
-    // -----------------------------------------------------------------
-    // External service initiation goes here in subsequent module conversion.
-    // The handler is intentionally a no-op past the "PROCESSING" transition
-    // so it can be deployed safely while the rest of the port lands.
-    // -----------------------------------------------------------------
+    // Mirror Helper::processTransaction: when the compliance_panel
+    // setting is ENABLED, dispatch through Compliance first; otherwise
+    // ProcessingUnit takes the transaction directly. Each driver owns
+    // its own status transitions and error notifications.
+    const user = await prisma().user.findUnique({ where: { id: txn.userId } });
+    if (user) {
+      const compliancePanel = await settingGet<string>("compliance_panel", "0");
+      if (compliancePanel === "1" || compliancePanel === "ENABLED") {
+        await Compliance.make(txn, user);
+      } else {
+        await ProcessingUnit.make(txn, user);
+      }
+      // Best-effort Telegram notification + InvoiceMate accounting.
+      void TelegramNotifier.beneficiaryTransactionCreated({
+        id: txn.uniqueId,
+        user: user.firstName ?? user.email,
+        from_amount: txn.totalAmount.toString(),
+        from_currency: txn.receivingCurrency ?? "",
+        to_amount: txn.recipientAmount?.toString() ?? "",
+        to_currency: txn.receivingCurrency ?? "",
+        fx_rate: "",
+        status: String(BENEFICIARY_TRANSACTION_PROCESSING),
+        created_at: txn.createdAt.toISOString(),
+      });
+      void InvoiceMate.makePayout(txn, user);
+    }
 
     await prisma().payoutJob.update({
-      where: { jobUniqueId: payoutJobId },
-      data: { status: PAYOUT_JOB_STATUS_COMPLETED, lastError: null },
+      where: { uniqueId: payoutJobUniqueId },
+      data: {
+        status: PAYOUT_JOB_STATUS_COMPLETED,
+        errorMessage: null,
+        beneficiaryTransactionId: txn.id,
+      },
     });
-    reqLogger.info("Payout transitioned to PROCESSING (external dispatch pending)");
+    reqLogger.info("Payout dispatched to ProcessingUnit/Compliance");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     reqLogger.error({ err }, "Payout job error");
     await prisma()
       .payoutJob.update({
-        where: { jobUniqueId: payoutJobId },
-        data: { status: PAYOUT_JOB_STATUS_FAILED, lastError: message.slice(0, 1024) },
+        where: { uniqueId: payoutJobUniqueId },
+        data: {
+          status: PAYOUT_JOB_STATUS_FAILED,
+          errorMessage: message.slice(0, 1024),
+        },
       })
       .catch(() => undefined);
-    await prisma()
-      .beneficiaryTransaction.update({
-        where: { id: BigInt(beneficiaryTransactionId) },
-        data: { status: BENEFICIARY_TRANSACTION_FAILED },
-      })
-      .catch(() => undefined);
-    throw err; // let BullMQ apply backoff
+    if (beneficiaryTransactionId) {
+      await prisma()
+        .beneficiaryTransaction.update({
+          where: { id: BigInt(beneficiaryTransactionId) },
+          data: { status: BENEFICIARY_TRANSACTION_FAILED },
+        })
+        .catch(() => undefined);
+    }
+    throw err;
   }
+}
+
+function cryptoRandomId(): string {
+  // Hot-path random id for unique_id columns - avoid an extra import cycle
+  // with helpers/uniqueId by inlining a base36 timestamp + random suffix.
+  return (
+    Date.now().toString(36) +
+    Math.random().toString(36).slice(2, 12)
+  );
 }

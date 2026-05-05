@@ -88,9 +88,16 @@ const envSchema = z.object({
   BULLMQ_INVOICEMATE_CONCURRENCY: numberFromString(2),
   BULLMQ_BULK_PAYOUT_CONCURRENCY: numberFromString(2),
   BULLMQ_USER_ALERT_CONCURRENCY: numberFromString(2),
+  BULLMQ_CALIZA_WEBHOOK_CONCURRENCY: numberFromString(4),
+  BULLMQ_DIGININE_WEBHOOK_CONCURRENCY: numberFromString(4),
+  BULLMQ_DEBIT_NOTIFICATION_CONCURRENCY: numberFromString(2),
+  BULLMQ_COMPLIANCE_BATCH_CONCURRENCY: numberFromString(1),
+  BULLMQ_REMITTANCE_BATCH_CONCURRENCY: numberFromString(1),
 
   BULLMQ_DEFAULT_ATTEMPTS: numberFromString(5),
   BULLMQ_DEFAULT_BACKOFF_MS: numberFromString(2_000),
+
+  USD_TO_AED: numberFromString(2.67),
 
   CRON_FX_RATES: z.string().default("*/30 * * * *"),
   CRON_CHECK_BENEFICIARY_TXN_STATUS: z.string().default("*/5 * * * *"),

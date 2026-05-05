@@ -1,75 +1,113 @@
 import { User } from "@prisma/client";
 import { logger } from "../../helpers/logger";
+import { prisma } from "../../db/prisma";
+import { generateEmailCode } from "../../helpers/uniqueId";
+import { generateEmailCodeExpiry } from "../../helpers/lookups";
+import { sendMail } from "./mailer";
+import { settingGet } from "../settings/settingsService";
+import {
+  emailVerifiedEmail,
+  forgotPasswordEmail,
+  registeredEmail,
+  userInviteLinkEmail,
+  verifyEmailAddressEmail,
+} from "./templates";
+import { env } from "../../config/env";
 
 /**
- * Mirror of App\\Services\\Email\\UserAuthEmailService. The actual transport
- * (SES / Mailgun) is wired up when the Mail subsystem is converted; this
- * preserves the call signature so controllers can be ported now.
+ * Mirror of App\\Services\\Email\\UserAuthEmailService.
  *
- * For now: log + no-op. Replace `transport.send(...)` with the real provider
- * once the mail service is in place.
+ * Each method:
+ *   1. Mutates the user row when needed (email_code refresh).
+ *   2. Renders the matching template with the brand from settings.
+ *   3. Dispatches via nodemailer; failures are logged but never thrown.
  */
+
+async function brand(): Promise<string> {
+  return (await settingGet<string>("site_name", env().APP_NAME)) || env().APP_NAME;
+}
+
 export const UserAuthEmailService = {
   async registered(user: User): Promise<void> {
-    logger.info(
-      { userId: user.id.toString(), to: user.email, template: "registered" },
-      "Auth email queued (placeholder)",
-    );
-    // TODO: enqueue mail job through BullMQ once mail service is ported.
+    const code = generateEmailCode();
+    await prisma().user.update({
+      where: { id: user.id },
+      data: { emailCode: code, emailCodeExpiry: generateEmailCodeExpiry(10) },
+    });
+    const tpl = registeredEmail({
+      brand: await brand(),
+      firstName: user.firstName,
+      email: user.email,
+      emailCode: code,
+    });
+    await sendMail({ to: user.email, ...tpl });
   },
 
   async forgotPassword(user: User): Promise<void> {
-    logger.info(
-      { userId: user.id.toString(), to: user.email, template: "forgot_password" },
-      "Auth email queued (placeholder)",
-    );
+    // forgotPasswordController already wrote a fresh email_code on the
+    // user row before calling us; re-read to ensure we send the
+    // right one without burning a second code.
+    const refreshed = await prisma().user.findUnique({ where: { id: user.id } });
+    const tpl = forgotPasswordEmail({
+      brand: await brand(),
+      firstName: user.firstName,
+      email: user.email,
+      emailCode: refreshed?.emailCode ?? null,
+    });
+    await sendMail({ to: user.email, ...tpl });
   },
 
   async emailVerified(user: User): Promise<void> {
-    logger.info(
-      { userId: user.id.toString(), to: user.email, template: "email_verified" },
-      "Auth email queued (placeholder)",
-    );
+    const tpl = emailVerifiedEmail({
+      brand: await brand(),
+      firstName: user.firstName,
+      email: user.email,
+    });
+    await sendMail({ to: user.email, ...tpl });
   },
 
   async emailVerificationCode(user: User): Promise<void> {
-    // Mirror of Laravel UserAuthEmailService::email_verification_code -
-    // refresh the user's email_code + email_code_expiry and dispatch the
-    // mail. The actual mail send is wired up when the Mail subsystem
-    // is ported.
-    const { prisma } = await import("../../db/prisma");
-    const { generateEmailCode } = await import("../../helpers/uniqueId");
-    const { generateEmailCodeExpiry } = await import("../../helpers/lookups");
-
+    const code = generateEmailCode();
     await prisma().user.update({
       where: { id: user.id },
-      data: {
-        emailCode: generateEmailCode(),
-        emailCodeExpiry: generateEmailCodeExpiry(10),
-      },
+      data: { emailCode: code, emailCodeExpiry: generateEmailCodeExpiry(10) },
     });
-    logger.info(
-      { userId: user.id.toString(), to: user.email, template: "email_verification_code" },
-      "Auth email queued (placeholder)",
-    );
+    const tpl = verifyEmailAddressEmail({
+      brand: await brand(),
+      firstName: user.firstName,
+      email: user.email,
+      emailCode: code,
+    });
+    await sendMail({ to: user.email, ...tpl });
   },
 };
 
 /**
- * Subuser-specific transactional emails - thin wrapper around the same
- * placeholder transport for now. Will share the underlying queue when the
- * Mail module is built.
+ * Subuser-specific transactional emails. The encrypted invite token
+ * goes into a URL the email recipient can click; the URL fragment is
+ * configurable via the invite_url_template setting (default points at
+ * the frontend SPA).
  */
 export const UserEmailService = {
   async userInviteLink(user: User, encryptedToken: string): Promise<void> {
+    const template = await settingGet<string>(
+      "invite_url_template",
+      `${env().APP_URL.replace(/\/$/, "")}/accept-invite?token={token}`,
+    );
+    const url = template.replace("{token}", encodeURIComponent(encryptedToken));
+    const expiresMin = Number(
+      await settingGet<string>("invite_link_expiry", "60"),
+    );
+    const tpl = userInviteLinkEmail({
+      brand: await brand(),
+      firstName: user.firstName,
+      inviteUrl: url,
+      expiresInMinutes: Number.isFinite(expiresMin) ? expiresMin : 60,
+    });
+    const ok = await sendMail({ to: user.email, ...tpl });
     logger.info(
-      {
-        userId: user.id.toString(),
-        to: user.email,
-        template: "user_invite_link",
-        tokenPreview: encryptedToken.slice(0, 12),
-      },
-      "Subuser invite email queued (placeholder)",
+      { userId: user.id.toString(), to: user.email, ok },
+      "Subuser invite dispatched",
     );
   },
 };

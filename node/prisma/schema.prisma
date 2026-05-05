@@ -90,6 +90,7 @@ model User {
   userServices       UserService[]
   wallets            Wallet[]
   senders            Sender[]
+  teamMembers        TeamMember[]
 
   @@index([merchantId])
   @@index([businessUserId])
@@ -191,13 +192,21 @@ model UserDocument {
 // -----------------------------------------------------------------------------
 
 model Merchant {
-  id        BigInt   @id @default(autoincrement())
-  uniqueId  String   @unique @map("unique_id")
-  name      String?
-  type      Int
-  status    Int      @default(1)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  id           BigInt   @id @default(autoincrement())
+  uniqueId     String   @unique @map("unique_id")
+  userId       BigInt?  @map("user_id")
+  name         String?
+  email        String?  @unique
+  apiKey       String?  @map("api_key") @db.LongText
+  saltKey      String?  @map("salt_key") @db.LongText
+  privateKey   String?  @map("private_key") @db.LongText
+  publicKey    String?  @map("public_key") @db.LongText
+  callbackUrl  String?  @map("callback_url") @db.LongText
+  type         Int
+  status       Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
 
   settings MerchantSetting[]
   fees     MerchantFee[]
@@ -473,8 +482,9 @@ model Sender {
   updatedAt         DateTime @updatedAt      @map("updated_at")
   deletedAt         DateTime? @map("deleted_at")
 
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  documents SenderDocument[]
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents   SenderDocument[]
+  teamMembers TeamMember[]
 
   @@index([userId])
   @@index([clientReferenceId])
@@ -610,28 +620,37 @@ model BeneficiaryTransaction {
   id                  BigInt   @id @default(autoincrement())
   uniqueId            String   @unique @map("unique_id")
   txnRefNo            String?  @unique @map("txn_ref_no")
+  orderId             String?  @map("order_id")
   userId              BigInt   @map("user_id")
   teamMemberId        BigInt?  @map("team_member_id")
   senderId            BigInt?  @map("sender_id")
   beneficiaryAccountId BigInt? @map("beneficiary_account_id")
   quoteId             BigInt?  @map("quote_id")
   virtualAccountId    BigInt?  @map("virtual_account_id")
-  walletId            BigInt?  @map("wallet_id")
 
   amount              Decimal  @db.Decimal(20, 6)
   totalAmount         Decimal  @map("total_amount") @db.Decimal(20, 6)
   commissionAmount    Decimal  @default(0) @map("commission_amount") @db.Decimal(20, 6)
-  currency            String?  @db.VarChar(3)
+  recipientAmount     Decimal? @map("recipient_amount") @db.Decimal(20, 6)
+  receivingCurrency   String?  @map("receiving_currency") @db.VarChar(5)
 
   paymentRail         String?  @map("payment_rail")
-  paymentMethod       String?  @map("payment_method")
+  rail                String?
   externalType        String?  @map("external_type")
+  serviceMid          String?  @map("service_mid")
   externalReferenceId String?  @map("external_reference_id")
   externalData        Json?    @map("external_data")
 
-  purposeOfTransaction String? @map("purpose_of_transaction")
-  sourceOfFunds       String?  @map("source_of_funds")
+  purposeOfPayment    String?  @map("purpose_of_payment")
+  supportingDocument  String?  @map("supporting_document")
+  clientReferenceId   String?  @map("client_reference_id")
   remarks             String?  @db.Text
+  notes               String?  @db.Text
+
+  complianceData      Json?    @map("compliance_data")
+  complianceStatus    Int      @default(0) @map("compliance_status")
+  complianceNotes     String?  @map("compliance_notes")
+  remittanceData      Json?    @map("remittance_data")
 
   status              Int      @default(0)
   createdAt           DateTime @default(now()) @map("created_at")
@@ -639,21 +658,25 @@ model BeneficiaryTransaction {
 
   beneficiaryAccount BeneficiaryAccount? @relation(fields: [beneficiaryAccountId], references: [id])
   statusHistories    BeneficiaryTransactionStatusHistory[]
+  proofs             BeneficiaryTransactionProof[]
 
   @@index([userId, status])
   @@index([senderId])
   @@index([quoteId])
+  @@index([userId, clientReferenceId])
   @@map("beneficiary_transactions")
 }
 
 model BeneficiaryTransactionStatusHistory {
   id                       BigInt   @id @default(autoincrement())
+  uniqueId                 String   @unique @map("unique_id")
   beneficiaryTransactionId BigInt   @map("beneficiary_transaction_id")
-  fromStatus               Int?     @map("from_status")
-  toStatus                 Int      @map("to_status")
-  actionBy                 String?  @map("action_by")
-  actorId                  BigInt?  @map("actor_id")
-  notes                    String?  @db.Text
+  fromStatus               String?  @map("from_status")
+  toStatus                 String   @map("to_status")
+  changedBy                String?  @map("changed_by")
+  changedByType            String?  @map("changed_by_type")
+  changedAt                DateTime @map("changed_at")
+  meta                     Json?
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @updatedAt      @map("updated_at")
 
@@ -663,20 +686,44 @@ model BeneficiaryTransactionStatusHistory {
   @@map("beneficiary_transaction_status_histories")
 }
 
+model BeneficiaryTransactionProof {
+  id                       BigInt   @id @default(autoincrement())
+  uniqueId                 String   @unique @map("unique_id")
+  beneficiaryTransactionId BigInt   @map("beneficiary_transaction_id")
+  userId                   BigInt?  @map("user_id")
+  documentType             String   @map("document_type")
+  remitterProof            String?  @map("remitter_proof") @db.Text
+  fileUrl                  String?  @map("file_url") @db.Text
+  status                   Int      @default(1)
+  requestedAt              DateTime? @map("requested_at")
+  uploadedAt               DateTime? @map("uploaded_at")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt      @map("updated_at")
+
+  transaction BeneficiaryTransaction @relation(fields: [beneficiaryTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([beneficiaryTransactionId])
+  @@map("beneficiary_transaction_proofs")
+}
+
 model PayoutJob {
   id                       BigInt   @id @default(autoincrement())
-  jobUniqueId              String   @unique @map("job_unique_id")
+  uniqueId                 String   @unique @map("unique_id")
+  batchId                  String?  @map("batch_id")
+  rowNumber                Int?     @map("row_number")
   beneficiaryTransactionId BigInt?  @map("beneficiary_transaction_id")
   userId                   BigInt   @map("user_id")
+  amount                   Decimal? @db.Decimal(18, 2)
   status                   Int      @default(0)
   attempts                 Int      @default(0)
-  lastError                String?  @map("last_error") @db.Text
-  payload                  Json?
+  errorMessage             String?  @map("error_message") @db.Text
+  payload                  Json
   createdAt                DateTime @default(now()) @map("created_at")
   updatedAt                DateTime @updatedAt      @map("updated_at")
 
   @@index([status])
   @@index([userId])
+  @@index([batchId])
   @@map("payout_jobs")
 }
 
@@ -967,4 +1014,54 @@ model CallbackLog {
 
   @@index([loggableType, loggableId])
   @@map("callback_logs")
+}
+
+// -----------------------------------------------------------------------------
+// Team members (Phase 7)
+// -----------------------------------------------------------------------------
+//
+// Team members log in to the parent business user's account through a
+// dedicated /team/login endpoint. They receive their own opaque token
+// stored in personal_access_tokens with tokenable_type = "App\\Models\\TeamMember".
+//
+// Permission model (mirror of user_role_map / user_permission_map):
+//   role:        ADMIN | OWNER | TEAM_MEMBER (= SUPPORT_MEMBER) | CORPORATE
+//   permission:  INITIATOR | MAKER (= CREATOR) | CHECKER (= APPROVER) | MAKER_CHECKER
+
+model TeamMember {
+  id                BigInt    @id @default(autoincrement())
+  uniqueId          String    @unique @map("unique_id")
+  userId            BigInt    @map("user_id")
+  senderId          BigInt?   @map("sender_id")
+
+  name              String    @db.VarChar(50)
+  email             String    @unique @db.VarChar(50)
+  mobileCountryCode String?   @map("mobile_country_code")
+  mobile            String?
+  password          String
+
+  emailCode         String?   @map("email_code")
+  emailCodeExpiry   String?   @map("email_code_expiry")
+  lastPasswordReset DateTime? @map("last_password_reset")
+
+  // Encrypted-at-rest values (envelope-encrypted via KMS in service layer).
+  apiKey      String? @map("api_key") @db.LongText
+  saltKey     String? @map("salt_key") @db.LongText
+  privateKey  String? @map("private_key") @db.LongText
+  publicKey   String? @map("public_key") @db.LongText
+
+  role        Int     @default(3)
+  permission  Int     @default(2)
+
+  timezone    String  @default("Asia/Kolkata") @db.VarChar(30)
+  status      Int     @default(1)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt      @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender Sender? @relation(fields: [senderId], references: [id])
+
+  @@index([userId])
+  @@map("team_members")
 }

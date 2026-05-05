@@ -292,3 +292,113 @@ export const FILE_TYPE_PDF = 1;
 export const FILE_TYPE_EXCEL = 2;
 export const EXPORT_TYPE_PDF = "pdf";
 export const EXPORT_TYPE_EXCEL = "excel";
+
+// Phase 6 - BeneficiaryTransaction full status set + maps
+export const BENEFICIARY_TRANSACTION_EXPIRED = 6;
+export const BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED = 12;
+export const BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD = 13;
+export const BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATED = 14;
+export const BENEFICIARY_TRANSACTION_PROCESSING_UNIT_PROCESSING = 15;
+export const BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED = 16;
+export const BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED = 17;
+
+export const BENEFICIARY_TRANSACTION_STATUS_MAP: Record<string, number> = {
+  WAITING_FOR_APPROVAL: BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
+  APPROVED: BENEFICIARY_TRANSACTION_APPROVED,
+  INITIATED: BENEFICIARY_TRANSACTION_INITIATED,
+  PROCESSING: BENEFICIARY_TRANSACTION_PROCESSING,
+  COMPLETED: BENEFICIARY_TRANSACTION_COMPLETED,
+  FAILED: BENEFICIARY_TRANSACTION_FAILED,
+  EXPIRED: BENEFICIARY_TRANSACTION_EXPIRED,
+  REJECTED: BENEFICIARY_TRANSACTION_REJECTED,
+  CANCELLED: BENEFICIARY_TRANSACTION_CANCELLED,
+};
+
+// Approval-status map - subset of statuses a user/team-member can apply via
+// /update-status. Mirror of beneficiary_transaction_approval().
+export const BENEFICIARY_TRANSACTION_APPROVAL_MAP: Record<string, number> = {
+  APPROVED: BENEFICIARY_TRANSACTION_APPROVED,
+  REJECTED: BENEFICIARY_TRANSACTION_REJECTED,
+};
+
+// Team-member roles + permissions (referenced from create()).
+export const TEAM_MEMBER_ROLE_SUPPORT_MEMBER = 3;
+export const TEAM_MEMBER_PERMISSION_INITIATOR = 1;
+export const TEAM_MEMBER_PERMISSION_MAKER = 2;
+export const TEAM_MEMBER_PERMISSION_CHECKER = 3;
+export const TEAM_MEMBER_PERMISSION_MAKER_CHECKER = 4;
+
+// Payment proof
+export const PAYMENT_PROOF_REQUESTED = 1;
+export const PAYMENT_PROOF_UPLOADED = 2;
+export const PAYMENT_PROOF_REJECTED = 3;
+export const PAYMENT_PROOF_SWIFT = "swift_copy";
+export const PAYMENT_PROOF_FIRA = "fira";
+
+// Payout-job status (already had pending/processing/completed/failed)
+export const PAYOUT_JOB_STATUS_REJECTED = 4;
+
+// Team-member roles (mirror of user_role_map).
+export const TEAM_MEMBER_ROLE_ADMIN = 1;
+export const TEAM_MEMBER_ROLE_OWNER = 2;
+// (TEAM_MEMBER_ROLE_SUPPORT_MEMBER, TEAM_MEMBER_ROLE_CORPORATE already defined.)
+
+export const USER_ROLE_MAP: Record<string, number> = {
+  ADMIN: TEAM_MEMBER_ROLE_ADMIN,
+  OWNER: TEAM_MEMBER_ROLE_OWNER,
+  TEAM_MEMBER: TEAM_MEMBER_ROLE_SUPPORT_MEMBER,
+  CORPORATE: TEAM_MEMBER_ROLE_CORPORATE,
+};
+
+export const USER_PERMISSION_MAP: Record<string, number> = {
+  APPROVER: TEAM_MEMBER_PERMISSION_CHECKER,
+  INITIATOR: TEAM_MEMBER_PERMISSION_INITIATOR,
+  CREATOR: TEAM_MEMBER_PERMISSION_MAKER,
+  CREATOR_AND_APPROVER: TEAM_MEMBER_PERMISSION_MAKER_CHECKER,
+};
+
+// Team-member status (already had ACTIVE = 1, INACTIVE = 0).
+export const TEAM_MEMBER_ACTIVE = 1;
+export const TEAM_MEMBER_INACTIVE = 0;
+export const TEAM_MEMBER_DISABLED = 2;
+
+export const TEAM_MEMBER_STATUS_MAP: Record<string, number> = {
+  ACTIVE: TEAM_MEMBER_ACTIVE,
+  INACTIVE: TEAM_MEMBER_INACTIVE,
+  DISABLED: TEAM_MEMBER_DISABLED,
+};
+
+// Sanctum-style tokenable types.
+export const TOKENABLE_USER = "App\\Models\\User";
+export const TOKENABLE_TEAM_MEMBER = "App\\Models\\TeamMember";
+
+// KYC service tags (mirror Laravel ID_VERIFIED_BY_*).
+export const ID_VERIFIED_BY_HERALD_SUMSUB = "hs";
+export const ID_VERIFIED_BY_SUREPASS = "sp";
+export const ID_VERIFIED_BY_INCODE = "ic";
+
+// Callback event names emitted to merchant white-label endpoints
+// (mirror of Laravel CALLBACK_* defines). Phase 9.
+export const CALLBACK_PAYOUT_SUCCESS = "PAYOUT_SUCCESS";
+export const CALLBACK_PAYOUT_REJECTED = "PAYOUT_REJECTED";
+export const CALLBACK_PAYOUT_FAILED = "PAYOUT_FAILED";
+export const CALLBACK_DEPOSIT_SUCCESS = "DEPOSIT_SUCCESS";
+export const CALLBACK_DEPOSIT_FAILED = "DEPOSIT_FAILED";
+export const CALLBACK_VIRTUAL_ACCOUNT_CREATED = "VIRTUAL_ACCOUNT_CREATED";
+export const CALLBACK_RESPONSE = "callback";
+
+// External-service-call audit `call_for` value for inbound webhooks. Phase 9.
+export const EXTERNAL_CALL_FOR_CALLBACK = "callback";
+
+// External provider tags (Phase 10).
+export const EXTERNAL_TYPE_HERALD_REMITTANCE = "hr";
+export const EXTERNAL_TYPE_REPORT_SERVER = "rs";
+
+// `call_for` audit values used by the Reports microservice + Remittance.
+export const EXTERNAL_CALL_FOR_DEBIT = "debit";
+export const EXTERNAL_CALL_FOR_DEPOSIT_REPORT = "deposit_report";
+export const EXTERNAL_CALL_FOR_REMITTANCE = "remittance";
+
+// Loggable polymorphic morph types for callback_logs
+// (mirrors Laravel BeneficiaryTransaction::loggable() polymorphic).
+export const MORPH_BENEFICIARY_TRANSACTION_CALLBACK_LOG = "App\\Models\\BeneficiaryTransaction";

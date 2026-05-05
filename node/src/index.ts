@@ -53,7 +53,18 @@ async function main(): Promise<void> {
   app.use(helmetMiddleware());
   app.use(corsMiddleware());
   app.use(bodySizeGuard());
-  app.use(express.json({ limit: `${env().REQUEST_BODY_LIMIT_KB}kb` }));
+  app.use(
+    express.json({
+      limit: `${env().REQUEST_BODY_LIMIT_KB}kb`,
+      // Capture the raw bytes so webhook signature middleware (FvBank
+      // HMAC etc.) can verify against the exact payload the provider
+      // signed - re-stringifying via JSON.stringify can drift on
+      // whitespace/key-order otherwise.
+      verify: (req: { rawBody?: Buffer }, _res, buf) => {
+        req.rawBody = Buffer.from(buf);
+      },
+    }),
+  );
   app.use(express.urlencoded({ extended: false, limit: `${env().REQUEST_BODY_LIMIT_KB}kb` }));
   app.use(compressionMiddleware());
   app.use(requestTimeout(30_000));

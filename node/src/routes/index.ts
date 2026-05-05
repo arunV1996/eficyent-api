@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authRoutes } from "./auth.routes";
-import { payoutRoutes } from "./payout.routes";
+import { payoutPublicRoutes, payoutRoutes } from "./payout.routes";
 import { settingsRoutes } from "./settings.routes";
 import { staticPagesRoutes } from "./staticPages.routes";
 import {
@@ -20,6 +20,10 @@ import { quotesRoutes } from "./quotes.routes";
 import { walletsRoutes } from "./wallets.routes";
 import { depositsRoutes, retryDepositRoute } from "./deposits.routes";
 import { ledgersRoutes } from "./ledgers.routes";
+import { teamAuthedRoutes, teamPublicRoutes } from "./team.routes";
+import { webhookRoutes } from "./webhooks.routes";
+import { dashboardRoutes } from "./dashboard.routes";
+import { alignRoutes } from "./align.routes";
 
 /**
  * Top-level API router. Mirrors Laravel routes/api.php structure.
@@ -71,8 +75,26 @@ export async function apiRouter(): Promise<Router> {
   r.use("/user/ledgers", await ledgersRoutes());
   r.use("/user", await retryDepositRoute());
 
-  // Phase 1
-  r.use("/user/beneficiary-transactions", payoutRoutes());
+  // Phase 6 - full BeneficiaryTransaction surface
+  r.use("/user/beneficiary-transactions", await payoutRoutes());
+  r.use("/user", await payoutPublicRoutes());
+
+  // Phase 7 - TeamMembers / Corporate
+  // Public endpoints live at /corporate/* and /team/* (no leading prefix
+  // wrapper - the route file handles its own paths to mirror Laravel).
+  r.use("/", await teamPublicRoutes());
+  r.use("/team", await teamAuthedRoutes());
+
+  // Phase 9 - inbound webhooks. Flat paths mirror Laravel's
+  // /caliza-webhook, /diginine-webhook, /ef-webhook,
+  // /compliance/webhook-callback, /processingunit-webhook.
+  r.use("/", webhookRoutes());
+
+  // Phase 10 - dashboards (user-side + team-side already mounted under
+  // /team) and operator-triggered align endpoints. Align routes are
+  // public to mirror Laravel exactly; deploy behind WAF / IP allowlist.
+  r.use("/user/dashboard", await dashboardRoutes());
+  r.use("/", alignRoutes());
 
   return r;
 }

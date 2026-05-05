@@ -7,21 +7,46 @@ import { getQueue, QueueName, QueueNames } from "./queues";
  */
 
 export interface PayoutJobPayload {
-  beneficiaryTransactionId: string;
-  payoutJobId: string;
+  beneficiaryTransactionId?: string;
+  payoutJobUniqueId: string;
   userId: string;
   source: "direct" | "instant" | "approval" | "bulk";
 }
 
+export interface BulkPayoutJobPayload {
+  payoutJobUniqueId: string;
+  userId: string;
+}
+
 export interface CallbackJobPayload {
-  url: string;
+  userId: string;
+  eventType: string;
   payload: Record<string, unknown>;
-  headers?: Record<string, string>;
-  externalReferenceId?: string;
+  beneficiaryTransactionUniqueId?: string;
 }
 
 export interface FxRatesJobPayload {
   triggeredBy: "cron" | "api";
+}
+
+export interface CalizaWebhookJobPayload {
+  data: Record<string, unknown>;
+}
+
+export interface DiginineWebhookJobPayload {
+  data: Record<string, unknown>;
+}
+
+export interface DebitNotificationJobPayload {
+  beneficiaryTransactionId: string;
+}
+
+export interface ComplianceBatchJobPayload {
+  triggeredBy: "api" | "cron";
+}
+
+export interface RemittanceBatchJobPayload {
+  triggeredBy: "api" | "cron";
 }
 
 async function enqueue(
@@ -38,13 +63,15 @@ async function enqueue(
 export const Dispatch = {
   payout: (data: PayoutJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.Payout, "ProcessPayout", data, {
-      jobId: `payout:${data.beneficiaryTransactionId}`,
+      jobId: data.beneficiaryTransactionId
+        ? `payout:${data.beneficiaryTransactionId}`
+        : `payout-job:${data.payoutJobUniqueId}`,
       ...opts,
     }),
 
-  bulkPayout: (data: { batchId: string; userId: string }, opts?: JobsOptions) =>
+  bulkPayout: (data: BulkPayoutJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.BulkPayout, "ProcessBulkPayout", data, {
-      jobId: `bulk:${data.batchId}`,
+      jobId: `bulk:${data.payoutJobUniqueId}`,
       ...opts,
     }),
 
@@ -53,4 +80,28 @@ export const Dispatch = {
 
   fxRates: (data: FxRatesJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.FxRates, "RefreshFxRates", data, opts),
+
+  calizaWebhook: (data: CalizaWebhookJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.CalizaWebhook, "ProcessCalizaWebhook", data, opts),
+
+  diginineWebhook: (data: DiginineWebhookJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.DiginineWebhook, "ProcessDiginineWebhook", data, opts),
+
+  debitNotification: (data: DebitNotificationJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.DebitNotification, "SendDebitNotification", data, {
+      jobId: `debit:${data.beneficiaryTransactionId}`,
+      ...opts,
+    }),
+
+  complianceBatch: (data: ComplianceBatchJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.ComplianceBatch, "ExecuteComplianceBatch", data, {
+      jobId: `compliance-batch:${Date.now()}`,
+      ...opts,
+    }),
+
+  remittanceBatch: (data: RemittanceBatchJobPayload, opts?: JobsOptions) =>
+    enqueue(QueueNames.RemittanceBatch, "ExecuteRemittanceBatch", data, {
+      jobId: `remittance-batch:${Date.now()}`,
+      ...opts,
+    }),
 };
