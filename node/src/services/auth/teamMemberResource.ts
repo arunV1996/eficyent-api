@@ -33,6 +33,6 @@ export function teamMemberResource(member: TeamMember): TeamMemberDto {
     last_password_reset: member.lastPasswordReset
       ? member.lastPasswordReset.toISOString()
       : null,
-    created_at: member.createdAt.toISOString(),
+    created_at: member.createdAt ? member.createdAt.toISOString() : "",
   };
 }

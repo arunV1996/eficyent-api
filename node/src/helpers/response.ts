@@ -28,8 +28,8 @@ export function sendResponse<T>(
   data: T | null = null,
   httpStatus = 200,
 ): Response {
-  const envelope: ApiEnvelope<T> = {
-    status: true,
+  const envelope = {
+    success: true,
     code,
     message: message || apiSuccess(code),
     data,

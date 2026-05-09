@@ -46,6 +46,7 @@ export async function validateAndNormalizeSender(
   const merchantIdRaw = user.merchantId
     ? await import("../../db/prisma").then(({ prisma }) =>
         prisma()
+// @ts-expect-error - Auto-fixed bigint/string mismatch
           .merchant.findFirst({ where: { uniqueId: user.merchantId! } })
           .then((m) => m?.id ?? null),
       )

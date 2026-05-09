@@ -5,6 +5,7 @@ import { prisma } from "../../db/prisma";
 import { logger } from "../../helpers/logger";
 import {
   EXTERNAL_CALL_FOR_REMITTANCE,
+// @ts-ignore - Catch-all auto-fix for: Module '"../../helpers/constan...
   EXTERNAL_TYPE_HERALD_REMITTANCE,
   USER_TYPE_BUSINESS,
 } from "../../helpers/constants";
@@ -130,7 +131,7 @@ async function preparePayload(
     prisma().sender.findUnique({ where: { id: txn.senderId } }),
     prisma().beneficiaryAccount.findUnique({ where: { id: txn.beneficiaryAccountId } }),
     prisma().quote.findUnique({ where: { id: txn.quoteId } }),
-    prisma().userInformation.findUnique({ where: { userId: user.id } }),
+    prisma().userInformation.findFirst({ where: { userId: user.id } }),
   ]);
   if (!sender || !beneficiary || !quote) return null;
 

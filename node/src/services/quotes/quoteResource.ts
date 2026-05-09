@@ -33,7 +33,7 @@ export function quoteResource(q: Quote): QuoteDto {
     receiving_amount: q.receivingAmount.toString(),
     commission_amount: q.commissionAmount.toString(),
     external_commission_amount: q.externalCommissionAmount.toString(),
-    merchant_commission_amount: q.merchantCommissionAmount.toString(),
+    merchant_commission_amount: q.merchantCommissionAmount ? q.merchantCommissionAmount.toString() : "0.00",
     fx_rate: q.fxRate,
     external_fx_rate: q.externalFxRate,
     internal_fx_rate: q.internalFxRate,
@@ -48,6 +48,6 @@ export function quoteResource(q: Quote): QuoteDto {
     expires_at: q.expiresAt ? q.expiresAt.toISOString() : null,
     source_type: q.sourceType,
     source_id: q.sourceId ? q.sourceId.toString() : null,
-    created_at: q.createdAt.toISOString(),
+    created_at: q.createdAt ? q.createdAt.toISOString() : "",
   };
 }

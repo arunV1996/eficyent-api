@@ -1,13 +1,13 @@
 import { Request, Response } from "express";
-import { generateKeyPairSync } from "crypto";
+import { decryptEnvelope } from "../../config/kms";
 import { prisma } from "../../db/prisma";
 import { ApiException } from "../../helpers/errors";
 import { sendResponse } from "../../helpers/response";
 import { TEAM_MEMBER_INACTIVE } from "../../helpers/constants";
 import { passwordService } from "../../services/auth/passwordService";
 import { teamTokenService } from "../../services/auth/teamTokenService";
-import { encryptEnvelope, decryptEnvelope } from "../../config/kms";
 import { teamMemberResource } from "../../services/auth/teamMemberResource";
+import { credentialService } from "../../services/auth/credentialService";
 import { TeamChangePasswordInput } from "../../validators/team/teamAuthValidators";
 import { settingsController } from "../settings/settingsController";
 
@@ -28,24 +28,20 @@ export const teamProfileController = {
     if (!req.teamMember) throw new ApiException(102);
     if (req.teamMember.status === TEAM_MEMBER_INACTIVE) throw new ApiException(160);
 
-    const { publicKey, privateKey } = generateKeyPairSync("rsa", {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: "pkcs1", format: "pem" },
-      privateKeyEncoding: { type: "pkcs1", format: "pem" },
-    });
-    const updated = await prisma().teamMember.update({
-      where: { id: req.teamMember.id },
-      data: {
-        publicKey: await encryptEnvelope(publicKey),
-        privateKey: await encryptEnvelope(privateKey),
-      },
-    });
+    let teamMember = req.teamMember;
+
+    // Generate if missing
+    if (!teamMember.apiKey || !teamMember.saltKey || !teamMember.privateKey) {
+      teamMember = await credentialService.generateAndStore(teamMember.id, "teamMember");
+    }
+
+    const privateKey = await decryptEnvelope(teamMember.privateKey as string);
 
     return sendResponse(res, "", 200, {
       user: {
-        unique_id: updated.uniqueId,
-        api_key: updated.apiKey,
-        salt_key: updated.saltKey ? await decryptEnvelope(updated.saltKey) : null,
+        unique_id: teamMember.uniqueId,
+        api_key: teamMember.apiKey,
+        salt_key: teamMember.saltKey ? await decryptEnvelope(teamMember.saltKey) : null,
         private_key: privateKey,
       },
     });

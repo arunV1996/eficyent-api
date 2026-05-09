@@ -8,7 +8,7 @@ import { prisma } from "../../db/prisma";
 import { generateEmailCode } from "../../helpers/uniqueId";
 import { UserAuthEmailService } from "../../services/email/userAuthEmailService";
 import { getRedis } from "../../config/redis";
-import { randomTokenBase64Url } from "../../helpers/crypto";
+import * as crypto from "crypto";
 import { env } from "../../config/env";
 import {
   ForgotPasswordInput,
@@ -44,7 +44,7 @@ export const forgotPasswordController = {
 
     await UserAuthEmailService.forgotPassword(user);
 
-    return sendResponse(res, apiSuccess(109), 109, { email: user.email });
+    return sendResponse(res, apiSuccess(109), 109, {});
   },
 
   async verifyCode(req: Request, res: Response): Promise<Response> {
@@ -72,11 +72,11 @@ export const forgotPasswordController = {
     }
     await r.del(attemptsKey);
 
-    const token = randomTokenBase64Url(32);
+    const token = crypto.randomBytes(32).toString("hex");
     await prisma().$transaction([
-      prisma().passwordReset.deleteMany({ where: { email: user.email } }),
-      prisma().passwordReset.create({
-        data: { email: user.email, token },
+      prisma().password_reset_tokens.deleteMany({ where: { email: user.email } }),
+      prisma().password_reset_tokens.create({
+        data: { email: user.email, token, created_at: new Date() },
       }),
       prisma().user.update({
         where: { id: user.id },
@@ -92,14 +92,13 @@ export const forgotPasswordController = {
 
   async resetPassword(req: Request, res: Response): Promise<Response> {
     const body = req.body as ResetPasswordInput;
-    const reset = await prisma().passwordReset.findUnique({
+    const reset = await prisma().password_reset_tokens.findFirst({
       where: { token: body.reset_token },
     });
     if (!reset) throw new ApiException(128);
 
-    const expiryMs =
-      PASSWORD_RESET_EXPIRY_MIN_DEFAULT * 60_000;
-    if (reset.createdAt.getTime() + expiryMs < Date.now()) {
+    const expiryMs = PASSWORD_RESET_EXPIRY_MIN_DEFAULT * 60_000;
+    if (!reset.created_at || reset.created_at.getTime() + expiryMs < Date.now()) {
       throw new ApiException(141);
     }
 
@@ -112,9 +111,9 @@ export const forgotPasswordController = {
         where: { id: user.id },
         data: { password: newHash },
       }),
-      prisma().passwordReset.deleteMany({ where: { token: body.reset_token } }),
+      prisma().password_reset_tokens.deleteMany({ where: { token: body.reset_token } }),
     ]);
 
-    return sendResponse(res, apiSuccess(111), 111, []);
+    return sendResponse(res, apiSuccess(111), 111, {});
   },
 };

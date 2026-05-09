@@ -64,7 +64,7 @@ export function senderResource(
     source_of_funds: sender.sourceOfFunds,
     business_persons: sender.businessPersons,
     status: sender.status,
-    created_at: sender.createdAt.toISOString(),
+    created_at: sender.createdAt ? sender.createdAt.toISOString() : "",
   };
   if (sender.documents) {
     dto.documents = sender.documents.map((d) => ({

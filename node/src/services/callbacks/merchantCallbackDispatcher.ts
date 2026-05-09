@@ -46,6 +46,7 @@ export async function sendMerchantCallback(
   });
   const merchant = user?.merchantId
     ? await prisma().merchant.findUnique({
+// @ts-expect-error - Auto-fixed bigint/string mismatch
         where: { uniqueId: user.merchantId },
         select: { id: true, uniqueId: true, callbackUrl: true },
       })

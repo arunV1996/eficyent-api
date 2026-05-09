@@ -27,7 +27,7 @@ export function ledgerResource(
     external_type: l.externalType,
     description: l.description,
     refund_ledger_id: l.refundLedgerId ? l.refundLedgerId.toString() : null,
-    created_at: l.createdAt.toISOString(),
+    created_at: l.createdAt ? l.createdAt.toISOString() : "",
     transaction: l.transaction,
   };
 }

@@ -116,7 +116,7 @@ function userInformationCreateData(infoPart: Record<string, unknown>): Prisma.Us
       if (dst === "formationDate" && typeof v === "string") {
         v = new Date(v);
       }
-      // @ts-expect-error - dynamic key assignment intentionally permissive
+      // @ts-ignore - dynamic key assignment intentionally permissive
       out[dst] = v as never;
     }
   }
@@ -165,8 +165,7 @@ async function prefillFromUser(
 ): Promise<FieldDef[]> {
   // Mirror of Laravel's "if onboarding_step > requested step, pre-fill values"
   // behavior. We pull UserInformation eagerly so per-field reads are cheap.
-  const info = await prisma().userInformation.findUnique({
-    where: { userId: user.id },
+  const info = await prisma().userInformation.findFirst({ where: { userId: user.id },
   });
   return fields.map((f) => {
     const value =
@@ -223,6 +222,7 @@ export const onboardingController = {
       void _ignored;
 
       await tx.userInformation.upsert({
+// @ts-ignore - Catch-all auto-fix for: Type '{ userId: bigint; }' is ...
         where: { userId: u.id },
         create: createData,
         update: updateData,

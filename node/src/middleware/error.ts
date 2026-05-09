@@ -28,39 +28,40 @@ export function errorHandler(
       { reqId, code: err.code, fieldErrors: err.fieldErrors },
       "Validation error",
     );
+    const firstField = Object.keys(err.fieldErrors)[0];
+    const firstError = firstField && err.fieldErrors[firstField]
+      ? err.fieldErrors[firstField][0]
+      : err.message;
     res.status(422).json({
-      status: false,
-      code: 422,
-      message: err.message,
-      data: { errors: err.fieldErrors },
+      success: false,
+      error: firstError,
+      error_code: 422,
     });
     return;
   }
 
   if (err instanceof ZodError) {
-    const fieldErrors: Record<string, string[]> = {};
-    for (const issue of err.issues) {
-      const path = issue.path.join(".") || "_root";
-      if (!fieldErrors[path]) fieldErrors[path] = [];
-      fieldErrors[path].push(issue.message);
-    }
-    logger.warn({ reqId, fieldErrors }, "Zod validation error");
+    const firstIssue = err.issues[0];
+    const errorMessage = firstIssue ? firstIssue.message : "Validation error.";
+    logger.warn({ reqId, issues: err.issues }, "Zod validation error");
     res.status(422).json({
-      status: false,
-      code: 422,
-      message: "Validation error.",
-      data: { errors: fieldErrors },
+      success: false,
+      error: errorMessage,
+      error_code: 422,
     });
     return;
   }
 
   if (err instanceof ApiException) {
-    // Domain errors are already user-safe.
     logger.info(
       { reqId, code: err.code, httpStatus: err.httpStatus },
       err.message,
     );
-    sendError(res, err.message, err.code, err.httpStatus);
+    res.status(err.httpStatus).json({
+      success: false,
+      error: err.message,
+      error_code: err.code,
+    });
     return;
   }
 

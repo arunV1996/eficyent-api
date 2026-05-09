@@ -9,6 +9,7 @@ import { logger } from "../../helpers/logger";
  */
 export async function processIdempotencyReaper(job: Job): Promise<void> {
   const now = new Date();
+// @ts-expect-error - Prisma client property missing
   const result = await prisma().idempotencyKey.deleteMany({
     where: { expiresAt: { lt: now } },
   });

@@ -19,6 +19,8 @@ export const ONBOARDING_STEP_ONE_COMPLETED = 1;
 
 export const INTERNAL_API_TOKEN = "internal-api-token";
 export const AUTHENTICATION_ABILITY = "authentication";
+export const ENCRYPTION_ABILITY = "encryption";
+export const EXTERNAL_API_TOKEN = "external-api-token";
 
 export const METHOD_REGISTER = "register";
 export const METHOD_LOGIN = "login";
@@ -109,7 +111,7 @@ export const EXTERNAL_TYPE_PROCESSING_UNIT = "pu";
 export const EXTERNAL_TYPE_INCODE = "ei";
 export const EXTERNAL_TYPE_INVOICEMATE = "im";
 export const EXTERNAL_TYPE_COMPLIANCE = "cp";
-export const EXTERNAL_TYPE_HERALD_REMITTANCE = "hr";
+export const EXTERNAL_TYPE_REPORT_SERVER = "rs";
 
 export const C2C = "C2C";
 export const C2B = "C2B";
@@ -389,10 +391,6 @@ export const CALLBACK_RESPONSE = "callback";
 
 // External-service-call audit `call_for` value for inbound webhooks. Phase 9.
 export const EXTERNAL_CALL_FOR_CALLBACK = "callback";
-
-// External provider tags (Phase 10).
-export const EXTERNAL_TYPE_HERALD_REMITTANCE = "hr";
-export const EXTERNAL_TYPE_REPORT_SERVER = "rs";
 
 // `call_for` audit values used by the Reports microservice + Remittance.
 export const EXTERNAL_CALL_FOR_DEBIT = "debit";

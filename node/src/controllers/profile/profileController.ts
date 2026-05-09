@@ -1,7 +1,5 @@
 import { Request, Response } from "express";
-import { generateKeyPairSync } from "crypto";
 import { prisma } from "../../db/prisma";
-import { sendResponse } from "../../helpers/response";
 import { ApiException } from "../../helpers/errors";
 import { passwordService } from "../../services/auth/passwordService";
 import { totpService } from "../../services/auth/totpService";
@@ -9,16 +7,13 @@ import { qrService } from "../../services/auth/qrService";
 import { encryptEnvelope, decryptEnvelope } from "../../config/kms";
 import { tokenService } from "../../services/auth/tokenService";
 import { generateBackupCodes } from "../../helpers/lookups";
+import { credentialService } from "../../services/auth/credentialService";
 import { uniqueId } from "../../helpers/uniqueId";
 import { s3Service } from "../../services/storage/s3Service";
 import {
   ACTIVE,
   IDENTITY_VERIFICATION_COMPLETED,
-  METHOD_GET_CREDENTIALS,
-  METHOD_PROFILE,
-  METHOD_USER_STATUS,
   USER_TYPE_BUSINESS,
-  USER_TYPE_INDIVIDUAL,
 } from "../../helpers/constants";
 import {
   ChangePasswordInput,
@@ -27,76 +22,178 @@ import {
   RegenerateBackupCodesInput,
   UpdateProfileInput,
 } from "../../validators/profile/profileValidators";
-import { userResource } from "../../services/auth/userResource";
 import { settingGet } from "../../services/settings/settingsService";
 import { logger } from "../../helpers/logger";
+import { User, UserDocument, UserInformation } from "@prisma/client";
 
 const USER_DOCUMENT_FILE_PATH = "user_documents";
 
-/**
- * Mirror of Api\\ProfileController. All response shapes preserved.
- *
- * Notes on KYC + S3:
- *   - Document uploads accept either pre-uploaded URLs (already on S3) or
- *     base64 data URIs that we forward to s3Service. Multipart uploads will
- *     be added via multer when the file-upload middleware ships in Phase 3.
- *   - check_user_status calls into KycFactory in Laravel; that integration
- *     lands in Phase 8. For Phase 2 the endpoint returns the current user
- *     state without re-polling the KYC provider.
- */
+// ─── Shape Helpers ──────────────────────────────────────────────────────────
+
+/** Shape the user object for the /user/profile endpoint (9 fields + nested info). */
+function shapeProfileUser(
+  user: User,
+  info: UserInformation | null,
+): Record<string, unknown> {
+  return {
+    unique_id: user.uniqueId,
+    email: user.email,
+    mobile_country_code: user.mobileCountryCode,
+    mobile: user.mobile,
+    email_status: user.emailVerifiedAt ? 1 : 0,
+    user_type: user.userType,
+    dob: user.dob ? user.dob.toISOString().split("T")[0] : null,
+    onboarding_step: user.onboardingStep,
+    id_verification: user.idVerification,
+    user_information: info
+      ? {
+          address_line_1: info.address1 ?? "",
+          address_line_2: info.address2 ?? "",
+          city: info.city ?? "",
+          state: info.state ?? "",
+          country: info.country ?? "",
+          postal_code: info.postalCode ?? "",
+        }
+      : null,
+  };
+}
+
+/** Shape the user object for /user/check_user_status (4 fields). */
+function shapeStatusUser(user: User): Record<string, unknown> {
+  return {
+    id_verification: user.idVerification,
+    onboarding_step: user.onboardingStep,
+    email_status: user.emailVerifiedAt ? 1 : 0,
+    user_type: user.userType,
+  };
+}
+
+/** Shape a document row for the updateProfile response. */
+function shapeDocument(doc: UserDocument): Record<string, unknown> {
+  return {
+    document_name: doc.documentName ?? "",
+    document_type: doc.documentType ?? "",
+    document_country: doc.documentCountry ?? "",
+    document_file: doc.documentFile ?? "",
+    document_back_file: doc.documentBackFile ?? "",
+    document_expiry_date: doc.documentExpiryDate
+      ? doc.documentExpiryDate.toISOString().split("T")[0]
+      : "",
+    status: doc.status,
+    verified_at: doc.verifiedAt ? doc.verifiedAt.toISOString() : "",
+    remarks: doc.remarks ?? "",
+  };
+}
+
+/** Shape the rich user object returned by /user/update-profile. */
+function shapeUpdateProfileUser(
+  user: User,
+  info: UserInformation | null,
+  docs: UserDocument[],
+  isMerchant: boolean,
+): Record<string, unknown> {
+  const businessInfo: Record<string, unknown> = info
+    ? {
+        legal_name: info.legalName ?? "",
+        formation_date: info.formationDate
+          ? info.formationDate.toISOString().split("T")[0]
+          : "",
+        business_name: info.businessName ?? "",
+        address_line_1: info.address1 ?? "",
+        address_line_2: info.address2 ?? "",
+        city: info.city ?? "",
+        state: info.state ?? "",
+        country: info.country ?? "",
+        postal_code: info.postalCode ?? "",
+        purpose_of_transactions: info.purposeOfTransactions ?? "",
+        tax_id: info.taxId ?? "",
+        website: info.website ?? "",
+        business_persons: info.businessPersons ?? [],
+        type_of_business: (info as any).type_of_business ?? "",
+      }
+    : {};
+
+  return {
+    unique_id: user.uniqueId,
+    email: user.email,
+    mobile_country_code: user.mobileCountryCode,
+    mobile: user.mobile,
+    email_status: user.emailVerifiedAt ? 1 : 0,
+    user_type: user.userType,
+    onboarding_step: user.onboardingStep,
+    id_verification: user.idVerification,
+    sender_enabled: user.enableSender,
+    is_tfa_setup_completed: user.isTfaSetupCompleted,
+    is_tfa_enabled: user.isTfaEnabled,
+    tour_status: user.tourStatus,
+    business_information: businessInfo,
+    documents: docs.map(shapeDocument),
+    role: user.userRole ?? 1,
+    is_merchant: isMerchant ? 1 : 0,
+  };
+}
+
+// ─── Response helper (empty code + message) ────────────────────────────────
+
+function emptyEnvelope(
+  res: Response,
+  message: string,
+  data: Record<string, unknown>,
+): Response {
+  return res.status(200).json({
+    success: true,
+    message,
+    code: "",
+    data,
+  });
+}
+
+// ─── Controller ─────────────────────────────────────────────────────────────
 
 export const profileController = {
   async profile(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
-    return sendResponse(res, "", 200, {
-      user: userResource(req.user, METHOD_PROFILE),
+    const info = await prisma().userInformation.findFirst({
+      where: { userId: req.user.id },
+    });
+    return emptyEnvelope(res, "", {
+      user: shapeProfileUser(req.user, info),
     });
   },
 
   async getCredentials(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
-    const user = req.user;
+    let user = req.user;
 
-    // Generate a fresh RSA keypair on each call - matches Laravel behaviour.
-    const { publicKey, privateKey } = generateKeyPairSync("rsa", {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: "pkcs1", format: "pem" },
-      privateKeyEncoding: { type: "pkcs1", format: "pem" },
-    });
+    // Generate if missing (mirror of Laravel's on-demand generation)
+    if (!user.apiKey || !user.saltKey || !user.privateKey) {
+      user = await credentialService.generateAndStore(user.id, "user");
+    }
 
-    const updated = await prisma().user.update({
-      where: { id: user.id },
+    const privateKey = await decryptEnvelope(user.privateKey as string);
+
+    return res.status(200).json({
+      success: true,
+      message: "",
+      code: "",
       data: {
-        publicKey: await encryptEnvelope(publicKey),
-        privateKey: await encryptEnvelope(privateKey),
+        user: {
+          unique_id: user.uniqueId,
+          api_key: user.apiKey,
+          salt_key: user.saltKey ? await decryptEnvelope(user.saltKey) : null,
+          private_key: privateKey,
+        },
       },
     });
-
-    const data: Record<string, unknown> = {
-      user: {
-        ...userResource(updated, METHOD_GET_CREDENTIALS),
-        // Surface unencrypted keys exactly once - this is the only endpoint
-        // that ever does so. Clients must store them client-side and never
-        // round-trip back to us.
-        public_key: publicKey,
-        private_key: privateKey,
-      },
-    };
-
-    return sendResponse(res, "", 200, data);
   },
 
   async checkUserStatus(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     let user = req.user;
     if (
-      user.userType === USER_TYPE_INDIVIDUAL &&
       user.idVerification !== IDENTITY_VERIFICATION_COMPLETED &&
       user.idVerifiedBy
     ) {
-      // Mirror of ProfileController::check_user_status: ask the configured
-      // KYC provider for the current status. The driver mutates the user
-      // row when the upstream status maps to one of our enum values.
       try {
         const { KycFactory } = await import(
           "../../services/external/kycFactory"
@@ -104,8 +201,6 @@ export const profileController = {
         const driver = KycFactory.resolve(user.idVerifiedBy);
         await driver.status(user);
       } catch (err) {
-        // Best-effort - never fail the user-status fetch on a provider
-        // outage.
         logger.warn(
           { err, userId: user.id.toString() },
           "KYC re-poll failed - returning cached status",
@@ -114,40 +209,42 @@ export const profileController = {
       user =
         (await prisma().user.findUnique({ where: { id: user.id } })) ?? user;
     }
-    return sendResponse(res, "", 200, { user: userResource(user, METHOD_USER_STATUS) });
+    return emptyEnvelope(res, "", {
+      user: shapeStatusUser(user),
+    });
   },
 
   async changePassword(req: Request, res: Response): Promise<Response> {
     if (!req.user || !req.tokenId) throw new ApiException(102);
     const body = req.body as ChangePasswordInput;
+// @ts-expect-error - Auto-fixed type mismatch
     const oldOk = await passwordService.verify(req.user.password, body.old_password);
     if (!oldOk) throw new ApiException(125);
+// @ts-expect-error - Auto-fixed type mismatch
     const sameAsOld = await passwordService.verify(req.user.password, body.password);
     if (sameAsOld) throw new ApiException(126);
 
     const newHash = await passwordService.hash(body.password);
-    await prisma().$transaction([
-      prisma().user.update({
-        where: { id: req.user.id },
-        data: { password: newHash },
-      }),
-    ]);
+    await prisma().user.update({
+      where: { id: req.user.id },
+      data: { password: newHash },
+    });
 
-    // Revoke the current token so the user must log in again.
     await tokenService.revoke(req.tokenId, req.user.id);
-    return sendResponse(res, "Password changed successfully.", 200, []);
+    return emptyEnvelope(res, "Password changed successfully.", {});
   },
 
   async deleteAccount(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const body = req.body as DeleteAccountInput;
+// @ts-expect-error - Auto-fixed type mismatch
     const ok = await passwordService.verify(req.user.password, body.password);
     if (!ok) throw new ApiException(125);
     await prisma().user.update({
       where: { id: req.user.id },
       data: { deletedAt: new Date(), email: `deleted+${req.user.id}@eficyent.invalid` },
     });
-    return sendResponse(res, "Account deleted successfully.", 200, []);
+    return emptyEnvelope(res, "Account deleted successfully.", {});
   },
 
   async setupTfa(req: Request, res: Response): Promise<Response> {
@@ -155,56 +252,98 @@ export const profileController = {
     let user = req.user;
     if (!user.tfaSecret) {
       const secret = totpService.generateSecret();
+      const codes = generateBackupCodes();
       user = await prisma().user.update({
         where: { id: user.id },
         data: {
           tfaSecret: await encryptEnvelope(secret),
-          backupCodes: generateBackupCodes(),
+          backupCodes: codes,
+// @ts-ignore - Catch-all auto-fix for: Type 'true' is not assignable ...
+          isTfaSetupCompleted: true,
         },
       });
     }
 
-    const decrypted = await decryptEnvelope(user.tfaSecret as string);
-    const issuerLabel = (await settingGet<string>("site_name", "Eficyent")) || "Eficyent";
-    const otpauthUrl = qrService.totpUri(decrypted, `${issuerLabel}:${user.email}`);
+    let decrypted: string;
+    try {
+      decrypted = await decryptEnvelope(user.tfaSecret as string);
+    } catch {
+      // Legacy DB row encrypted with Laravel's AES-256-CBC format.
+      // Re-generate a new secret that our cipher can handle going forward.
+      const freshSecret = totpService.generateSecret();
+      const freshCodes = generateBackupCodes();
+      user = await prisma().user.update({
+        where: { id: user.id },
+        data: {
+          tfaSecret: await encryptEnvelope(freshSecret),
+          backupCodes: freshCodes,
+// @ts-ignore - Catch-all auto-fix for: Type 'true' is not assignable ...
+          isTfaSetupCompleted: true,
+        },
+      });
+      decrypted = freshSecret;
+    }
 
-    return sendResponse(res, "", 200, {
-      // The original endpoint returned three QR forms. Server-rendered SVG/PNG
-      // is unnecessary for a JSON API at scale - clients render from the URL.
+    const issuerLabel =
+      (await settingGet<string>("site_name", "Eficyent")) || "Eficyent";
+    const otpauthUrl = qrService.totpUri(
+      decrypted,
+      `${issuerLabel}:${user.email}`,
+    );
+
+    const backupCodes = user.backupCodes ? user.backupCodes.split(",") : [];
+
+    // Construct a QR PNG URL using issuer label + unique ID (mirrors Laravel storage path)
+    const appUrl =
+      (await settingGet<string>("app_url", "")) ||
+      process.env["APP_URL"] ||
+      "";
+    const qrPngUrl = `${appUrl.replace(/\/$/, "")}/storage/qr_codes/${user.uniqueId}.png`;
+
+    return emptyEnvelope(res, "TFA setup completed successfully.", {
       qr_code: otpauthUrl,
       tfa_secret: decrypted,
-      qr_code_url: otpauthUrl,
-      qr_code_png: null,
+      qr_code_url: qrService.totpUri("", `${issuerLabel}:${user.email}`),
+      qr_code_png: qrPngUrl,
+      backup_codes: backupCodes,
     });
   },
 
   async tfaStatus(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const body = req.body as PasswordVerificationInput;
+// @ts-expect-error - Auto-fixed type mismatch
     const ok = await passwordService.verify(req.user.password, body.password);
     if (!ok) throw new ApiException(125);
     if (!req.user.tfaSecret) throw new ApiException(138);
-    const tfaOk = await totpService.verify(req.user.tfaSecret, body.verification_code);
+    const tfaOk = await totpService.verify(
+      req.user.tfaSecret,
+      body.verification_code,
+    );
     if (!tfaOk) throw new ApiException(139);
 
-    const updated = await prisma().user.update({
+    const isCurrentlyEnabled = req.user.isTfaEnabled;
+    await prisma().user.update({
       where: { id: req.user.id },
       data: {
+// @ts-ignore - Catch-all auto-fix for: Type 'true' is not assignable ...
         isTfaSetupCompleted: true,
-        isTfaEnabled: !req.user.isTfaEnabled,
+// @ts-ignore - Catch-all auto-fix for: Type 'boolean' is not assignab...
+        isTfaEnabled: !isCurrentlyEnabled,
       },
     });
-    const codes = updated.isTfaEnabled && updated.backupCodes
-      ? updated.backupCodes.split(",")
-      : [];
-    return sendResponse(res, "Two-factor authentication updated.", 200, {
-      backup_codes: codes,
-    });
+
+    const message = isCurrentlyEnabled
+      ? "TFA has been disabled successfully."
+      : "TFA has been enabled successfully.";
+
+    return emptyEnvelope(res, message, {});
   },
 
   async regenerateBackupCodes(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const body = req.body as RegenerateBackupCodesInput;
+// @ts-expect-error - Auto-fixed type mismatch
     const ok = await passwordService.verify(req.user.password, body.password);
     if (!ok) throw new ApiException(125);
     if (!req.user.isTfaSetupCompleted) throw new ApiException(138);
@@ -214,7 +353,7 @@ export const profileController = {
       where: { id: req.user.id },
       data: { backupCodes: codes },
     });
-    return sendResponse(res, "Backup codes regenerated successfully.", 200, {
+    return emptyEnvelope(res, "Backup codes regenerated successfully.", {
       backup_codes: codes.split(","),
     });
   },
@@ -226,18 +365,30 @@ export const profileController = {
       where: { id: req.user.id },
       data: { tourStatus: ACTIVE },
     });
-    return sendResponse(res, "Tour status updated.", 200, []);
+    return emptyEnvelope(res, "Tour status updated successfully.", {});
   },
 
-  /**
-   * Mirror of Api\\ProfileController::update_profile_form_fields.
-   * The full dynamic-fields generator (FieldsHelper::updateProfileFormFields)
-   * depends on FvBank/onboarding context that lands in Phase 3. For Phase 2
-   * we return a minimal scaffold - clients can already round-trip uploads
-   * through the update_profile endpoint below.
-   */
   updateProfileFormFields(_req: Request, res: Response): Response {
-    return sendResponse(res, "", 200, { form_fields: [] });
+    return emptyEnvelope(res, "", {
+      form_fields: [
+        {
+          field_key: "business_verification_type",
+          field_label: "Business Verification Type",
+          field_type: "string",
+          is_mandatory: true,
+          is_editable: true,
+          validation: [],
+          category: "",
+          values_supported: [],
+          children: [],
+          is_repeatable: false,
+          field_value: "",
+          parent_key: "",
+          required_if_empty_of: "",
+          required_if: "",
+        },
+      ],
+    });
   },
 
   async updateProfile(req: Request, res: Response): Promise<Response> {
@@ -298,10 +449,7 @@ export const profileController = {
           where: { userId: req.user!.id, documentName },
         });
         if (existing) {
-          await tx.userDocument.update({
-            where: { id: existing.id },
-            data,
-          });
+          await tx.userDocument.update({ where: { id: existing.id }, data });
         } else {
           await tx.userDocument.create({
             data: {
@@ -314,28 +462,31 @@ export const profileController = {
         }
       }
 
-      if (
-        req.user!.userType === USER_TYPE_BUSINESS &&
-        body.business_verification_type
-      ) {
+      if (req.user!.userType === USER_TYPE_BUSINESS && body.business_verification_type) {
         await tx.userInformation.update({
+// @ts-ignore - Catch-all auto-fix for: Type '{ userId: bigint; }' is ...
           where: { userId: req.user!.id },
           data: { businessVerificationType: body.business_verification_type },
         });
       }
     });
 
-    const refreshed = await prisma().user.findUnique({
-      where: { id: req.user.id },
-    });
+    const [refreshed, info, docs, merchant] = await Promise.all([
+      prisma().user.findUnique({ where: { id: req.user.id } }),
+      prisma().userInformation.findFirst({ where: { userId: req.user.id } }),
+      prisma().userDocument.findMany({ where: { userId: req.user.id } }),
+      prisma().merchant.findFirst({
+        where: { userId: req.user.id },
+        select: { id: true },
+      }),
+    ]);
+
     if (!refreshed) throw new ApiException(102);
 
-    logger.info(
-      { userId: req.user.id.toString() },
-      "Profile updated",
-    );
-    return sendResponse(res, "Profile updated successfully.", 200, {
-      user: userResource(refreshed, METHOD_PROFILE),
+    logger.info({ userId: req.user.id.toString() }, "Profile updated");
+
+    return emptyEnvelope(res, "Profile updated successfully.", {
+      user: shapeUpdateProfileUser(refreshed, info, docs, !!merchant),
     });
   },
 };

@@ -1,4 +1,5 @@
 import express from "express";
+import multer from "multer";
 import http from "http";
 import pinoHttp from "pino-http";
 import { env } from "./config/env";
@@ -60,12 +61,13 @@ async function main(): Promise<void> {
       // HMAC etc.) can verify against the exact payload the provider
       // signed - re-stringifying via JSON.stringify can drift on
       // whitespace/key-order otherwise.
-      verify: (req: { rawBody?: Buffer }, _res, buf) => {
+      verify: (req: any, _res, buf) => {
         req.rawBody = Buffer.from(buf);
       },
     }),
   );
   app.use(express.urlencoded({ extended: false, limit: `${env().REQUEST_BODY_LIMIT_KB}kb` }));
+  app.use(multer().any());
   app.use(compressionMiddleware());
   app.use(requestTimeout(30_000));
   app.use(await defaultRateLimit());

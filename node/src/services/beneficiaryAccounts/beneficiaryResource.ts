@@ -94,7 +94,7 @@ export function beneficiaryAccountResource(
     intermediary_bank_country: account.intermediaryBankCountry,
     bank_country: account.bankCountry,
     status: account.status,
-    created_at: account.createdAt.toISOString(),
+    created_at: account.createdAt ? account.createdAt.toISOString() : "",
   };
   if (account.additionalDetails) {
     dto.additional_details = {
