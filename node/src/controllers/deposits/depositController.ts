@@ -157,7 +157,7 @@ export const depositController = {
     const merchantId = req.user.merchantId
       ? (
           await prisma().merchant.findFirst({
-            where: { uniqueId: req.user.merchantId as any },
+            where: { id: req.user.merchantId },
           })
         )?.id ?? null
       : null;
@@ -190,8 +190,7 @@ export const depositController = {
     const merchantId = req.user.merchantId
       ? (
           await prisma().merchant.findFirst({
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-            where: { uniqueId: req.user.merchantId },
+            where: { id: req.user.merchantId },
           })
         )?.id ?? null
       : null;
