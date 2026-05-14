@@ -14,6 +14,7 @@ import {
   ACTIVE,
   IDENTITY_VERIFICATION_COMPLETED,
   USER_TYPE_BUSINESS,
+  ID_VERIFIED_BY_ADMIN,
 } from "../../helpers/constants";
 import {
   ChangePasswordInput,
@@ -24,114 +25,14 @@ import {
 } from "../../validators/profile/profileValidators";
 import { settingGet } from "../../services/settings/settingsService";
 import { logger } from "../../helpers/logger";
-import { User, UserDocument, UserInformation } from "@prisma/client";
+// Removed unused imports
 
 const USER_DOCUMENT_FILE_PATH = "user_documents";
 
-// ─── Shape Helpers ──────────────────────────────────────────────────────────
-
-/** Shape the user object for the /user/profile endpoint (9 fields + nested info). */
-function shapeProfileUser(
-  user: User,
-  info: UserInformation | null,
-): Record<string, unknown> {
-  return {
-    unique_id: user.uniqueId,
-    email: user.email,
-    mobile_country_code: user.mobileCountryCode,
-    mobile: user.mobile,
-    email_status: user.emailVerifiedAt ? 1 : 0,
-    user_type: user.userType,
-    dob: user.dob ? user.dob.toISOString().split("T")[0] : null,
-    onboarding_step: user.onboardingStep,
-    id_verification: user.idVerification,
-    user_information: info
-      ? {
-          address_line_1: info.address1 ?? "",
-          address_line_2: info.address2 ?? "",
-          city: info.city ?? "",
-          state: info.state ?? "",
-          country: info.country ?? "",
-          postal_code: info.postalCode ?? "",
-        }
-      : null,
-  };
-}
-
-/** Shape the user object for /user/check_user_status (4 fields). */
-function shapeStatusUser(user: User): Record<string, unknown> {
-  return {
-    id_verification: user.idVerification,
-    onboarding_step: user.onboardingStep,
-    email_status: user.emailVerifiedAt ? 1 : 0,
-    user_type: user.userType,
-  };
-}
-
-/** Shape a document row for the updateProfile response. */
-function shapeDocument(doc: UserDocument): Record<string, unknown> {
-  return {
-    document_name: doc.documentName ?? "",
-    document_type: doc.documentType ?? "",
-    document_country: doc.documentCountry ?? "",
-    document_file: doc.documentFile ?? "",
-    document_back_file: doc.documentBackFile ?? "",
-    document_expiry_date: doc.documentExpiryDate
-      ? doc.documentExpiryDate.toISOString().split("T")[0]
-      : "",
-    status: doc.status,
-    verified_at: doc.verifiedAt ? doc.verifiedAt.toISOString() : "",
-    remarks: doc.remarks ?? "",
-  };
-}
-
-/** Shape the rich user object returned by /user/update-profile. */
-function shapeUpdateProfileUser(
-  user: User,
-  info: UserInformation | null,
-  docs: UserDocument[],
-  isMerchant: boolean,
-): Record<string, unknown> {
-  const businessInfo: Record<string, unknown> = info
-    ? {
-        legal_name: info.legalName ?? "",
-        formation_date: info.formationDate
-          ? info.formationDate.toISOString().split("T")[0]
-          : "",
-        business_name: info.businessName ?? "",
-        address_line_1: info.address1 ?? "",
-        address_line_2: info.address2 ?? "",
-        city: info.city ?? "",
-        state: info.state ?? "",
-        country: info.country ?? "",
-        postal_code: info.postalCode ?? "",
-        purpose_of_transactions: info.purposeOfTransactions ?? "",
-        tax_id: info.taxId ?? "",
-        website: info.website ?? "",
-        business_persons: info.businessPersons ?? [],
-        type_of_business: (info as any).type_of_business ?? "",
-      }
-    : {};
-
-  return {
-    unique_id: user.uniqueId,
-    email: user.email,
-    mobile_country_code: user.mobileCountryCode,
-    mobile: user.mobile,
-    email_status: user.emailVerifiedAt ? 1 : 0,
-    user_type: user.userType,
-    onboarding_step: user.onboardingStep,
-    id_verification: user.idVerification,
-    sender_enabled: user.enableSender,
-    is_tfa_setup_completed: user.isTfaSetupCompleted,
-    is_tfa_enabled: user.isTfaEnabled,
-    tour_status: user.tourStatus,
-    business_information: businessInfo,
-    documents: docs.map(shapeDocument),
-    role: user.userRole ?? 1,
-    is_merchant: isMerchant ? 1 : 0,
-  };
-}
+import {
+  shapeFullUser,
+  shapeStatusUser,
+} from "../../helpers/userShaper";
 
 // ─── Response helper (empty code + message) ────────────────────────────────
 
@@ -153,11 +54,17 @@ function emptyEnvelope(
 export const profileController = {
   async profile(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
-    const info = await prisma().userInformation.findFirst({
-      where: { userId: req.user.id },
-    });
+    const userId = req.user.id;
+    const [info, docs, merchant] = await Promise.all([
+      prisma().userInformation.findFirst({ where: { userId } }),
+      prisma().userDocument.findMany({ where: { userId } }),
+      prisma().merchant.findFirst({
+        where: { userId },
+        select: { id: true },
+      }),
+    ]);
     return emptyEnvelope(res, "", {
-      user: shapeProfileUser(req.user, info),
+      user: shapeFullUser(req.user, info, docs, !!merchant),
     });
   },
 
@@ -190,6 +97,8 @@ export const profileController = {
   async checkUserStatus(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     let user = req.user;
+
+    // 1. In-flight KYC re-poll logic (existing)
     if (
       user.idVerification !== IDENTITY_VERIFICATION_COMPLETED &&
       user.idVerifiedBy
@@ -209,9 +118,42 @@ export const profileController = {
       user =
         (await prisma().user.findUnique({ where: { id: user.id } })) ?? user;
     }
-    return emptyEnvelope(res, "", {
-      user: shapeStatusUser(user),
-    });
+
+    // 2. Load context for shaper (Merchant status + UserInformation for names)
+    const [info, merchant] = await Promise.all([
+      prisma().userInformation.findFirst({ where: { userId: user.id } }),
+      prisma().merchant.findFirst({
+        where: { userId: user.id },
+        select: { id: true },
+      }),
+    ]);
+
+    const data: Record<string, unknown> = {
+      user: shapeStatusUser(user, !!merchant, info),
+    };
+
+    // 3. Optional id_verification_url if individual (mirror of onboarding step 3)
+    const { USER_TYPE_INDIVIDUAL } = await import("../../helpers/constants");
+    if (Number(user.userType) === USER_TYPE_INDIVIDUAL) {
+      const kycService = await settingGet<string>("kyc_service", "");
+      if (kycService && kycService !== ID_VERIFIED_BY_ADMIN) {
+        try {
+          const { KycFactory } = await import(
+            "../../services/external/kycFactory"
+          );
+          const driver = KycFactory.resolve(kycService);
+          const url = await driver.make(user);
+          data.id_verification_url = url || null;
+        } catch (err) {
+          logger.error(
+            { err, userId: user.id.toString() },
+            "KYC link generation failed in status check",
+          );
+        }
+      }
+    }
+
+    return emptyEnvelope(res, "", data);
   },
 
   async changePassword(req: Request, res: Response): Promise<Response> {
@@ -258,8 +200,7 @@ export const profileController = {
         data: {
           tfaSecret: await encryptEnvelope(secret),
           backupCodes: codes,
-// @ts-ignore - Catch-all auto-fix for: Type 'true' is not assignable ...
-          isTfaSetupCompleted: true,
+          isTfaSetupCompleted: 1,
         },
       });
     }
@@ -277,21 +218,22 @@ export const profileController = {
         data: {
           tfaSecret: await encryptEnvelope(freshSecret),
           backupCodes: freshCodes,
-// @ts-ignore - Catch-all auto-fix for: Type 'true' is not assignable ...
-          isTfaSetupCompleted: true,
+          isTfaSetupCompleted: 1,
         },
       });
       decrypted = freshSecret;
     }
 
     const issuerLabel =
-      (await settingGet<string>("site_name", "Eficyent")) || "Eficyent";
+      (await settingGet<string>("site_name", "EFICyent")) || "EFICyent";
     const otpauthUrl = qrService.totpUri(
       decrypted,
-      `${issuerLabel}:${user.email}`,
+      user.email,
+      issuerLabel,
     );
 
-    const backupCodes = user.backupCodes ? user.backupCodes.split(",") : [];
+    const qrSvg = await qrService.generateSvg(otpauthUrl);
+    const fullQrSvg = `<?xml version="1.0" encoding="UTF-8"?>\n${qrSvg}\n`;
 
     // Construct a QR PNG URL using issuer label + unique ID (mirrors Laravel storage path)
     const appUrl =
@@ -300,12 +242,11 @@ export const profileController = {
       "";
     const qrPngUrl = `${appUrl.replace(/\/$/, "")}/storage/qr_codes/${user.uniqueId}.png`;
 
-    return emptyEnvelope(res, "TFA setup completed successfully.", {
-      qr_code: otpauthUrl,
+    return emptyEnvelope(res, "", {
+      qr_code: fullQrSvg,
       tfa_secret: decrypted,
-      qr_code_url: qrService.totpUri("", `${issuerLabel}:${user.email}`),
+      qr_code_url: otpauthUrl,
       qr_code_png: qrPngUrl,
-      backup_codes: backupCodes,
     });
   },
 
@@ -322,22 +263,27 @@ export const profileController = {
     );
     if (!tfaOk) throw new ApiException(139);
 
-    const isCurrentlyEnabled = req.user.isTfaEnabled;
-    await prisma().user.update({
+    const isCurrentlyEnabled = !!req.user.isTfaEnabled;
+    const becomingEnabled = !isCurrentlyEnabled;
+
+    const updated = await prisma().user.update({
       where: { id: req.user.id },
       data: {
-// @ts-ignore - Catch-all auto-fix for: Type 'true' is not assignable ...
-        isTfaSetupCompleted: true,
-// @ts-ignore - Catch-all auto-fix for: Type 'boolean' is not assignab...
-        isTfaEnabled: !isCurrentlyEnabled,
+        isTfaSetupCompleted: 1,
+        isTfaEnabled: becomingEnabled ? 1 : 0,
       },
     });
 
-    const message = isCurrentlyEnabled
-      ? "TFA has been disabled successfully."
-      : "TFA has been enabled successfully.";
+    const message = becomingEnabled
+      ? "TFA has been enabled successfully."
+      : "TFA has been disabled successfully.";
 
-    return emptyEnvelope(res, message, {});
+    const data: Record<string, unknown> = {};
+    if (becomingEnabled && updated.backupCodes) {
+      data["backup_codes"] = updated.backupCodes.split(",");
+    }
+
+    return emptyEnvelope(res, message, data);
   },
 
   async regenerateBackupCodes(req: Request, res: Response): Promise<Response> {
@@ -368,26 +314,142 @@ export const profileController = {
     return emptyEnvelope(res, "Tour status updated successfully.", {});
   },
 
-  updateProfileFormFields(_req: Request, res: Response): Response {
+  async updateProfileFormFields(req: Request, res: Response): Promise<Response> {
+    if (!req.user) throw new ApiException(102);
+
+    const today = new Date().toISOString().split("T")[0];
+    const isBusiness = Number(req.user.userType) === USER_TYPE_BUSINESS;
+
+    const commonChildOptions = {
+      is_repeatable: false,
+      field_value: "",
+      parent_key: "",
+      required_if_empty_of: "",
+      required_if: "",
+      values_supported: [],
+      children: [],
+      category: "",
+    };
+
+    const backFileChild = {
+      field_key: "document_back_file",
+      field_label: "Document Back File",
+      field_type: "file",
+      is_mandatory: true,
+      is_editable: true,
+      validation: {
+        accepted_extensions: [
+          "image/jpeg",
+          "image/png",
+          "image/jpg",
+          "application/pdf",
+        ],
+        max_file_size: 5242880,
+      },
+      ...commonChildOptions,
+    };
+
+    const expiryDateChild = {
+      field_key: "document_expiry_date",
+      field_label: "Document Expiry Date",
+      field_type: "date",
+      is_mandatory: true,
+      is_editable: true,
+      validation: {
+        min_date: today,
+      },
+      ...commonChildOptions,
+    };
+
+    const fields: any[] = [
+      {
+        field_key: "proof_of_address",
+        field_label: "Proof of Address",
+        field_type: "group",
+        is_mandatory: true,
+        is_editable: true,
+        is_repeatable: false,
+        category: "Proof of Address",
+        children: isBusiness ? [expiryDateChild] : [backFileChild, expiryDateChild],
+        validation: [],
+        values_supported: [],
+      },
+      {
+        field_key: isBusiness ? "proof_of_ownership" : "id_document",
+        field_label: isBusiness ? "Proof of Ownership" : "ID Document",
+        field_type: "group",
+        is_mandatory: true,
+        is_editable: true,
+        is_repeatable: false,
+        category: isBusiness ? "Proof of Ownership" : "ID Document",
+        children: isBusiness ? [expiryDateChild] : [backFileChild, expiryDateChild],
+        validation: [],
+        values_supported: [],
+      },
+      {
+        field_key: "source_of_funds",
+        field_label: "Source of Funds",
+        field_type: "group",
+        is_mandatory: true,
+        is_editable: true,
+        is_repeatable: false,
+        category: "Source of Funds",
+        children: isBusiness ? [expiryDateChild] : [backFileChild, expiryDateChild],
+        validation: [],
+        values_supported: [],
+      },
+    ];
+
+    if (isBusiness) {
+      fields.push({
+        field_key: "business_verification_type",
+        field_label: "Business Verification Type",
+        field_type: "string",
+        is_mandatory: true,
+        is_editable: true,
+        validation: [],
+        category: "",
+        values_supported: [
+          {
+            label: "Proof of Business Registration and Legal Existence",
+            value: "Proof_Of_Business_Registration",
+          },
+          {
+            label: "Certificate of Incorporation",
+            value: "Cretificate_Of_Incorporation",
+          },
+          {
+            label: "Business Registration Certificate",
+            value: "Business_Registration_Certificate",
+          },
+          {
+            label: "Articles of Incorporation",
+            value: "Articles_Of_Incorporationn",
+          },
+          {
+            label: "Bylaws",
+            value: "Bylaws",
+          },
+          {
+            label: "Partnership Agreements",
+            value: "Partnership_Agreements",
+          },
+          {
+            label: "Operating Agreement",
+            value: "Operating_Agreement",
+          },
+        ],
+        children: [],
+        is_repeatable: false,
+        field_value: "",
+        parent_key: "",
+        required_if_empty_of: "",
+        required_if: "",
+      });
+    }
+
     return emptyEnvelope(res, "", {
-      form_fields: [
-        {
-          field_key: "business_verification_type",
-          field_label: "Business Verification Type",
-          field_type: "string",
-          is_mandatory: true,
-          is_editable: true,
-          validation: [],
-          category: "",
-          values_supported: [],
-          children: [],
-          is_repeatable: false,
-          field_value: "",
-          parent_key: "",
-          required_if_empty_of: "",
-          required_if: "",
-        },
-      ],
+      form_fields: fields,
     });
   },
 
@@ -462,12 +524,27 @@ export const profileController = {
         }
       }
 
-      if (req.user!.userType === USER_TYPE_BUSINESS && body.business_verification_type) {
-        await tx.userInformation.update({
-// @ts-ignore - Catch-all auto-fix for: Type '{ userId: bigint; }' is ...
+      if (
+        Number(req.user!.userType) === USER_TYPE_BUSINESS &&
+        body.business_verification_type
+      ) {
+        const existingInfo = await tx.userInformation.findFirst({
           where: { userId: req.user!.id },
-          data: { businessVerificationType: body.business_verification_type },
         });
+        if (existingInfo) {
+          await tx.userInformation.update({
+            where: { id: existingInfo.id },
+            data: { businessVerificationType: body.business_verification_type },
+          });
+        } else {
+          await tx.userInformation.create({
+            data: {
+              uniqueId: uniqueId(24),
+              userId: req.user!.id,
+              businessVerificationType: body.business_verification_type,
+            },
+          });
+        }
       }
     });
 
@@ -486,7 +563,7 @@ export const profileController = {
     logger.info({ userId: req.user.id.toString() }, "Profile updated");
 
     return emptyEnvelope(res, "Profile updated successfully.", {
-      user: shapeUpdateProfileUser(refreshed, info, docs, !!merchant),
+      user: shapeFullUser(refreshed, info, docs, !!merchant),
     });
   },
 };

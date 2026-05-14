@@ -1,22 +1,17 @@
 import { Secret, TOTP } from "otpauth";
+import QRCode from "qrcode";
 
 /**
- * Build the otpauth:// URL the way Google Authenticator expects. We don't
- * render a QR code server-side here - the frontend can render it client-side
- * using any QR library, which keeps server CPU costs low at 1M-user scale.
- *
- * Laravel's setup_tfa returned both `qr_code` (inline SVG) and `qr_code_url`
- * (otpauth://). To preserve API parity we keep both keys but use a hosted
- * QR rendering service for the inline string. If you'd rather render
- * server-side, swap in `qrcode` (npm) - the function signature is unchanged.
+ * Build the otpauth:// URL the way Google Authenticator expects.
+ * To preserve API parity with Laravel, we also provide a method to render
+ * the URL as an inline SVG string.
  */
 
-const ISSUER = "Eficyent";
 
 export const qrService = {
-  totpUri(secretBase32: string, accountLabel: string): string {
+  totpUri(secretBase32: string, accountLabel: string, issuer: string): string {
     const totp = new TOTP({
-      issuer: ISSUER,
+      issuer,
       label: accountLabel,
       algorithm: "SHA1",
       digits: 6,
@@ -24,5 +19,9 @@ export const qrService = {
       secret: Secret.fromBase32(secretBase32),
     });
     return totp.toString();
+  },
+
+  async generateSvg(uri: string): Promise<string> {
+    return QRCode.toString(uri, { type: "svg", width: 200, margin: 2 });
   },
 };

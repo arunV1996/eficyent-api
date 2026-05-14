@@ -23,6 +23,7 @@ import { ledgersRoutes } from "./ledgers.routes";
 import { teamAuthedRoutes, teamPublicRoutes } from "./team.routes";
 import { webhookRoutes } from "./webhooks.routes";
 import { dashboardRoutes } from "./dashboard.routes";
+import { teamMemberRoutes } from "./teamMember.routes";
 import { alignRoutes } from "./align.routes";
 
 /**
@@ -69,6 +70,7 @@ export async function apiRouter(): Promise<Router> {
   r.use("/user/remitters", sendersRoutes());
   r.use("/user/quotes", await quotesRoutes());
   r.use("/user/wallets", await walletsRoutes());
+  r.use("/user/team-members", teamMemberRoutes());
 
   // Phase 5 endpoints
   r.use("/user/deposits", await depositsRoutes());

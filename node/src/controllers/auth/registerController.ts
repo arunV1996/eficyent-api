@@ -151,7 +151,9 @@ export const registerController = {
         email: user.email,
         mobile_country_code: user.mobileCountryCode,
         mobile: user.mobile,
-        email_status: user.emailVerifiedAt ? 1 : 0,
+        email_status: user.emailVerifiedAt ? "VERIFIED" : "NOT_VERIFIED",
+        user_type: Number(user.userType) === USER_TYPE_BUSINESS ? "BUSINESS" : "PERSONAL",
+        role: "ADMIN",
       },
     });
   },

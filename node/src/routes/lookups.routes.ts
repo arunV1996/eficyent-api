@@ -40,8 +40,9 @@ export async function publicLookupsRoutes(): Promise<Router> {
   r.get(
     "/deposit_lookups",
     validate({ query: DepositLookupQuerySchema }),
-    lookupsController.depositLookups,
+    asyncHandler(lookupsController.depositLookups),
   );
+  r.get("/deposit_wallets", asyncHandler(lookupsController.depositWallets));
   return r;
 }
 

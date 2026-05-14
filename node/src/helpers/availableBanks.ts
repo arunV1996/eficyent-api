@@ -13,13 +13,14 @@ import {
 
 export interface AvailableBank {
   key: string;
-  label: string;
+  value: string;
+  currency: string;
   status: number;
 }
 
 export function availableBanks(): AvailableBank[] {
   return [
-    { key: EXTERNAL_TYPE_CALIZA, label: "Cross River Bank (Caliza)", status: ONBOARDING_STATUS_PENDING },
-    { key: EXTERNAL_TYPE_FVBANK, label: "FV Bank", status: ONBOARDING_STATUS_PENDING },
+    { key: EXTERNAL_TYPE_CALIZA, value: "Cross River bank", currency: "USD", status: ONBOARDING_STATUS_PENDING },
+    { key: EXTERNAL_TYPE_FVBANK, value: "FV Bank", currency: "USD", status: ONBOARDING_STATUS_PENDING },
   ];
 }

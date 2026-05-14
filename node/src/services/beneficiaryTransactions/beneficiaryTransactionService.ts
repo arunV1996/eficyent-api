@@ -427,16 +427,14 @@ export async function listWhere(
       where: { uniqueId: q.bank_account_id, userId: user.id },
     });
     if (!va) throw new ApiException(120);
-// @ts-expect-error - Prisma include likely missing
-    where.quote = { sourceId: va.id, sourceType: MORPH_VIRTUAL_ACCOUNT };
+    where.quotes = { sourceId: va.id, sourceType: MORPH_VIRTUAL_ACCOUNT };
   }
   if (q.wallet_id) {
     const wallet = await prisma().wallet.findFirst({
       where: { uniqueId: q.wallet_id, userId: user.id },
     });
     if (!wallet) throw new ApiException(167);
-// @ts-expect-error - Prisma include likely missing
-    where.quote = { sourceId: wallet.id, sourceType: MORPH_WALLET };
+    where.quotes = { sourceId: wallet.id, sourceType: MORPH_WALLET };
   }
   if (q.search_key) {
     const k = q.search_key;

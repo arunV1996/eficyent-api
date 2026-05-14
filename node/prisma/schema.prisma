@@ -45,8 +45,6 @@ model User {
   publicKey                              String?                             @map("public_key") @db.Text
   complianceMerchantId                   String?                             @map("compliance_merchant_id") @db.VarChar(255)
   status                                 Int                                 @default(1) @db.TinyInt
-  modules                                Json?
-  mask_data                              Boolean                             @default(false)
   tourStatus                             Int                                 @default(0) @map("tour_status") @db.TinyInt
   timezone                               String                              @default("Asia/Kolkata") @db.VarChar(30)
   browserId                              String?                             @map("browser_id") @db.VarChar(255)

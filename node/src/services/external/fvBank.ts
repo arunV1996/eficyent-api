@@ -103,7 +103,7 @@ export const FvBank = {
 
       const payload = {
         external_reference_id: user.uniqueId,
-        type: user.userType === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
+        type: Number(user.userType) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
         first_name: user.firstName,
         last_name: user.lastName,
         business_name: userInformation?.businessName,

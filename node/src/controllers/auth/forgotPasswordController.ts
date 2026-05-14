@@ -44,7 +44,7 @@ export const forgotPasswordController = {
 
     await UserAuthEmailService.forgotPassword(user);
 
-    return sendResponse(res, apiSuccess(109), 109, {});
+    return sendResponse(res, apiSuccess(109), 109, { email: user.email });
   },
 
   async verifyCode(req: Request, res: Response): Promise<Response> {

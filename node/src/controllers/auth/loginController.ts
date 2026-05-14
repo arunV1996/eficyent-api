@@ -9,6 +9,8 @@ import { passwordService } from "../../services/auth/passwordService";
 import { totpService } from "../../services/auth/totpService";
 import { prisma } from "../../db/prisma";
 import { LoginInput, TfaLoginInput } from "../../validators/auth/authValidators";
+import { yesNo, roleLabel } from "../../helpers/userShaper";
+import { USER_TYPE_BUSINESS } from "../../helpers/constants";
 
 /**
  * Mirror of App\Http\Controllers\Api\LoginController.
@@ -16,22 +18,17 @@ import { LoginInput, TfaLoginInput } from "../../validators/auth/authValidators"
  * Response envelope and codes match the Laravel implementation 1:1.
  */
 
-function shapeUser(user: User, full = false): Record<string, unknown> {
-  const base = {
+function shapeUser(user: User): Record<string, unknown> {
+  return {
     unique_id: user.uniqueId,
     email: user.email,
-    mobile_country_code: user.mobileCountryCode,
-    mobile: user.mobile,
-    email_status: user.emailVerifiedAt ? 1 : 0,
-  };
-
-  if (!full) return base;
-
-  return {
-    ...base,
-    user_type: user.userType,
-    is_tfa_setup_completed: user.isTfaSetupCompleted,
-    is_tfa_enabled: user.isTfaEnabled,
+    mobile_country_code: user.mobileCountryCode ?? "",
+    mobile: user.mobile ?? "",
+    email_status: user.emailVerifiedAt ? "VERIFIED" : "NOT_VERIFIED",
+    user_type: Number(user.userType) === USER_TYPE_BUSINESS ? "BUSINESS" : "PERSONAL",
+    is_tfa_setup_completed: yesNo(user.isTfaSetupCompleted),
+    is_tfa_enabled: yesNo(user.isTfaEnabled),
+    role: roleLabel(user.userRole),
   };
 }
 
@@ -96,7 +93,7 @@ export const loginController = {
 
     if (user.isTfaEnabled) {
       // Don't issue a token; client must follow up with /tfa-login.
-      return sendResponse(res, apiSuccess(104), 104, { user: shapeUser(user, true) });
+      return sendResponse(res, apiSuccess(104), 104, { user: shapeUser(user) });
     }
 
     const issued = await tokenService.issue(user, ["authentication"], null);
@@ -117,7 +114,7 @@ export const loginController = {
 
     const issued = await tokenService.issue(user, ["authentication"], null);
     return sendResponse(res, apiSuccess(104), 104, {
-      user: shapeUser(user, true),
+      user: shapeUser(user),
       access_token: issued.plaintext,
     });
   },

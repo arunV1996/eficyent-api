@@ -173,9 +173,10 @@ export const senderController = {
         skip,
         take,
         orderBy: { createdAt: "desc" },
+        include: { documents: true },
       }),
     ]);
-    return sendResponse(res, "", 200, {
+    return sendResponse(res, "", "", {
       total,
       remitters: rows.map(senderResource),
     });
@@ -242,7 +243,7 @@ export const senderController = {
       where: { id: created.id },
       include: { documents: true },
     });
-    return sendResponse(res, "Sender created successfully.", 200, {
+    return sendResponse(res, "Remitter created successfully.", "", {
       remitter: senderResource(refreshed!),
     });
   },
@@ -274,7 +275,7 @@ export const senderController = {
       data: data as Prisma.SenderUncheckedUpdateInput,
       include: { documents: true },
     });
-    return sendResponse(res, "Sender updated successfully.", 200, {
+    return sendResponse(res, "Remitter updated successfully.", "", {
       remitter: senderResource(updated),
     });
   },
@@ -295,7 +296,7 @@ export const senderController = {
       include: { documents: true },
     });
     if (!sender) throw new ApiException(132);
-    return sendResponse(res, "Sender fetched successfully.", 132, {
+    return sendResponse(res, "Remitter fetched successfully.", 132, {
       remitter: senderResource(sender),
     });
   },
@@ -312,7 +313,7 @@ export const senderController = {
       where: { id: sender.id },
       data: { deletedAt: new Date() },
     });
-    return sendResponse(res, "Sender deleted successfully.", 133);
+    return sendResponse(res, "Remitter deleted successfully.", 133, {});
   },
 
   /**

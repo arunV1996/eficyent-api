@@ -93,7 +93,7 @@ async function callJSON<T>(
 
 function buildOnboardingPayload(user: User): Record<string, unknown> {
   return {
-    type: user.userType === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
+    type: Number(user.userType) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
     first_name: user.firstName,
     last_name: user.lastName,
     email: user.email,

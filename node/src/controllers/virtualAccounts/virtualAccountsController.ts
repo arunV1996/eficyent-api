@@ -24,6 +24,7 @@ import {
   VirtualAccountIdInput,
   VirtualAccountListInput,
 } from "../../validators/virtualAccounts/virtualAccountValidators";
+import { settingGet } from "../../services/settings/settingsService";
 
 /**
  * Mirror of Api\\VirtualAccountController + VirtualAccountRepository.
@@ -119,8 +120,8 @@ export const virtualAccountsController = {
 
     if (
       q.with_balance === true ||
-      q.with_balance === 1 ||
-      q.with_balance === "1"
+      q.with_balance === 1 as any ||
+      q.with_balance === "1" as any
     ) {
       for (const acc of grouped) {
         await attachBalance(req.user, acc);
@@ -134,9 +135,11 @@ export const virtualAccountsController = {
       });
     }
 
+    const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";
+
     return sendResponse(res, "", 200, {
       total: groupedTotal,
-      accounts: grouped.map(virtualAccountResource),
+      accounts: grouped.map((a) => virtualAccountResource(a, req.user!.memo ?? "", appUrl)),
     });
   },
 
@@ -174,11 +177,12 @@ export const virtualAccountsController = {
       .filter((b) => !existingTypes.has(b.key))
       .map((b) => ({
         key: b.key,
-        label: b.label,
+        value: b.value,
+        currency: b.currency,
         status: onboardingStatusLabel(b.status),
       }));
 
-    return sendResponse(res, "Available banks fetched.", 200, {
+    return sendResponse(res, "Available banks fetched successfully.", 200, {
       available_banks: filtered,
     });
   },
@@ -222,7 +226,8 @@ export const virtualAccountsController = {
     if (!va) throw new ApiException(116);
     const acc: VirtualAccount & { balance?: string } = { ...va };
     await attachBalance(req.user, acc);
-    return sendResponse(res, "", 200, { account: virtualAccountResource(acc) });
+    const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";
+    return sendResponse(res, "", 200, { account: virtualAccountResource(acc, req.user.memo ?? "", appUrl) });
   },
 
   async show(req: Request, res: Response): Promise<Response> {
@@ -243,11 +248,12 @@ export const virtualAccountsController = {
         (acc) => acc.uniqueId === va.uniqueId || acc.swift?.uniqueId === va.uniqueId,
       ) ?? va;
 
-    if (q.with_balance === 1) {
+    if (q.with_balance === 1 as any) {
       await attachBalance(req.user, account);
     }
+    const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";
     return sendResponse(res, "", 200, {
-      account: virtualAccountResource(account),
+      account: virtualAccountResource(account, req.user.memo ?? "", appUrl),
     });
   },
 
@@ -273,8 +279,9 @@ export const virtualAccountsController = {
       orderBy: { createdAt: "desc" },
     });
     const grouped = groupAccountsByExternalType(accounts);
+    const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";
     return sendResponse(res, "", 200, {
-      accounts: grouped.map(virtualAccountResource),
+      accounts: grouped.map((a) => virtualAccountResource(a, req.user!.memo ?? "", appUrl)),
     });
   },
 };
@@ -302,6 +309,6 @@ async function fvBankFileUpdateRequired(user: User): Promise<boolean> {
   }
   const info = await prisma().userInformation.findFirst({ where: { userId: user.id },
   });
-  if (user.userType === 2 && !info?.businessVerificationType) return true;
+  if (Number(user.userType) === 2 && !info?.businessVerificationType) return true;
   return false;
 }

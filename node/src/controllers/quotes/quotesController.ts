@@ -263,7 +263,14 @@ async function persistQuote(
       ? String(response.external_reference_id)
       : null,
     externalData: response.external_data as Prisma.InputJsonValue | undefined,
-    expiresAt: response.expires_at ? new Date(String(response.expires_at)) : null,
+    expiresAt: (() => {
+      if (!response.expires_at) return null;
+      const v = response.expires_at;
+      if (typeof v === "number") return new Date(v * 1000);
+      if (typeof v === "string" && /^\d+$/.test(v)) return new Date(Number(v) * 1000);
+      const d = new Date(String(v));
+      return isNaN(d.getTime()) ? null : d;
+    })(),
   };
   void ZERO;
   return prisma().quote.create({ data });
@@ -272,10 +279,9 @@ async function persistQuote(
 export const quotesController = (mode: QuoteMode["mode"]) => ({
   async store(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
-    const body = req.body as QuoteStoreInput;
+    const body = (req.method === "GET" ? req.query : req.body) as unknown as QuoteStoreInput;
     const merchantId = req.user.merchantId
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-      ? (await prisma().merchant.findFirst({ where: { uniqueId: req.user.merchantId } }))
+      ? (await prisma().merchant.findUnique({ where: { id: req.user.merchantId } }))
           ?.id ?? null
       : null;
     const recipientType = USER_TYPE_MAP[body.recipient_type] ?? 1;

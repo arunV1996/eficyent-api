@@ -1,27 +1,36 @@
 import { DepositTransaction } from "@prisma/client";
+import { depositTransactionStatusLabel } from "../../helpers/constants";
 
 export interface DepositTransactionDto {
   unique_id: string;
-  transaction_id: string;
+  memo: string;
   amount: string;
-  commission_amount: string;
+  fee: string;
   total_amount: string;
   currency: string;
-  status: number;
+  type: string;
+  purpose_of_payment: string;
+  source_of_funds: string;
+  status: string;
   created_at: string;
+  deposit_currency: string;
 }
 
 export function depositTransactionResource(d: DepositTransaction): DepositTransactionDto {
+  const currency = d.depositCurrency || "USD";
   return {
     unique_id: d.uniqueId,
-// @ts-ignore - Catch-all auto-fix for: Property 'orderId' does not ex...
-    transaction_id: d.externalReferenceId || d.orderId || "",
+    memo: d.memo || "",
     amount: d.amount.toFixed(2),
-    commission_amount: d.totalCommissionAmount.toFixed(2),
+    fee: `${d.totalCommissionAmount.toFixed(2)} ${currency}`,
     total_amount: d.totalAmount.toFixed(2),
-    currency: d.depositCurrency || "",
-    status: d.status,
+    currency: currency,
+    type: d.type.charAt(0).toUpperCase() + d.type.slice(1),
+    purpose_of_payment: d.purposeOfPayment || "",
+    source_of_funds: d.sourceOfFunds || "",
+    status: depositTransactionStatusLabel(d.status),
     created_at: formatDate(d.createdAt || new Date()),
+    deposit_currency: currency,
   };
 }
 

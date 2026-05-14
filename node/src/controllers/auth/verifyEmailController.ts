@@ -33,7 +33,7 @@ function shapeUser(u: {
   return {
     unique_id: u.uniqueId,
     email: u.email,
-    email_status: u.emailVerifiedAt ? 1 : 0,
+    email_status: u.emailVerifiedAt ? "VERIFIED" : "NOT_VERIFIED",
   };
 }
 

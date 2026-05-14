@@ -193,6 +193,19 @@ export function onboardingStatusLabel(value: number): string {
   }
 }
 
+export function virtualAccountStatusLabel(value: number): string {
+  switch (value) {
+    case VIRTUAL_ACCOUNT_STATUS_PENDING:
+      return "PENDING";
+    case VIRTUAL_ACCOUNT_STATUS_CREATED:
+      return "CREATED";
+    case VIRTUAL_ACCOUNT_STATUS_FAILED:
+      return "FAILED";
+    default:
+      return "PENDING";
+  }
+}
+
 // Quote status (mirror of QUOTE_*)
 export const QUOTE_NOT_SUBMITTED = 0;
 export const QUOTE_SUBMITTED = 1;
@@ -270,6 +283,23 @@ export const DEPOSIT_TRANSACTION_STATUS_MAP: Record<string, number> = {
   COMPLETED: DEPOSIT_TRANSACTION_COMPLETED,
   FAILED: DEPOSIT_TRANSACTION_FAILED,
 };
+
+export function depositTransactionStatusLabel(value: number): string {
+  switch (value) {
+    case DEPOSIT_TRANSACTION_PENDING:
+    case DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED:
+    case DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING:
+      return "PROCESSING";
+    case DEPOSIT_TRANSACTION_COMPLETED:
+      return "COMPLETED";
+    case DEPOSIT_TRANSACTION_FAILED:
+    case DEPOSIT_TRANSACTION_REJECTED:
+    case DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED:
+      return "FAILED";
+    default:
+      return "PROCESSING";
+  }
+}
 
 export const DEPOSIT_TYPE_DEPOSIT = "deposit";
 export const DEPOSIT_TYPE_REFUND = "refund";

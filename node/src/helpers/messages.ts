@@ -8,12 +8,12 @@
  */
 
 export const ApiSuccessMessages: Record<number, string> = {
-  101: "Registration successful. Please verify your email.",
+  101: "Registration successful.",
   102: "OTP Verified successfully.",
   103: "OTP sent successfully.",
   104: "Login successful.",
   105: "Logout successful.",
-  106: "Onboarding step completed.",
+  106: "Submitted successfully.",
   109: "Mail sent successfully.",
   110: "Code verified successfully.",
   111: "Password reset successfully.",

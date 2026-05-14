@@ -250,7 +250,7 @@ export const beneficiaryAccountsController = {
       where: { id: row.id },
       data: { deletedAt: new Date() },
     });
-    return sendResponse(res, "Beneficiary deleted successfully.", 200, []);
+    return sendResponse(res, "Beneficiary deleted successfully.", 200, {});
   },
 
   async store(req: Request, res: Response): Promise<Response> {

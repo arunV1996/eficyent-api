@@ -213,7 +213,7 @@ function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown
   };
 
   const beneficiary = {
-    type: beneficiaryAccount.type === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
+    type: Number(beneficiaryAccount.type) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
     first_name: beneficiaryAccount.firstName,
     last_name: beneficiaryAccount.lastName ?? beneficiaryAccount.firstName,
     business_name: beneficiaryAccount.businessName,
@@ -240,7 +240,7 @@ function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown
 
   let remitter: Record<string, unknown>;
   if (!sender) {
-    if (user.userType === USER_TYPE_INDIVIDUAL) {
+    if (Number(user.userType) === USER_TYPE_INDIVIDUAL) {
       remitter = {
         type: "INDIVIDUAL",
         first_name: user.firstName,
@@ -279,7 +279,7 @@ function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown
         country: userInformation?.country,
       };
     }
-  } else if (sender.type === USER_TYPE_INDIVIDUAL) {
+  } else if (Number(sender.type) === USER_TYPE_INDIVIDUAL) {
     remitter = {
       type: "INDIVIDUAL",
       title: sender.title,

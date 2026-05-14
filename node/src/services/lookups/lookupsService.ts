@@ -58,7 +58,7 @@ export const lookupsService = {
 
   async states(
     countryCode?: string | null,
-  ): Promise<{ label: string; value: string; country_code: string }[]> {
+  ): Promise<{ label: string; value: string; parent_value: string }[]> {
     const where: Record<string, unknown> = {};
     if (countryCode) {
       // Resolve alpha3 if user passed alpha2 (mirror Helper::get_states).
@@ -75,7 +75,7 @@ export const lookupsService = {
     return rows.map((r) => ({
       label: r.name,
       value: r.name,
-      country_code: r.countryAlpha3 ?? "",
+      parent_value: r.countryAlpha3 ?? "",
     }));
   },
 
@@ -264,6 +264,38 @@ export const lookupsService = {
       }
     }
     return out;
+  },
+ 
+  async professions(): Promise<LookupItem[]> {
+    const rows = await prisma().lookup.findMany({
+      where: { type: "professions", status: ACTIVE },
+      orderBy: { value: "asc" },
+    });
+    return rows.map((r) => ({ label: r.value, value: r.key }));
+  },
+ 
+  async businessTypes(): Promise<LookupItem[]> {
+    const rows = await prisma().lookup.findMany({
+      where: { type: "business_types", status: ACTIVE },
+      orderBy: { value: "asc" },
+    });
+    return rows.map((r) => ({ label: r.value, value: r.key }));
+  },
+ 
+  async idTypes(): Promise<LookupItem[]> {
+    const rows = await prisma().lookup.findMany({
+      where: { type: "id_types", status: ACTIVE },
+      orderBy: { value: "asc" },
+    });
+    return rows.map((r) => ({ label: r.value, value: r.key }));
+  },
+ 
+  async businessVerificationTypes(): Promise<LookupItem[]> {
+    const rows = await prisma().lookup.findMany({
+      where: { type: "business_verification_types", status: ACTIVE },
+      orderBy: { value: "asc" },
+    });
+    return rows.map((r) => ({ label: r.value, value: r.key }));
   },
 };
 

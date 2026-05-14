@@ -108,7 +108,7 @@ function remitterFromUser(
   user: User,
   userInformation: UserInformation | null,
 ): Record<string, unknown> {
-  if (user.userType === USER_TYPE_INDIVIDUAL) {
+  if (Number(user.userType) === USER_TYPE_INDIVIDUAL) {
     return {
       type: "INDIVIDUAL",
       first_name: user.firstName,
@@ -153,7 +153,7 @@ function remitterFromSender(
   user: User,
   userInformation: UserInformation | null,
 ): Record<string, unknown> {
-  if (sender.type === USER_TYPE_INDIVIDUAL) {
+  if (Number(sender.type) === USER_TYPE_INDIVIDUAL) {
     return {
       type: "INDIVIDUAL",
       title: sender.title,
@@ -217,7 +217,7 @@ export async function buildPayoutPayload(
   };
 
   const beneficiary = {
-    type: account.type === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
+    type: Number(account.type) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
     first_name: account.firstName,
     last_name: account.lastName ?? account.firstName,
     business_name: account.businessName,

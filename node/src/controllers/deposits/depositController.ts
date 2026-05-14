@@ -42,22 +42,16 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  *   POST /retry_deposit/{trxn}    - reprocess a failed PU initiation.
  */
 
-function generateOrderId(): string {
-  const ts = String(Math.floor(Date.now() / 1000)).slice(-8);
-  const rand = Array.from({ length: 4 }, () =>
-    String.fromCharCode(65 + Math.floor(Math.random() * 26)),
-  ).join("");
-  return `TXN${ts}${rand}`;
-}
+
 
 function generateUserMemo(user: {
-  userType: number;
+  userType: number | bigint;
   firstName: string | null;
   lastName: string | null;
   email: string;
 }): string {
   const name =
-    user.userType === 1
+    Number(user.userType) === 1
       ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim()
       : "";
   const prefix = (name || user.email).slice(0, 3).toUpperCase();
@@ -173,7 +167,7 @@ export const depositController = {
         amount: String(q.amount),
         total_fees: totalFees,
         receiving_amount: Number(q.amount) - totalFees,
-        deposit_currency: q.deposit_currency,
+        deposit_currency: currency,
       },
     });
   },
@@ -255,8 +249,7 @@ export const depositController = {
           depositCurrency: body.deposit_currency ?? null,
           fromWalletAddress: body.from_wallet_address ?? null,
           transactionHash: body.transaction_hash ?? null,
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-          orderId: generateOrderId(),
+          createdAt: new Date(),
         },
       });
       await tx.depositTransactionStatusHistory.create({
@@ -284,8 +277,7 @@ export const depositController = {
         amount: created.totalAmount.toString(),
         currency: va.currency,
         status: "PROCESSING",
-// @ts-expect-error - Auto-fixed: 'created.createdAt' is possibly 'null'.
-        created_at: created.createdAt.toISOString(),
+        created_at: (created.createdAt || new Date()).toISOString(),
       }),
       ProcessingUnit.createDeposit(created),
       InvoiceMate.makeDeposit(created),
@@ -390,8 +382,7 @@ export const depositController = {
       const updated = await prisma().depositTransaction.update({
         where: { id: transaction.id },
         data: {
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-          orderId: generateOrderId(),
+
           status: DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
         },
       });
