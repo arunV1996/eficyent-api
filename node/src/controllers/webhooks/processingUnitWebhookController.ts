@@ -75,17 +75,15 @@ export const processingUnitWebhookController = {
         .externalServiceCall.create({
           data: {
             externalType: EXTERNAL_TYPE_PROCESSING_UNIT,
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-            callFor: EXTERNAL_CALL_FOR_CALLBACK,
-            referenceType: beneficiaryTransactionId
-              ? "App\\Models\\BeneficiaryTransaction"
-              : null,
-            referenceId: beneficiaryTransactionId,
-            endpoint: "POST processingunit-webhook",
+            action: EXTERNAL_CALL_FOR_CALLBACK,
+            method: "POST",
+            endpoint: "processingunit-webhook",
+            beneficiary_transaction_id: beneficiaryTransactionId,
             requestPayload: data as Prisma.InputJsonValue,
-            responseStatus: 200,
-            responseBody: JSON.stringify({ received: true }),
-            durationMs,
+            response_payload: { received: true } as Prisma.InputJsonValue,
+            http_status: 200,
+            success,
+            response_time_ms: durationMs,
             errorMessage: success ? null : errorMessage,
           },
         })

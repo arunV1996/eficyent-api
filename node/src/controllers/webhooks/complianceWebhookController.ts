@@ -139,17 +139,15 @@ export const complianceWebhookController = {
         .externalServiceCall.create({
           data: {
             externalType: EXTERNAL_TYPE_COMPLIANCE,
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-            callFor: EXTERNAL_CALL_FOR_CALLBACK,
-            referenceType: beneficiaryTransactionId
-              ? "App\\Models\\BeneficiaryTransaction"
-              : null,
-            referenceId: beneficiaryTransactionId,
-            endpoint: "POST compliance/webhook-callback",
+            action: EXTERNAL_CALL_FOR_CALLBACK,
+            method: "POST",
+            endpoint: "compliance/webhook-callback",
+            beneficiary_transaction_id: beneficiaryTransactionId,
             requestPayload: payload as Prisma.InputJsonValue,
-            responseStatus: status,
-            responseBody: responseBody ? JSON.stringify(responseBody) : null,
-            durationMs,
+            response_payload: (responseBody ?? null) as Prisma.InputJsonValue,
+            http_status: status,
+            success: status >= 200 && status < 300,
+            response_time_ms: durationMs,
             errorMessage,
           },
         })

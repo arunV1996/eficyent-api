@@ -1,6 +1,10 @@
 import { setTimeout as wait } from "timers/promises";
 import { logger } from "../../helpers/logger";
 import { prisma } from "../../db/prisma";
+import {
+  MORPH_BENEFICIARY_TRANSACTION,
+  MORPH_DEPOSIT_TRANSACTION,
+} from "../../helpers/constants";
 
 /**
  * Provider HTTP client.
@@ -128,20 +132,45 @@ async function persistAudit(
   // Persist the audit row best-effort. We never throw from audit; an
   // unwritten audit row is preferable to a swallowed external service
   // response error.
+  //
+  // Schema notes: external_service_calls has fixed FK columns to
+  // beneficiary_transactions / deposit_transactions (not a polymorphic
+  // pair), so we route referenceId into whichever FK matches the morph
+  // class. Request headers have no dedicated column so we fold them into
+  // the request_payload JSON envelope (already secret-redacted).
+  const requestPayload = {
+    headers: redactHeaders(reqHeaders),
+    body: body ?? null,
+  };
+  let responsePayload: unknown = null;
+  if (responseRaw) {
+    const trimmed = responseRaw.slice(0, 65_535);
+    try {
+      responsePayload = JSON.parse(trimmed);
+    } catch {
+      responsePayload = { raw: trimmed };
+    }
+  }
   try {
     await prisma().externalServiceCall.create({
       data: {
         externalType: ctx.provider,
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-        callFor: ctx.callFor,
-        referenceType: ctx.referenceType ?? null,
-        referenceId: ctx.referenceId ?? null,
-        endpoint: `${method} ${endpoint}`,
-        requestHeaders: redactHeaders(reqHeaders) as never,
-        requestPayload: (body ?? null) as never,
-        responseStatus: status,
-        responseBody: responseRaw ? responseRaw.slice(0, 65_535) : null,
-        durationMs: Math.round(durationMs),
+        action: ctx.callFor,
+        method,
+        endpoint,
+        beneficiary_transaction_id:
+          ctx.referenceType === MORPH_BENEFICIARY_TRANSACTION
+            ? ctx.referenceId ?? null
+            : null,
+        deposit_transaction_id:
+          ctx.referenceType === MORPH_DEPOSIT_TRANSACTION
+            ? ctx.referenceId ?? null
+            : null,
+        requestPayload: requestPayload as never,
+        response_payload: responsePayload as never,
+        http_status: status,
+        success: status !== null && status >= 200 && status < 300,
+        response_time_ms: Math.round(durationMs),
         errorMessage,
       },
     });
