@@ -1,4 +1,17 @@
-import { Ledger } from "@prisma/client";
+import {
+  BeneficiaryTransaction,
+  DepositTransaction,
+  Ledger,
+  WalletTransaction,
+} from "@prisma/client";
+import {
+  MORPH_BENEFICIARY_TRANSACTION,
+  MORPH_DEPOSIT_TRANSACTION,
+  MORPH_WALLET_TRANSACTION,
+} from "../../helpers/constants";
+import { beneficiaryTransactionResource } from "../beneficiaryTransactions/beneficiaryTransactionResource";
+import { depositTransactionResource } from "../deposits/depositResource";
+import { walletTransactionResource } from "../wallets/walletResource";
 
 export interface LedgerDto {
   unique_id: string;
@@ -28,6 +41,23 @@ export function ledgerResource(
     description: l.description,
     refund_ledger_id: l.refundLedgerId ? l.refundLedgerId.toString() : null,
     created_at: l.createdAt ? l.createdAt.toISOString() : "",
-    transaction: l.transaction,
+    transaction: serializeTransaction(l.transactionType, l.transaction),
   };
+}
+
+function serializeTransaction(
+  transactionType: string | null,
+  transaction: unknown,
+): unknown {
+  if (!transaction) return transaction ?? null;
+  switch (transactionType) {
+    case MORPH_DEPOSIT_TRANSACTION:
+      return depositTransactionResource(transaction as DepositTransaction);
+    case MORPH_BENEFICIARY_TRANSACTION:
+      return beneficiaryTransactionResource(transaction as BeneficiaryTransaction);
+    case MORPH_WALLET_TRANSACTION:
+      return walletTransactionResource(transaction as WalletTransaction);
+    default:
+      return transaction;
+  }
 }
