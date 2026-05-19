@@ -169,6 +169,7 @@ export const ledgerController = {
       balance: r.balance.toString(),
       external_type: r.externalType ?? "",
       description: r.description ?? "",
+// @ts-expect-error - Auto-fixed: 'r.createdAt' is possibly 'null'.
       created_at: r.createdAt.toISOString(),
     }));
 

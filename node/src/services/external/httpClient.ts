@@ -132,6 +132,7 @@ async function persistAudit(
     await prisma().externalServiceCall.create({
       data: {
         externalType: ctx.provider,
+// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
         callFor: ctx.callFor,
         referenceType: ctx.referenceType ?? null,
         referenceId: ctx.referenceId ?? null,

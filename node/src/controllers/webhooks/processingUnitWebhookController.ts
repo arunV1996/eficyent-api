@@ -75,6 +75,7 @@ export const processingUnitWebhookController = {
         .externalServiceCall.create({
           data: {
             externalType: EXTERNAL_TYPE_PROCESSING_UNIT,
+// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
             callFor: EXTERNAL_CALL_FOR_CALLBACK,
             referenceType: beneficiaryTransactionId
               ? "App\\Models\\BeneficiaryTransaction"

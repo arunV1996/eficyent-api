@@ -74,7 +74,7 @@ export async function validateMerchant(
         return next(new ApiException(192, undefined, 401));
       }
       const subUser: User | null = await prisma().user.findFirst({
-        where: { uniqueId: userIdHeader, merchantId: merchant.uniqueId },
+        where: { uniqueId: userIdHeader, merchantId: merchant.id as any },
       });
       if (!subUser) {
         return next(new ApiException(193, undefined, 401));

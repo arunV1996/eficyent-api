@@ -15,8 +15,8 @@ import { apiError, apiSuccess } from "./messages";
  */
 
 export interface ApiEnvelope<T = unknown> {
-  status: boolean;
-  code: number;
+  success: boolean;
+  code: number | string;
   message: string;
   data: T | null;
 }
@@ -24,14 +24,14 @@ export interface ApiEnvelope<T = unknown> {
 export function sendResponse<T>(
   res: Response,
   message: string | undefined,
-  code: number,
+  code: number | string,
   data: T | null = null,
   httpStatus = 200,
 ): Response {
-  const envelope: ApiEnvelope<T> = {
-    status: true,
+  const envelope = {
+    success: true,
+    message: message !== undefined ? message : apiSuccess(Number(code) || 0),
     code,
-    message: message || apiSuccess(code),
     data,
   };
   return res.status(httpStatus).json(envelope);
@@ -44,7 +44,7 @@ export function sendError(
   httpStatus = 400,
 ): Response {
   const envelope: ApiEnvelope<null> = {
-    status: false,
+    success: false,
     code,
     message: message || apiError(code),
     data: null,

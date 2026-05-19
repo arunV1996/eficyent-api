@@ -58,7 +58,7 @@ export const lookupsService = {
 
   async states(
     countryCode?: string | null,
-  ): Promise<{ label: string; value: string; country_code: string }[]> {
+  ): Promise<{ label: string; value: string; parent_value: string }[]> {
     const where: Record<string, unknown> = {};
     if (countryCode) {
       // Resolve alpha3 if user passed alpha2 (mirror Helper::get_states).
@@ -75,7 +75,7 @@ export const lookupsService = {
     return rows.map((r) => ({
       label: r.name,
       value: r.name,
-      country_code: r.countryAlpha3 ?? "",
+      parent_value: r.countryAlpha3 ?? "",
     }));
   },
 
@@ -131,11 +131,11 @@ export const lookupsService = {
     if (user.merchantId) {
       // Merchant-scoped country list.
       const merchant = await prisma().merchant.findFirst({
-        where: { uniqueId: user.merchantId },
+        where: { id: user.merchantId as any },
       });
       if (merchant) {
-        const setting = await prisma().merchantSetting.findUnique({
-          where: { merchantId_key: { merchantId: merchant.id, key: "payout_countries" } },
+        const setting = await prisma().merchantSetting.findFirst({
+          where: { merchantId: merchant.id, key: "payout_countries" },
         });
         if (!setting?.value) return [];
         let supportedIds: string[] = [];
@@ -259,11 +259,43 @@ export const lookupsService = {
           to_currency: sc.currency,
           fx_rate: Number(cached.rate).toFixed(4),
           flag: getFlagUrl(mcc?.alpha2Code, env().APP_URL),
-          last_updated: relativeTime(cached.updatedAt, user.timezone ?? TIMEZONE_DEFAULT),
+          last_updated: relativeTime(cached.updatedAt || new Date(), user.timezone ?? TIMEZONE_DEFAULT),
         });
       }
     }
     return out;
+  },
+ 
+  async professions(): Promise<LookupItem[]> {
+    const rows = await prisma().lookup.findMany({
+      where: { type: "professions", status: ACTIVE },
+      orderBy: { value: "asc" },
+    });
+    return rows.map((r) => ({ label: r.value, value: r.key }));
+  },
+ 
+  async businessTypes(): Promise<LookupItem[]> {
+    const rows = await prisma().lookup.findMany({
+      where: { type: "business_types", status: ACTIVE },
+      orderBy: { value: "asc" },
+    });
+    return rows.map((r) => ({ label: r.value, value: r.key }));
+  },
+ 
+  async idTypes(): Promise<LookupItem[]> {
+    const rows = await prisma().lookup.findMany({
+      where: { type: "id_types", status: ACTIVE },
+      orderBy: { value: "asc" },
+    });
+    return rows.map((r) => ({ label: r.value, value: r.key }));
+  },
+ 
+  async businessVerificationTypes(): Promise<LookupItem[]> {
+    const rows = await prisma().lookup.findMany({
+      where: { type: "business_verification_types", status: ACTIVE },
+      orderBy: { value: "asc" },
+    });
+    return rows.map((r) => ({ label: r.value, value: r.key }));
   },
 };
 

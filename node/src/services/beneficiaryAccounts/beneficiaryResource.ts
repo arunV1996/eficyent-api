@@ -1,4 +1,6 @@
 import { BeneficiaryAccount, BeneficiaryAdditionalDetail } from "@prisma/client";
+import { formatDate } from "../../helpers/lookups";
+import { BENEFICIARY_ACCOUNT_STATUS_MAP } from "../../helpers/constants";
 
 /**
  * Mirror of App\\Http\\Resources\\BeneficiaryAccountResource. Field set
@@ -7,7 +9,7 @@ import { BeneficiaryAccount, BeneficiaryAdditionalDetail } from "@prisma/client"
 
 export interface BeneficiaryAccountDto {
   unique_id: string;
-  type: number | null;
+  type: string | null;
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
@@ -36,7 +38,7 @@ export interface BeneficiaryAccountDto {
   intermediary_bank_postal_code: string | null;
   intermediary_bank_country: string | null;
   bank_country: string | null;
-  status: number;
+  status: string;
   created_at: string;
   additional_details?: {
     address_type: string | null;
@@ -62,9 +64,13 @@ export function beneficiaryAccountResource(
     additionalDetails?: BeneficiaryAdditionalDetail | null;
   },
 ): BeneficiaryAccountDto {
+  const statusLabel = Object.keys(BENEFICIARY_ACCOUNT_STATUS_MAP).find(
+    (key) => BENEFICIARY_ACCOUNT_STATUS_MAP[key] === account.status,
+  ) ?? "PENDING";
+
   const dto: BeneficiaryAccountDto = {
     unique_id: account.uniqueId,
-    type: account.type,
+    type: Number(account.type) === 2 ? "BUSINESS" : "PERSONAL",
     first_name: account.firstName,
     middle_name: account.middleName,
     last_name: account.lastName,
@@ -93,8 +99,8 @@ export function beneficiaryAccountResource(
     intermediary_bank_postal_code: account.intermediaryBankPostalCode,
     intermediary_bank_country: account.intermediaryBankCountry,
     bank_country: account.bankCountry,
-    status: account.status,
-    created_at: account.createdAt.toISOString(),
+    status: statusLabel,
+    created_at: formatDate(account.createdAt),
   };
   if (account.additionalDetails) {
     dto.additional_details = {

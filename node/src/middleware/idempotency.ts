@@ -83,10 +83,14 @@ export function idempotency() {
       }
 
       const idemKey = req.header("idempotency-key");
-      if (!idemKey || !KEY_RE.test(idemKey)) {
+      if (!idemKey) {
+        return next();
+      }
+
+      if (!KEY_RE.test(idemKey)) {
         throw new ApiException(
           400,
-          "Idempotency-Key header is required (16-128 chars, [A-Za-z0-9._\\-+:=]).",
+          "Idempotency-Key header format is invalid (16-128 chars, [A-Za-z0-9._\\-+:=]).",
           400,
         );
       }
@@ -134,8 +138,8 @@ export function idempotency() {
               "EX",
               env().IDEMPOTENCY_TTL_SECONDS,
             );
-            await prisma()
-              .idempotencyKey.create({
+            if ((prisma() as any).idempotencyKey) {
+              await (prisma() as any).idempotencyKey.create({
                 data: {
                   key: idemKey,
                   userId,
@@ -149,11 +153,9 @@ export function idempotency() {
                 },
               })
               .catch((err: unknown) => {
-                // Conflict on (key) - another concurrent request also won the
-                // race somehow. Best-effort: log and move on; Redis is source
-                // of truth on the hot path.
                 logger.warn({ err, idemKey }, "Idempotency DB persist warning");
               });
+            }
           } catch (err) {
             logger.error({ err, idemKey }, "Idempotency capture error");
           }
@@ -163,9 +165,9 @@ export function idempotency() {
 
       // Replay path: read what's there.
       const existingRaw = await r.get(rkey);
-      const existing: CapturedResponse = existingRaw
+      const existing: CapturedResponse | null = existingRaw
         ? (JSON.parse(existingRaw) as CapturedResponse)
-        : await loadFromDb(idemKey);
+        : await loadFromDb(idemKey, userId, route);
 
       if (!existing) {
         // Race: claim failed but key vanished. Retry as new.
@@ -205,15 +207,28 @@ export function idempotency() {
   };
 }
 
-async function loadFromDb(key: string): Promise<CapturedResponse | null> {
-  const row = await prisma().idempotencyKey.findUnique({ where: { key } });
-  if (!row) return null;
-  if (row.expiresAt.getTime() < Date.now()) return null;
-  return {
-    status: "done",
-    httpStatus: row.responseCode,
-    body: row.responseBody,
-    requestHash: row.requestHash,
-    startedAt: row.createdAt.getTime(),
-  };
+async function loadFromDb(
+  key: string,
+  userId: bigint,
+  route: string,
+): Promise<CapturedResponse | null> {
+  try {
+    const p = prisma() as any;
+    if (!p.idempotencyKey) return null;
+    const row = await p.idempotencyKey.findFirst({
+      where: { key, userId, route },
+    });
+    if (!row) return null;
+    if (row.expiresAt.getTime() < Date.now()) return null;
+    return {
+      status: "done",
+      httpStatus: row.responseCode,
+      body: row.responseBody,
+      requestHash: row.requestHash,
+      startedAt: row.createdAt.getTime(),
+    };
+  } catch (err) {
+    logger.warn({ err, key }, "Idempotency DB load failed");
+    return null;
+  }
 }

@@ -31,7 +31,7 @@ export async function computeBankBalance(
   let payinCollection = false;
   if (user.merchantId) {
     const merchant = await prisma().merchant.findFirst({
-      where: { uniqueId: user.merchantId },
+      where: { id: user.merchantId },
     });
     if (merchant?.type === 4 /* MERCHANT_TYPE_PAYINCOLLECTION */) {
       payinCollection = true;
@@ -45,13 +45,9 @@ export async function computeBankBalance(
     ...(payinCollection && user.memo ? { memo: user.memo } : {}),
   };
 
-  const [depositAgg, directDebitAgg, quotes] = await Promise.all([
+  const [depositAgg, quotes] = await Promise.all([
     prisma().depositTransaction.aggregate({
       where: depositWhere,
-      _sum: { totalAmount: true },
-    }),
-    prisma().beneficiaryTransaction.aggregate({
-      where: { userId: user.id, virtualAccountId: virtualAccount.id },
       _sum: { totalAmount: true },
     }),
     prisma().quote.findMany({
@@ -87,7 +83,6 @@ export async function computeBankBalance(
   }
 
   return (depositAgg._sum.totalAmount ?? ZERO)
-    .minus(directDebitAgg._sum.totalAmount ?? ZERO)
     .minus(payouts)
     .minus(walletCredits);
 }

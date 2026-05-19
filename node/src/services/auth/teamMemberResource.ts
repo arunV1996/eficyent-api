@@ -1,4 +1,18 @@
 import { TeamMember } from "@prisma/client";
+import {
+  TEAM_MEMBER_ACTIVE,
+  TEAM_MEMBER_DISABLED,
+  TEAM_MEMBER_INACTIVE,
+  TEAM_MEMBER_PERMISSION_CHECKER,
+  TEAM_MEMBER_PERMISSION_INITIATOR,
+  TEAM_MEMBER_PERMISSION_MAKER,
+  TEAM_MEMBER_PERMISSION_MAKER_CHECKER,
+  TEAM_MEMBER_ROLE_ADMIN,
+  TEAM_MEMBER_ROLE_CORPORATE,
+  TEAM_MEMBER_ROLE_OWNER,
+  TEAM_MEMBER_ROLE_SUPPORT_MEMBER,
+} from "../../helpers/constants";
+import { formatDate } from "../../helpers/lookups";
 
 /**
  * Mirror of App\\Http\\Resources\\TeamMemberResource. Field set preserved
@@ -9,13 +23,11 @@ export interface TeamMemberDto {
   unique_id: string;
   name: string;
   email: string;
-  mobile_country_code: string | null;
-  mobile: string | null;
-  role: number;
-  permission: number;
-  status: number;
-  timezone: string;
-  last_password_reset: string | null;
+  role: string;
+  permission: string;
+  sender_enabled: string;
+  is_merchant: string;
+  status: string;
   created_at: string;
 }
 
@@ -24,15 +36,54 @@ export function teamMemberResource(member: TeamMember): TeamMemberDto {
     unique_id: member.uniqueId,
     name: member.name,
     email: member.email,
-    mobile_country_code: member.mobileCountryCode,
-    mobile: member.mobile,
-    role: member.role,
-    permission: member.permission,
-    status: member.status,
-    timezone: member.timezone,
-    last_password_reset: member.lastPasswordReset
-      ? member.lastPasswordReset.toISOString()
-      : null,
-    created_at: member.createdAt.toISOString(),
+    role: teamMemberRoleLabel(member.role),
+    permission: teamMemberPermissionLabel(member.permission),
+    sender_enabled: "NO", // Field not in schema, defaults to expected NO
+    is_merchant: "NO",    // Field not in schema, defaults to expected NO
+    status: teamMemberStatusLabel(member.status),
+    created_at: formatDate(member.createdAt),
   };
+}
+
+function teamMemberRoleLabel(role: number): string {
+  switch (role) {
+    case TEAM_MEMBER_ROLE_ADMIN:
+      return "ADMIN";
+    case TEAM_MEMBER_ROLE_OWNER:
+      return "OWNER";
+    case TEAM_MEMBER_ROLE_SUPPORT_MEMBER:
+      return "TEAM_MEMBER";
+    case TEAM_MEMBER_ROLE_CORPORATE:
+      return "CORPORATE";
+    default:
+      return "TEAM_MEMBER";
+  }
+}
+
+function teamMemberPermissionLabel(permission: number): string {
+  switch (permission) {
+    case TEAM_MEMBER_PERMISSION_INITIATOR:
+      return "INITIATOR";
+    case TEAM_MEMBER_PERMISSION_MAKER:
+      return "CREATOR";
+    case TEAM_MEMBER_PERMISSION_CHECKER:
+      return "APPROVER";
+    case TEAM_MEMBER_PERMISSION_MAKER_CHECKER:
+      return "CREATOR_AND_APPROVER";
+    default:
+      return "";
+  }
+}
+
+function teamMemberStatusLabel(status: number): string {
+  switch (status) {
+    case TEAM_MEMBER_ACTIVE:
+      return "ACTIVE";
+    case TEAM_MEMBER_INACTIVE:
+      return "INACTIVE";
+    case TEAM_MEMBER_DISABLED:
+      return "DISABLED";
+    default:
+      return "INACTIVE";
+  }
 }

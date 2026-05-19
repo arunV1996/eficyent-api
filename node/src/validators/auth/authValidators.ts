@@ -69,10 +69,20 @@ export const RegisterSchema = z
     mobile_country_code: z.string().max(8).optional(),
     mobile: z.string().min(4).max(20).optional(),
     user_type: z
-      .union([z.literal(USER_TYPE_PENDING), z.literal(USER_TYPE_INDIVIDUAL), z.literal(USER_TYPE_BUSINESS)])
+      .preprocess((val) => {
+        if (typeof val === "string") {
+          const str = val.trim().replace(/^["']|["']$/g, "").toUpperCase();
+          if (str === "PERSONAL" || str === "INDIVIDUAL") return USER_TYPE_INDIVIDUAL;
+          if (str === "BUSINESS") return USER_TYPE_BUSINESS;
+        }
+        return val;
+      }, z.coerce.number().pipe(z.union([z.literal(USER_TYPE_PENDING), z.literal(USER_TYPE_INDIVIDUAL), z.literal(USER_TYPE_BUSINESS)])))
       .optional(),
     timezone: z.string().max(30).optional(),
     country: z.string().min(2).max(3).optional(),
+    password_confirmation: z.string().optional(),
+    device_id: deviceId,
+    device_type: deviceType,
   })
   .strict();
 

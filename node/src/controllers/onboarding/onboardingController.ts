@@ -7,11 +7,9 @@ import { apiSuccess } from "../../helpers/messages";
 import {
   IDENTITY_VERIFICATION_PENDING,
   ID_VERIFIED_BY_ADMIN,
-  METHOD_ONBOARDING_STEP_THREE,
-  METHOD_ONBOARDING_STEP_TWO,
   ONBOARDING_STEP_ONE,
-  ONBOARDING_STEP_THREE,
   ONBOARDING_STEP_TWO,
+  ONBOARDING_STEP_THREE,
   USER_TYPE_INDIVIDUAL,
 } from "../../helpers/constants";
 import {
@@ -27,8 +25,8 @@ import { uniqueId } from "../../helpers/uniqueId";
 import { settingGet } from "../../services/settings/settingsService";
 import { s3Service } from "../../services/storage/s3Service";
 import { logger } from "../../helpers/logger";
-import { userResource } from "../../services/auth/userResource";
 import { GetFormFieldsInput } from "../../validators/onboarding/onboardingValidators";
+import { shapeDocumentsUser, shapeOnboardingUser } from "../../helpers/userShaper";
 
 const USER_DOCUMENT_FILE_PATH = "user_documents";
 
@@ -109,6 +107,7 @@ function userInformationCreateData(infoPart: Record<string, unknown>): Prisma.Us
     ["business_persons", "businessPersons"],
     ["id_type", "idType"],
     ["id_number", "idNumber"],
+    ["business_verification_type", "businessVerificationType"],
   ];
   for (const [src, dst] of map) {
     if (infoPart[src] !== undefined) {
@@ -116,7 +115,7 @@ function userInformationCreateData(infoPart: Record<string, unknown>): Prisma.Us
       if (dst === "formationDate" && typeof v === "string") {
         v = new Date(v);
       }
-      // @ts-expect-error - dynamic key assignment intentionally permissive
+      // @ts-ignore - dynamic key assignment intentionally permissive
       out[dst] = v as never;
     }
   }
@@ -165,8 +164,7 @@ async function prefillFromUser(
 ): Promise<FieldDef[]> {
   // Mirror of Laravel's "if onboarding_step > requested step, pre-fill values"
   // behavior. We pull UserInformation eagerly so per-field reads are cheap.
-  const info = await prisma().userInformation.findUnique({
-    where: { userId: user.id },
+  const info = await prisma().userInformation.findFirst({ where: { userId: user.id },
   });
   return fields.map((f) => {
     const value =
@@ -200,7 +198,7 @@ export const onboardingController = {
 
   async stepTwo(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
-    if (req.user.onboardingStep !== ONBOARDING_STEP_ONE) throw new ApiException(108);
+    if (Number(req.user.onboardingStep) !== ONBOARDING_STEP_ONE) throw new ApiException(108);
 
     const fields = await onboardingFormFields(req.user.userType, ONBOARDING_STEP_TWO);
     const result = validateAgainstFields(fields, req.body as Record<string, unknown>);
@@ -222,22 +220,34 @@ export const onboardingController = {
       const { uniqueId: _ignored, ...updateData } = createData;
       void _ignored;
 
-      await tx.userInformation.upsert({
+      const existingInfo = await tx.userInformation.findFirst({
         where: { userId: u.id },
-        create: createData,
-        update: updateData,
       });
+
+      if (existingInfo) {
+        await tx.userInformation.update({
+          where: { id: existingInfo.id },
+          data: updateData,
+        });
+      } else {
+        await tx.userInformation.create({
+          data: createData,
+        });
+      }
       return u;
     });
 
+    const info = await prisma().userInformation.findFirst({
+      where: { userId: updated.id },
+    });
     return sendResponse(res, apiSuccess(106), 106, {
-      user: userResource(updated, METHOD_ONBOARDING_STEP_TWO),
+      user: shapeOnboardingUser(updated, info),
     });
   },
 
   async stepThree(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
-    if (req.user.onboardingStep !== ONBOARDING_STEP_TWO) throw new ApiException(108);
+    if (Number(req.user.onboardingStep) !== ONBOARDING_STEP_TWO) throw new ApiException(108);
 
     const fields = await onboardingFormFields(req.user.userType, ONBOARDING_STEP_THREE);
     const result = validateAgainstFields(fields, req.body as Record<string, unknown>);
@@ -253,53 +263,58 @@ export const onboardingController = {
 
     let resultUser: User | null = null;
     const documents: UserDocument[] = [];
+    const uploads: Array<{ documentName: string; data: any }> = [];
+    for (const [documentName, raw] of Object.entries(validated)) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      const doc = raw as DocumentEntry;
+
+      const data: any = {
+        status: IDENTITY_VERIFICATION_PENDING,
+      };
+
+      if (doc.document_file) {
+        data.documentFile = doc.document_file.startsWith("data:")
+          ? await s3Service.uploadBase64(
+              doc.document_file,
+              USER_DOCUMENT_FILE_PATH,
+            )
+          : doc.document_file;
+        if (!data.documentFile) throw new ApiException(109);
+      }
+      if (doc.document_back_file) {
+        data.documentBackFile = doc.document_back_file.startsWith("data:")
+          ? await s3Service.uploadBase64(
+              doc.document_back_file,
+              USER_DOCUMENT_FILE_PATH,
+            )
+          : doc.document_back_file;
+        if (!data.documentBackFile) throw new ApiException(109);
+      }
+      if (doc.document_type) data.documentType = doc.document_type;
+      if (doc.document_country) data.documentCountry = doc.document_country;
+      if (doc.document_expiry_date) {
+        const d = new Date(doc.document_expiry_date);
+        if (!Number.isNaN(d.getTime())) data.documentExpiryDate = d;
+      }
+      uploads.push({ documentName, data });
+    }
 
     await prisma().$transaction(async (tx) => {
-      for (const [documentName, raw] of Object.entries(validated)) {
-        if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-        const doc = raw as DocumentEntry;
-
-        const data: {
-          documentType?: string | null;
-          documentCountry?: string | null;
-          documentFile?: string | null;
-          documentBackFile?: string | null;
-          documentExpiryDate?: Date | null;
-          status: number;
-        } = {
-          status: IDENTITY_VERIFICATION_PENDING,
-        };
-
-        if (doc.document_file) {
-          data.documentFile = doc.document_file.startsWith("data:")
-            ? await s3Service.uploadBase64(doc.document_file, USER_DOCUMENT_FILE_PATH)
-            : doc.document_file;
-          if (!data.documentFile) throw new ApiException(109);
-        }
-        if (doc.document_back_file) {
-          data.documentBackFile = doc.document_back_file.startsWith("data:")
-            ? await s3Service.uploadBase64(doc.document_back_file, USER_DOCUMENT_FILE_PATH)
-            : doc.document_back_file;
-          if (!data.documentBackFile) throw new ApiException(109);
-        }
-        if (doc.document_type) data.documentType = doc.document_type;
-        if (doc.document_country) data.documentCountry = doc.document_country;
-        if (doc.document_expiry_date) {
-          const d = new Date(doc.document_expiry_date);
-          if (!Number.isNaN(d.getTime())) data.documentExpiryDate = d;
-        }
-
+      for (const upload of uploads) {
         const existing = await tx.userDocument.findFirst({
-          where: { userId: req.user!.id, documentName },
+          where: { userId: req.user!.id, documentName: upload.documentName },
         });
         const row = existing
-          ? await tx.userDocument.update({ where: { id: existing.id }, data })
+          ? await tx.userDocument.update({
+              where: { id: existing.id },
+              data: upload.data,
+            })
           : await tx.userDocument.create({
               data: {
-                ...data,
+                ...upload.data,
                 uniqueId: uniqueId(24),
                 userId: req.user!.id,
-                documentName,
+                documentName: upload.documentName,
               },
             });
         documents.push(row);
@@ -309,20 +324,18 @@ export const onboardingController = {
         where: { id: req.user!.id },
         data: {
           onboardingStep: ONBOARDING_STEP_THREE,
-          memo:
-            req.user!.memo ??
-            generateUserMemo(req.user!),
+          memo: req.user!.memo ?? generateUserMemo(req.user!),
         },
       });
     });
 
     const data: Record<string, unknown> = {
-      user: userResource(resultUser as unknown as User, METHOD_ONBOARDING_STEP_THREE),
+      user: shapeDocumentsUser(resultUser as unknown as User, documents),
     };
 
     // KYC handoff for individuals - mirror of Laravel's
     // Api\\OnboardingController::stepThree branch.
-    if (resultUser && (resultUser as User).userType === USER_TYPE_INDIVIDUAL) {
+    if (resultUser && Number((resultUser as User).userType) === USER_TYPE_INDIVIDUAL) {
       const kycService = await settingGet<string>("kyc_service", "");
       if (kycService && kycService !== ID_VERIFIED_BY_ADMIN) {
         try {

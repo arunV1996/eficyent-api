@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { ApiException } from "../../helpers/errors";
+import { ApiException, ValidationException } from "../../helpers/errors";
 import { sendResponse } from "../../helpers/response";
 import { apiSuccess } from "../../helpers/messages";
 import { passwordService } from "../../services/auth/passwordService";
@@ -7,11 +7,11 @@ import { prisma } from "../../db/prisma";
 import { uniqueId } from "../../helpers/uniqueId";
 import { generateEmailCode } from "../../helpers/uniqueId";
 import { UserAuthEmailService } from "../../services/email/userAuthEmailService";
+import { credentialService } from "../../services/auth/credentialService";
 import {
   MERCHANT_TYPE_PAYINCOLLECTION,
   MERCHANT_TYPE_PAYOUTINTEGRATOR,
   MERCHANT_TYPE_WHITELABEL,
-  METHOD_REGISTER,
   SUPPORTED_USER_BUSINESS,
   SUPPORTED_USER_INDIVIDUAL,
   USER_TYPE_BUSINESS,
@@ -35,8 +35,9 @@ import { RegisterInput } from "../../validators/auth/authValidators";
 async function isSupportedUserType(
   userType: number,
   merchantId: bigint,
+  tx: any,
 ): Promise<boolean> {
-  const setting = await prisma().merchantSetting.findUnique({
+  const setting = await tx.merchantSetting.findUnique({
     where: { merchantId_key: { merchantId, key: "supported_user_types" } },
   });
   if (!setting?.value) return true;
@@ -55,17 +56,36 @@ export const registerController = {
     const merchantHeader = req.header("x-merchant-id");
 
     const passwordHash = await passwordService.hash(body.password);
-
     const user = await prisma().$transaction(async (tx) => {
+      // Uniqueness check (mirrors Laravel Unique validation rule)
+      const existing = await tx.user.findFirst({
+        where: {
+          OR: [{ email: body.email }, { mobile: body.mobile ?? undefined }],
+        },
+      });
+
+      if (existing) {
+        const errors: Record<string, string[]> = {};
+        if (existing.email === body.email) {
+          errors.email = ["The email has already been taken."];
+        }
+        if (body.mobile && existing.mobile === body.mobile) {
+          errors.mobile = ["The mobile has already been taken."];
+        }
+        if (Object.keys(errors).length > 0) {
+          throw new ValidationException(errors);
+        }
+      }
+
       let sendEmail = !merchantHeader;
-      let merchantRowId: string | null = null;
+      let merchantRowId: bigint | null = null;
 
       if (merchantHeader) {
         const merchant = await tx.merchant.findFirst({
           where: { uniqueId: merchantHeader },
         });
         if (merchant) {
-          merchantRowId = merchant.uniqueId;
+          merchantRowId = merchant.id;
           if (merchant.type === MERCHANT_TYPE_WHITELABEL) sendEmail = true;
           if (
             merchant.type === MERCHANT_TYPE_PAYINCOLLECTION ||
@@ -74,6 +94,7 @@ export const registerController = {
             const supported = await isSupportedUserType(
               body.user_type ?? USER_TYPE_PENDING,
               merchant.id,
+              tx,
             );
             if (!supported) {
               throw new ApiException(194);
@@ -85,7 +106,7 @@ export const registerController = {
       const created = await tx.user.create({
         data: {
           uniqueId: uniqueId(24),
-          merchantId: merchantRowId,
+          merchantId: merchantRowId as any ?? null,
           title: body.title ?? null,
           firstName: body.first_name ?? null,
           middleName: body.middle_name ?? null,
@@ -105,12 +126,17 @@ export const registerController = {
       });
 
       if (body.country) {
-        await tx.userInformation.upsert({
-          where: { userId: created.id },
-          create: { userId: created.id, country: body.country },
-          update: { country: body.country },
+        await tx.userInformation.create({
+          data: {
+            userId: created.id,
+            uniqueId: uniqueId(24),
+            country: body.country,
+          },
         });
       }
+
+      // Generate API credentials (apiKey, saltKey, RSA pair)
+      await credentialService.generateAndStore(created.id, "user", tx);
 
       return created;
     });
@@ -121,13 +147,13 @@ export const registerController = {
 
     return sendResponse(res, apiSuccess(101), 101, {
       user: {
-        id: user.id.toString(),
         unique_id: user.uniqueId,
         email: user.email,
-        first_name: user.firstName,
-        last_name: user.lastName,
-        user_type: user.userType,
-        method: METHOD_REGISTER,
+        mobile_country_code: user.mobileCountryCode,
+        mobile: user.mobile,
+        email_status: user.emailVerifiedAt ? "VERIFIED" : "NOT_VERIFIED",
+        user_type: Number(user.userType) === USER_TYPE_BUSINESS ? "BUSINESS" : "PERSONAL",
+        role: "ADMIN",
       },
     });
   },

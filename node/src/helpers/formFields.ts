@@ -43,7 +43,13 @@ export interface FieldDef {
   is_editable: boolean;
   validation: Record<string, unknown>;
   category: string;
-  values_supported: { label: string; value: string }[];
+  values_supported: {
+    label: string;
+    value: string;
+    flag?: string;
+    country_name?: string;
+    parent_value?: string;
+  }[];
   children: FieldDef[];
   is_repeatable: boolean;
   field_value: string | number | null;
@@ -160,24 +166,50 @@ const FILE_VALIDATION = {
 } as const;
 
 interface FormBuildContext {
-  countries: { label: string; value: string }[];
-  states: { label: string; value: string }[];
-  mobile_country_codes: { label: string; value: string }[];
+  countries: { label: string; value: string; flag: string }[];
+  states: { label: string; value: string; parent_value: string }[];
+  mobile_country_codes: {
+    label: string;
+    value: string;
+    country_name: string;
+    flag: string;
+  }[];
+  professions: { label: string; value: string }[];
+  business_types: { label: string; value: string }[];
+  id_types: { label: string; value: string }[];
+  business_verification_types: { label: string; value: string }[];
 }
 
 async function buildContext(): Promise<FormBuildContext> {
-  const [countries, mcc, states] = await Promise.all([
+  const [countries, mcc, states, professions, business_types, id_types, business_verification_types] = await Promise.all([
     lookupsService.countries().then((rows) =>
-      rows.map((r) => ({ label: r.label, value: r.value })),
+      rows.map((r) => ({ label: r.label, value: r.value, flag: r.flag })),
     ),
     lookupsService.mobileCountryCodes().then((rows) =>
-      rows.map((r) => ({ label: r.label, value: r.value })),
+      rows.map((r) => ({
+        label: r.label,
+        value: r.value,
+        country_name: r.country_name,
+        flag: r.flag,
+      })),
     ),
     lookupsService.states().then((rows) =>
-      rows.map((r) => ({ label: r.label, value: r.value })),
+      rows.map((r) => ({ label: r.label, value: r.value, parent_value: r.parent_value })),
     ),
+    lookupsService.professions(),
+    lookupsService.businessTypes(),
+    lookupsService.idTypes(),
+    lookupsService.businessVerificationTypes(),
   ]);
-  return { countries, states, mobile_country_codes: mcc };
+  return {
+    countries,
+    states,
+    mobile_country_codes: mcc,
+    professions,
+    business_types,
+    id_types,
+    business_verification_types,
+  };
 }
 
 function addressFields(prefix: string, ctx: FormBuildContext): FieldDef[] {
@@ -271,7 +303,10 @@ function registrationFormFields(ctx: FormBuildContext): FieldDef[] {
 
 function individualOnboardingFields(ctx: FormBuildContext): FieldDef[] {
   return [
-    make("dob", "Date of Birth", { type: "date" }),
+    make("dob", "Date of Birth", {
+      type: "date",
+      validation: { max_date: new Date(Date.now() - 18 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }
+    }),
     make("country", "Country of Residence", { values: ctx.countries }),
     make("address_1", "Address Line 1", {
       validation: VALIDATION_PRESETS.address,
@@ -285,7 +320,7 @@ function individualOnboardingFields(ctx: FormBuildContext): FieldDef[] {
     make("postal_code", "Postal Code", {
       validation: VALIDATION_PRESETS.postal_code,
     }),
-    make("id_type", "Identification Type"),
+    make("id_type", "Identification Type", { values: ctx.id_types }),
     make("id_number", "Identification Number", {
       validation: VALIDATION_PRESETS.id_number,
     }),
@@ -297,16 +332,16 @@ function businessOnboardingFields(ctx: FormBuildContext): FieldDef[] {
     make("legal_name", "Legal Name", {
       validation: VALIDATION_PRESETS.business_name,
     }),
+    make("tax_id", "Tax ID Number", { validation: VALIDATION_PRESETS.id_number }),
+    make("country_of_incorporation", "Country  of Incorporation", { values: ctx.countries }),
+    make("formation_date", "Formation Date", { type: "date" }),
     make("business_name", "Business Name", {
       validation: VALIDATION_PRESETS.business_name,
     }),
-    make("tax_id", "Tax Id", { validation: VALIDATION_PRESETS.id_number }),
-    make("formation_date", "Formation Date", { type: "date" }),
+    make("type_of_business", "Type of Business", { values: ctx.business_types }),
     make("website", "Website", {
-      mandatory: false,
       validation: VALIDATION_PRESETS.website,
     }),
-    make("country", "Country of Incorporation", { values: ctx.countries }),
     make("address_1", "Address Line 1", {
       validation: VALIDATION_PRESETS.address,
     }),
@@ -314,30 +349,38 @@ function businessOnboardingFields(ctx: FormBuildContext): FieldDef[] {
       mandatory: false,
       validation: VALIDATION_PRESETS.address,
     }),
-    make("city", "City", { validation: VALIDATION_PRESETS.city }),
+    make("country", "Country", { values: ctx.countries }),
     make("state", "State", { values: ctx.states, parent_key: "country" }),
+    make("city", "City", { validation: VALIDATION_PRESETS.city }),
     make("postal_code", "Postal Code", {
       validation: VALIDATION_PRESETS.postal_code,
     }),
+    make("business_verification_type", "Business Verification Type", {
+      values: ctx.business_verification_types,
+    }),
     make("owners", "Owners", {
       type: "group",
-      mandatory: false,
       repeatable: true,
-      validation: { min_length: 1, max_length: 5 },
+      validation: { min_length: 1, max_length: 10 },
       children: [
         make("first_name", "First Name", { validation: VALIDATION_PRESETS.name }),
         make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
+        make("dob", "Date of Birth", {
+          type: "date",
+          validation: { max_date: new Date(Date.now() - 18 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }
+        }),
+        make("id_type", "ID Type", { values: ctx.id_types }),
+        make("id_number", "ID Number", { validation: VALIDATION_PRESETS.id_number }),
         make("email", "Email", { validation: VALIDATION_PRESETS.email }),
-        make("dob", "Date of Birth", { type: "date" }),
+        make("mobile_country_code", "Mobile Country Code", { values: ctx.mobile_country_codes }),
+        make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
+        make("profession", "Profession", { values: ctx.professions }),
+        make("address_1", "Address Line 1", { validation: VALIDATION_PRESETS.address }),
+        make("address_2", "Address Line 2", { mandatory: false, validation: VALIDATION_PRESETS.address }),
         make("country", "Country", { values: ctx.countries }),
-        make("address_1", "Address Line 1", {
-          validation: VALIDATION_PRESETS.address,
-        }),
-        make("city", "City", { validation: VALIDATION_PRESETS.city }),
         make("state", "State", { values: ctx.states, parent_key: "country" }),
-        make("postal_code", "Postal Code", {
-          validation: VALIDATION_PRESETS.postal_code,
-        }),
+        make("city", "City", { validation: VALIDATION_PRESETS.city }),
+        make("postal_code", "Postal Code", { validation: VALIDATION_PRESETS.postal_code }),
       ],
     }),
   ];
@@ -386,16 +429,16 @@ function documentGroup(
 }
 
 function getDocumentGroups(
-  userType: number,
+  userType: number | bigint,
   countries: FormBuildContext["countries"],
 ): FieldDef[] {
-  if (userType === USER_TYPE_INDIVIDUAL) {
+  if (Number(userType) === USER_TYPE_INDIVIDUAL) {
     return [
       documentGroup("id_document", "Identity Document", countries),
       documentGroup("proof_of_address", "Proof of Address", countries),
     ];
   }
-  if (userType === USER_TYPE_BUSINESS) {
+  if (Number(userType) === USER_TYPE_BUSINESS) {
     return [
       documentGroup("incorporation_certificate", "Incorporation Certificate", countries),
       documentGroup("proof_of_address", "Proof of Address", countries),
@@ -410,18 +453,18 @@ function getDocumentGroups(
  * for a given (user_type, step) combination.
  */
 export async function onboardingFormFields(
-  userType: number,
-  step: number,
+  userType: number | bigint,
+  step: number | bigint,
 ): Promise<FieldDef[]> {
   const ctx = await buildContext();
   switch (step) {
     case 1:
-      return userType === USER_TYPE_INDIVIDUAL || userType === USER_TYPE_BUSINESS
+      return Number(userType) === USER_TYPE_INDIVIDUAL || Number(userType) === USER_TYPE_BUSINESS
         ? registrationFormFields(ctx)
         : [];
     case 2:
-      if (userType === USER_TYPE_INDIVIDUAL) return individualOnboardingFields(ctx);
-      if (userType === USER_TYPE_BUSINESS) return businessOnboardingFields(ctx);
+      if (Number(userType) === USER_TYPE_INDIVIDUAL) return individualOnboardingFields(ctx);
+      if (Number(userType) === USER_TYPE_BUSINESS) return businessOnboardingFields(ctx);
       return [];
     case 3:
       return getDocumentGroups(userType, ctx.countries);
@@ -454,7 +497,7 @@ const BENEFICIARY_FORM_TTL_MS = 60 * 60 * 1000;
 export async function beneficiaryFormFields(payload: {
   country: string;
   currency: string;
-  type: number;
+  type: number | bigint;
 }): Promise<FieldDef[]> {
   const cacheKey = `${payload.country}:${payload.currency}:${payload.type}`;
   const hit = beneficiaryFormCache.get(cacheKey);
@@ -468,7 +511,7 @@ export async function beneficiaryFormFields(payload: {
   }
   const ctx = await buildContext();
   const base =
-    payload.type === USER_TYPE_BUSINESS
+    Number(payload.type) === USER_TYPE_BUSINESS
       ? baseBusinessFields(ctx)
       : baseIndividualFields(ctx);
 
@@ -580,7 +623,7 @@ export async function beneficiaryFormFields(payload: {
  * Phase 3 adds the FvBank-aware document groups (the most common path).
  */
 export async function updateProfileFormFields(
-  user: { userType: number },
+  user: { userType: number | bigint },
   externalType: string,
 ): Promise<FieldDef[]> {
   void externalType; // FvBank/Caliza-specific overrides land in Phase 8.
@@ -666,7 +709,7 @@ const senderFieldsCache = new Map<
 const SENDER_FIELDS_TTL_MS = 6 * 60 * 60 * 1000;
 
 interface SenderFieldsContext {
-  type: number;
+  type: number | bigint;
   merchantId: bigint | null;
   remitterDepositEnabled: boolean;
 }
@@ -706,7 +749,7 @@ export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]
   }
 
   let fields: FieldDef[] = [];
-  if (ctx.type === USER_TYPE_INDIVIDUAL) {
+  if (Number(ctx.type) === USER_TYPE_INDIVIDUAL) {
     const eighteenYearsAgo = new Date();
     eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
     const maxDate = eighteenYearsAgo.toISOString().slice(0, 10);
@@ -720,7 +763,7 @@ export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]
       make("dob", "Date of Birth", { type: "date", validation: { max_date: maxDate } }),
     ];
     fields = [...individual, ...common];
-  } else if (ctx.type === USER_TYPE_BUSINESS) {
+  } else if (Number(ctx.type) === USER_TYPE_BUSINESS) {
     const business: FieldDef[] = [
       make("business_name", "Business Name", {
         validation: VALIDATION_PRESETS.business_name,

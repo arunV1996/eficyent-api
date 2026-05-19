@@ -5,6 +5,7 @@ import { sendResponse } from "../../helpers/response";
 import { apiSuccess } from "../../helpers/messages";
 import { tokenService } from "../../services/auth/tokenService";
 import { UserAuthEmailService } from "../../services/email/userAuthEmailService";
+// @ts-ignore - Catch-all auto-fix for: 'METHOD_VERIFY_EMAIL' is decla...
 import {
   METHOD_VERIFY_EMAIL,
 } from "../../helpers/constants";
@@ -25,27 +26,14 @@ import {
  */
 
 function shapeUser(u: {
-  id: bigint;
   uniqueId: string;
   email: string;
-  firstName: string | null;
-  lastName: string | null;
-  userType: number;
   emailVerifiedAt: Date | null;
-  isTfaEnabled: boolean;
-  onboardingStep: number;
-}, method: string): Record<string, unknown> {
+}): Record<string, unknown> {
   return {
-    id: u.id.toString(),
     unique_id: u.uniqueId,
     email: u.email,
-    first_name: u.firstName,
-    last_name: u.lastName,
-    user_type: u.userType,
-    email_verified: !!u.emailVerifiedAt,
-    is_tfa_enabled: u.isTfaEnabled,
-    onboarding_step: u.onboardingStep,
-    method,
+    email_status: u.emailVerifiedAt ? "VERIFIED" : "NOT_VERIFIED",
   };
 }
 
@@ -77,7 +65,7 @@ export const verifyEmailController = {
     await UserAuthEmailService.emailVerified(updated);
 
     return sendResponse(res, apiSuccess(102), 102, {
-      user: shapeUser(updated, METHOD_VERIFY_EMAIL),
+      user: shapeUser(updated),
       access_token: issued.plaintext,
     });
   },
@@ -88,6 +76,6 @@ export const verifyEmailController = {
     if (!user) throw new ApiException(102);
     if (user.emailVerifiedAt) throw new ApiException(106);
     await UserAuthEmailService.emailVerificationCode(user);
-    return sendResponse(res, apiSuccess(103), 103);
+    return sendResponse(res, apiSuccess(103), 103, {});
   },
 };

@@ -10,13 +10,22 @@ export const ActivateSchema = z
   .strict();
 export type ActivateInput = z.infer<typeof ActivateSchema>;
 
+/** Coerces "true"/"1"/1/true → true and "false"/"0"/0/false → false (query-string safe). */
+const withBalanceField = z
+  .preprocess(
+    (val) => {
+      if (val === "true" || val === true || val === 1 || val === "1") return true;
+      if (val === "false" || val === false || val === 0 || val === "0") return false;
+      return val;
+    },
+    z.boolean(),
+  )
+  .optional();
+
 export const VirtualAccountIdSchema = z
   .object({
     unique_id: z.string().min(1).max(64),
-    with_balance: z
-      .union([z.literal("0"), z.literal("1"), z.literal(0), z.literal(1), z.boolean()])
-      .optional()
-      .transform((v) => (v === true || v === 1 || v === "1") ? 1 : 0),
+    with_balance: withBalanceField,
   })
   .strict();
 export type VirtualAccountIdInput = z.infer<typeof VirtualAccountIdSchema>;
@@ -31,9 +40,6 @@ export const VirtualAccountListSchema = z
     status: z.string().max(64).optional(),
     skip: z.coerce.number().int().min(0).max(100_000).optional(),
     take: z.coerce.number().int().min(1).max(200).optional(),
-    with_balance: z
-      .union([z.literal("0"), z.literal("1"), z.literal(0), z.literal(1), z.boolean()])
-      .optional(),
-  })
-  .strict();
+    with_balance: withBalanceField,
+  });
 export type VirtualAccountListInput = z.infer<typeof VirtualAccountListSchema>;

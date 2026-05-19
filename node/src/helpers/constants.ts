@@ -19,6 +19,8 @@ export const ONBOARDING_STEP_ONE_COMPLETED = 1;
 
 export const INTERNAL_API_TOKEN = "internal-api-token";
 export const AUTHENTICATION_ABILITY = "authentication";
+export const ENCRYPTION_ABILITY = "encryption";
+export const EXTERNAL_API_TOKEN = "external-api-token";
 
 export const METHOD_REGISTER = "register";
 export const METHOD_LOGIN = "login";
@@ -109,7 +111,7 @@ export const EXTERNAL_TYPE_PROCESSING_UNIT = "pu";
 export const EXTERNAL_TYPE_INCODE = "ei";
 export const EXTERNAL_TYPE_INVOICEMATE = "im";
 export const EXTERNAL_TYPE_COMPLIANCE = "cp";
-export const EXTERNAL_TYPE_HERALD_REMITTANCE = "hr";
+export const EXTERNAL_TYPE_REPORT_SERVER = "rs";
 
 export const C2C = "C2C";
 export const C2B = "C2B";
@@ -185,6 +187,19 @@ export function onboardingStatusLabel(value: number): string {
     case ONBOARDING_STATUS_CREATED:
       return "CREATED";
     case ONBOARDING_STATUS_FAILED:
+      return "FAILED";
+    default:
+      return "PENDING";
+  }
+}
+
+export function virtualAccountStatusLabel(value: number): string {
+  switch (value) {
+    case VIRTUAL_ACCOUNT_STATUS_PENDING:
+      return "PENDING";
+    case VIRTUAL_ACCOUNT_STATUS_CREATED:
+      return "CREATED";
+    case VIRTUAL_ACCOUNT_STATUS_FAILED:
       return "FAILED";
     default:
       return "PENDING";
@@ -268,6 +283,23 @@ export const DEPOSIT_TRANSACTION_STATUS_MAP: Record<string, number> = {
   COMPLETED: DEPOSIT_TRANSACTION_COMPLETED,
   FAILED: DEPOSIT_TRANSACTION_FAILED,
 };
+
+export function depositTransactionStatusLabel(value: number): string {
+  switch (value) {
+    case DEPOSIT_TRANSACTION_PENDING:
+    case DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED:
+    case DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING:
+      return "PROCESSING";
+    case DEPOSIT_TRANSACTION_COMPLETED:
+      return "COMPLETED";
+    case DEPOSIT_TRANSACTION_FAILED:
+    case DEPOSIT_TRANSACTION_REJECTED:
+    case DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED:
+      return "FAILED";
+    default:
+      return "PROCESSING";
+  }
+}
 
 export const DEPOSIT_TYPE_DEPOSIT = "deposit";
 export const DEPOSIT_TYPE_REFUND = "refund";
@@ -389,10 +421,6 @@ export const CALLBACK_RESPONSE = "callback";
 
 // External-service-call audit `call_for` value for inbound webhooks. Phase 9.
 export const EXTERNAL_CALL_FOR_CALLBACK = "callback";
-
-// External provider tags (Phase 10).
-export const EXTERNAL_TYPE_HERALD_REMITTANCE = "hr";
-export const EXTERNAL_TYPE_REPORT_SERVER = "rs";
 
 // `call_for` audit values used by the Reports microservice + Remittance.
 export const EXTERNAL_CALL_FOR_DEBIT = "debit";

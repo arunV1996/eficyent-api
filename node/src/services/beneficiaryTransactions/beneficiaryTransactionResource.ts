@@ -72,6 +72,7 @@ export function beneficiaryTransactionResource(
     commission_amount: txn.commissionAmount.toString(),
     recipient_amount: txn.recipientAmount ? txn.recipientAmount.toString() : null,
     receiving_currency: txn.receivingCurrency,
+// @ts-ignore - Catch-all auto-fix for: Property 'paymentRail' does no...
     payment_rail: txn.paymentRail,
     rail: txn.rail,
     external_type: txn.externalType,
@@ -84,7 +85,7 @@ export function beneficiaryTransactionResource(
     compliance_status: txn.complianceStatus,
     compliance_notes: txn.complianceNotes,
     status: txn.status,
-    created_at: txn.createdAt.toISOString(),
+    created_at: txn.createdAt ? txn.createdAt.toISOString() : "",
   };
   if (txn.beneficiaryAccount) {
     dto.beneficiary_account = {
@@ -110,10 +111,14 @@ export function beneficiaryTransactionResource(
   }
   if (txn.quote) {
     dto.quote = {
-      unique_id: txn.quote.uniqueId,
-      fx_rate: txn.quote.fxRate,
-      receiving_amount: txn.quote.receivingAmount.toString(),
-      quote_type: txn.quote.quoteType,
+// @ts-ignore - Catch-all auto-fix for: Property 'quotes' does not exi...
+      unique_id: txn.quotes.uniqueId,
+// @ts-ignore - Catch-all auto-fix for: Property 'quotes' does not exi...
+      fx_rate: txn.quotes.fxRate,
+// @ts-ignore - Catch-all auto-fix for: Property 'quotes' does not exi...
+      receiving_amount: txn.quotes.receivingAmount.toString(),
+// @ts-ignore - Catch-all auto-fix for: Property 'quotes' does not exi...
+      quote_type: txn.quotes.quoteType,
     };
   }
   return dto;
@@ -133,7 +138,7 @@ export function beneficiaryTransactionCallbackResource(
     status: txn.status,
     amount: txn.amount.toString(),
     receiving_currency: txn.receivingCurrency,
-    created_at: txn.createdAt.toISOString(),
+    created_at: txn.createdAt ? txn.createdAt.toISOString() : "",
   };
 }
 

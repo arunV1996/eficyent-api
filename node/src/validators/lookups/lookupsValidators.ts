@@ -48,6 +48,7 @@ export type RefreshRateInput = z.infer<typeof RefreshRateBodySchema>;
 export const DepositLookupQuerySchema = z
   .object({
     type: z.enum([LOOKUP_TYPE_SOURCE_OF_FUNDS, LOOKUP_TYPE_PURPOSE_OF_TRANSACTION]),
-  })
-  .strict();
+    take: z.coerce.number().optional(),
+    skip: z.coerce.number().optional(),
+  });
 export type DepositLookupInput = z.infer<typeof DepositLookupQuerySchema>;

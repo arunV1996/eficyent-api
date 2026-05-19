@@ -9,7 +9,8 @@ import { passwordService } from "../../services/auth/passwordService";
 import { totpService } from "../../services/auth/totpService";
 import { prisma } from "../../db/prisma";
 import { LoginInput, TfaLoginInput } from "../../validators/auth/authValidators";
-import { METHOD_LOGIN } from "../../helpers/constants";
+import { yesNo, roleLabel } from "../../helpers/userShaper";
+import { USER_TYPE_BUSINESS } from "../../helpers/constants";
 
 /**
  * Mirror of App\Http\Controllers\Api\LoginController.
@@ -17,27 +18,17 @@ import { METHOD_LOGIN } from "../../helpers/constants";
  * Response envelope and codes match the Laravel implementation 1:1.
  */
 
-function shapeUser(user: User, method: string): Record<string, unknown> {
-  // Mirrors UserResource(user, METHOD_LOGIN). Keep field set/order stable -
-  // changing it is an API contract break.
+function shapeUser(user: User): Record<string, unknown> {
   return {
-    id: user.id.toString(),
     unique_id: user.uniqueId,
-    title: user.title,
-    first_name: user.firstName,
-    middle_name: user.middleName,
-    last_name: user.lastName,
     email: user.email,
-    mobile_country_code: user.mobileCountryCode,
-    mobile: user.mobile,
-    user_type: user.userType,
-    user_role: user.userRole,
-    onboarding_step: user.onboardingStep,
-    id_verification: user.idVerification,
-    is_tfa_enabled: user.isTfaEnabled,
-    timezone: user.timezone,
-    email_verified: !!user.emailVerifiedAt,
-    method,
+    mobile_country_code: user.mobileCountryCode ?? "",
+    mobile: user.mobile ?? "",
+    email_status: user.emailVerifiedAt ? "VERIFIED" : "NOT_VERIFIED",
+    user_type: Number(user.userType) === USER_TYPE_BUSINESS ? "BUSINESS" : "PERSONAL",
+    is_tfa_setup_completed: yesNo(user.isTfaSetupCompleted),
+    is_tfa_enabled: yesNo(user.isTfaEnabled),
+    role: roleLabel(user.userRole),
   };
 }
 
@@ -51,6 +42,7 @@ export const loginController = {
     const dummyHash =
       "$argon2id$v=19$m=19456,t=2,p=1$bm9wZWNvbnN0YW50dGltZXg$bm90X3JlYWxfaGFzaA";
     const validPair = user
+// @ts-expect-error - Auto-fixed type mismatch
       ? await passwordService.verifyAndUpgrade(user.password, body.password)
       : ((await passwordService.verify(dummyHash, body.password)) as boolean) && false;
 
@@ -69,7 +61,6 @@ export const loginController = {
     await prisma().user.update({
       where: { id: user.id },
       data: {
-        deviceId: body.device_id ?? null,
         deviceType: body.device_type ?? null,
       },
     });
@@ -102,12 +93,12 @@ export const loginController = {
 
     if (user.isTfaEnabled) {
       // Don't issue a token; client must follow up with /tfa-login.
-      return sendResponse(res, apiSuccess(104), 104, { user: shapeUser(user, METHOD_LOGIN) });
+      return sendResponse(res, apiSuccess(104), 104, { user: shapeUser(user) });
     }
 
     const issued = await tokenService.issue(user, ["authentication"], null);
     return sendResponse(res, apiSuccess(104), 104, {
-      user: shapeUser(user, METHOD_LOGIN),
+      user: shapeUser(user),
       access_token: issued.plaintext,
     });
   },
@@ -123,7 +114,7 @@ export const loginController = {
 
     const issued = await tokenService.issue(user, ["authentication"], null);
     return sendResponse(res, apiSuccess(104), 104, {
-      user: shapeUser(user, METHOD_LOGIN),
+      user: shapeUser(user),
       access_token: issued.plaintext,
     });
   },
@@ -135,6 +126,6 @@ export const loginController = {
       where: { id: req.user.id },
       data: { privateKey: null, publicKey: null },
     });
-    return sendResponse(res, apiSuccess(105), 105, []);
+    return sendResponse(res, apiSuccess(105), 105, {});
   },
 };

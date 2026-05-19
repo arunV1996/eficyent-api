@@ -16,7 +16,7 @@ export function walletResource(
     currency: wallet.currency,
     balance: wallet.balance ?? "0",
     status: wallet.status,
-    created_at: wallet.createdAt.toISOString(),
+    created_at: wallet.createdAt ? wallet.createdAt.toISOString() : "",
   };
 }
 
@@ -48,6 +48,6 @@ export function walletTransactionResource(t: WalletTransaction): WalletTransacti
     beneficiary_transaction_id: t.beneficiaryTransactionId
       ? t.beneficiaryTransactionId.toString()
       : null,
-    created_at: t.createdAt.toISOString(),
+    created_at: t.createdAt ? t.createdAt.toISOString() : "",
   };
 }

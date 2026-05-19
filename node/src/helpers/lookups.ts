@@ -146,3 +146,21 @@ export function getFlagUrl(alpha2: string | null | undefined, baseUrl: string): 
   if (!alpha2) return "";
   return `${baseUrl.replace(/\/$/, "")}/images/countries/${alpha2.toLowerCase()}.png`;
 }
+
+/**
+ * Mirror of format_date_human(). Expected: "26 Nov 2025 03:41 PM"
+ */
+export function formatDate(date: Date | null | undefined): string {
+  if (!date) return "";
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const d = date.getDate();
+  const m = months[date.getMonth()];
+  const y = date.getFullYear();
+  let hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12;
+  hours = hours ? hours : 12; // the hour '0' should be '12'
+  const h = String(hours).padStart(2, "0");
+  return `${String(d).padStart(2, "0")} ${m} ${y} ${h}:${minutes} ${ampm}`;
+}

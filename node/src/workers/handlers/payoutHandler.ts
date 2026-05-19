@@ -116,7 +116,7 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
         to_currency: txn.receivingCurrency ?? "",
         fx_rate: "",
         status: String(BENEFICIARY_TRANSACTION_PROCESSING),
-        created_at: txn.createdAt.toISOString(),
+        created_at: txn.createdAt ? txn.createdAt.toISOString() : "",
       });
       void InvoiceMate.makePayout(txn, user);
     }

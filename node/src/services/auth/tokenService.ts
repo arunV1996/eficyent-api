@@ -87,9 +87,13 @@ export const tokenService = {
     const id = BigInt(idStr);
     const row = await prisma().personalAccessToken.findUnique({
       where: { id },
-      include: { user: true },
     });
-    if (!row || !row.user) return null;
+    if (!row || row.tokenableType !== "App\\Models\\User") return null;
+
+    const user = await prisma().user.findUnique({
+      where: { id: row.tokenableId },
+    });
+    if (!user) return null;
 
     const expectedHash = sha256Hex(random, await pepper());
     if (!safeEqual(row.tokenHash, expectedHash)) return null;
@@ -98,12 +102,12 @@ export const tokenService = {
 
     // Inactivity check via Redis. Missing session = forced logout.
     const sessionAlive = await sessionService.touch(
-      row.user.id,
+      user.id,
       row.id,
     );
     if (!sessionAlive) return null;
 
-    if (row.user.status !== 1) return null;
+    if (user.status !== 1) return null;
 
     // Update last_used_at. Best-effort; do not block request on failure.
     void prisma()
@@ -113,7 +117,7 @@ export const tokenService = {
       })
       .catch(() => undefined);
 
-    return { user: row.user, tokenId: row.id };
+    return { user, tokenId: row.id };
   },
 
   async revoke(tokenId: bigint, userId: bigint): Promise<void> {

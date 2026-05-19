@@ -15,3 +15,5 @@ coverage/
 .cache/
 
 prisma/migrations/dev.db*
+package-lock.json
+.arcconfig

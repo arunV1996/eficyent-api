@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { ApiException } from "../../helpers/errors";
-import { sendResponse } from "../../helpers/response";
 import {
   TAKE_COUNT,
   TEAM_MEMBER_ACTIVE,
@@ -69,9 +68,14 @@ export const teamMemberCrudController = {
         take,
       }),
     ]);
-    return sendResponse(res, "", 200, {
-      total,
-      team_members: rows.map(teamMemberResource),
+    return res.status(200).json({
+      success: true,
+      message: "",
+      code: "",
+      data: {
+        total,
+        team_members: rows.map(teamMemberResource),
+      },
     });
   },
 
@@ -103,8 +107,13 @@ export const teamMemberCrudController = {
         status: TEAM_MEMBER_ACTIVE,
       },
     });
-    return sendResponse(res, "Team member created successfully.", 200, {
-      team_member: teamMemberResource(member),
+    return res.status(200).json({
+      success: true,
+      message: "Team member created successfully.",
+      code: "",
+      data: {
+        team_member: teamMemberResource(member),
+      },
     });
   },
 
@@ -115,8 +124,13 @@ export const teamMemberCrudController = {
       where: { userId: req.user.id, uniqueId: q.team_member_id, deletedAt: null },
     });
     if (!member) throw new ApiException(159);
-    return sendResponse(res, "Team member fetched successfully.", 200, {
-      team_member: teamMemberResource(member),
+    return res.status(200).json({
+      success: true,
+      message: "Team member fetched successfully.",
+      code: "",
+      data: {
+        team_member: teamMemberResource(member),
+      },
     });
   },
 
@@ -138,8 +152,13 @@ export const teamMemberCrudController = {
         permission: body.permission,
       },
     });
-    return sendResponse(res, "Team member updated successfully.", 200, {
-      team_member: teamMemberResource(updated),
+    return res.status(200).json({
+      success: true,
+      message: "Team member updated successfully.",
+      code: "",
+      data: {
+        team_member: teamMemberResource(updated),
+      },
     });
   },
 
@@ -154,7 +173,12 @@ export const teamMemberCrudController = {
       where: { id: member.id },
       data: { deletedAt: new Date() },
     });
-    return sendResponse(res, "Team member deleted successfully.", 200, []);
+    return res.status(200).json({
+      success: true,
+      message: "Team member deleted successfully.",
+      code: "",
+      data: {},
+    });
   },
 
   async updateStatus(req: Request, res: Response): Promise<Response> {
@@ -170,6 +194,11 @@ export const teamMemberCrudController = {
       where: { id: member.id },
       data: { status: newStatus },
     });
-    return sendResponse(res, "Team member status updated successfully.", 200, []);
+    return res.status(200).json({
+      success: true,
+      message: "Team member status updated successfully.",
+      code: "",
+      data: {},
+    });
   },
 };

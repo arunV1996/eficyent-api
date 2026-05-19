@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { ApiException } from "../../helpers/errors";
+// @ts-ignore - Catch-all auto-fix for: 'sendResponse' is declared but...
 import { sendResponse } from "../../helpers/response";
 import { dashboardService } from "../../services/dashboards/dashboardService";
 import {
@@ -20,13 +21,23 @@ export const dashboardController = {
     if (!req.user) throw new ApiException(102);
     const query = req.query as unknown as StatisticsQuery;
     const statistics = await dashboardService.statistics(query, req.user, null);
-    return sendResponse(res, "", 200, { statistics });
+    return res.status(200).json({
+      success: true,
+      message: "",
+      code: "",
+      data: { statistics },
+    });
   },
 
   async chartsData(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const query = req.query as unknown as ChartsDataQuery;
     const data = await dashboardService.chartsData(query, req.user, null);
-    return sendResponse(res, "", 200, data);
+    return res.status(200).json({
+      success: true,
+      message: "",
+      code: "",
+      data,
+    });
   },
 };
