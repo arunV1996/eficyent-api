@@ -9,6 +9,7 @@ import {
   User,
   UserInformation,
   VirtualAccount,
+  AdminWallet,
 } from "@prisma/client";
 import { call } from "./httpClient";
 import { Secrets } from "../../config/secrets";
@@ -60,10 +61,10 @@ async function loadSecret(): Promise<ProcessingUnitSecret> {
 }
 
 const ENDPOINTS = {
-  CREATE_TRANSACTION: "/create-transaction",
-  SYNC_TRANSACTION: "/sync-transaction",
-  VALIDATE_ACCOUNT: "/validate-account",
-  CREATE_DEPOSIT: "/create-deposit",
+  CREATE_TRANSACTION: "/api/v1/initiate-withdraw",
+  SYNC_TRANSACTION: "/api/v1/sync-withdraw",
+  VALIDATE_ACCOUNT: "/api/v1/verify_account",
+  CREATE_DEPOSIT: "/api/v1/initiate-deposit",
 } as const;
 
 function lastSegment(endpoint: string): string {
@@ -338,7 +339,7 @@ function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown
 }
 
 function prepareDepositPayload(
-  txn: DepositTransaction & { virtualAccount: VirtualAccount },
+  txn: DepositTransaction & { virtualAccount: VirtualAccount; adminWallet?: AdminWallet | null },
   user: User,
 ): Record<string, unknown> {
   const data = {
@@ -366,7 +367,9 @@ function prepareDepositPayload(
         ? "CRYPTO"
         : "FIAT"
       : null,
+    network_type: txn.adminWalletId && txn.adminWallet ? txn.adminWallet.network : null,
     from_wallet_address: txn.fromWalletAddress,
+    to_wallet_Address: txn.adminWalletId && txn.adminWallet ? txn.adminWallet.wallet_address : null,
     transaction_hash: txn.transactionHash,
   };
   return removeEmpty(data as Record<string, unknown>);
@@ -525,10 +528,14 @@ export const ProcessingUnit = {
         where: { id: txn.virtualAccountId },
       });
       const user = await prisma().user.findUnique({ where: { id: txn.userId } });
+      const adminWallet = txn.adminWalletId
+        ? await prisma().adminWallet.findUnique({ where: { id: txn.adminWalletId } })
+        : null;
+
       if (!va || !user) return;
 
       const payload = prepareDepositPayload(
-        { ...txn, virtualAccount: va },
+        { ...txn, virtualAccount: va, adminWallet },
         user,
       );
       const response = await postJSON<{
@@ -547,9 +554,11 @@ export const ProcessingUnit = {
             data: { status: next },
           });
         }
+        logger.info({ depositId: txn.uniqueId, status: response.data?.deposit_transaction?.status }, "Processing Unit deposit initiated");
         return;
       }
 
+      logger.warn({ depositId: txn.uniqueId, message: response.message }, "Processing Unit deposit initiation failed");
       await prisma().depositTransaction.update({
         where: { id: txn.id },
         data: { status: DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED },

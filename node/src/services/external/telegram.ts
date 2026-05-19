@@ -162,7 +162,7 @@ export const TelegramNotifier = {
     payload: BeneficiaryTransactionPayload,
   ): Promise<void> {
     const secret = await loadSecret();
-    if (!secret || secret.ENABLED === false) return;
+    if (!secret || String(secret.ENABLED) === "false") return;
     await sendRaw(
       formatBeneficiaryTransaction(payload),
       payload.channel ?? secret.CHAT_ID,
@@ -172,13 +172,13 @@ export const TelegramNotifier = {
 
   async depositReceived(payload: DepositPayload): Promise<void> {
     const secret = await loadSecret();
-    if (!secret || secret.ENABLED === false) return;
+    if (!secret || String(secret.ENABLED) === "false") return;
     await sendRaw(formatDeposit(payload), payload.channel ?? secret.CHAT_ID, secret);
   },
 
   async processingUnitInitiationFailed(payload: PUFailurePayload): Promise<void> {
     const secret = await loadSecret();
-    if (!secret || secret.ENABLED === false) return;
+    if (!secret || String(secret.ENABLED) === "false") return;
     await sendRaw(
       formatPUFailure(payload),
       payload.channel ?? secret.CHAT_ID,
@@ -188,7 +188,7 @@ export const TelegramNotifier = {
 
   async callbackReceived(payload: CallbackPayload): Promise<void> {
     const secret = await loadSecret();
-    if (!secret || secret.ENABLED === false) return;
+    if (!secret || String(secret.ENABLED) === "false") return;
     const text = `<b>Callback received</b> [${escape(payload.provider)}]\n\n<pre>${escape(
       JSON.stringify(payload.payload).slice(0, 3500),
     )}</pre>`;
@@ -201,7 +201,7 @@ export const TelegramNotifier = {
 
   async userReportAlert(text: string, chatId?: string): Promise<void> {
     const secret = await loadSecret();
-    if (!secret || secret.ENABLED === false) return;
+    if (!secret || String(secret.ENABLED) === "false") return;
     await sendRaw(text, chatId ?? secret.CHAT_ID, secret);
   },
 };

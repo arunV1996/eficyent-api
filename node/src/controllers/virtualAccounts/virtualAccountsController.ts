@@ -248,7 +248,11 @@ export const virtualAccountsController = {
         (acc) => acc.uniqueId === va.uniqueId || acc.swift?.uniqueId === va.uniqueId,
       ) ?? va;
 
-    if (q.with_balance === 1 as any) {
+    if (
+      q.with_balance === true ||
+      q.with_balance === 1 as any ||
+      q.with_balance === "1" as any
+    ) {
       await attachBalance(req.user, account);
     }
     const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";

@@ -59,7 +59,7 @@ export function beneficiaryTransactionResource(
   txn: BeneficiaryTransaction & {
     beneficiaryAccount?: BeneficiaryAccount | null;
     sender?: Sender | null;
-    quote?: Quote | null;
+    quotes?: Quote | null;
   },
 ): BeneficiaryTransactionDto {
   const dto: BeneficiaryTransactionDto = {
@@ -72,8 +72,7 @@ export function beneficiaryTransactionResource(
     commission_amount: txn.commissionAmount.toString(),
     recipient_amount: txn.recipientAmount ? txn.recipientAmount.toString() : null,
     receiving_currency: txn.receivingCurrency,
-// @ts-ignore - Catch-all auto-fix for: Property 'paymentRail' does no...
-    payment_rail: txn.paymentRail,
+    payment_rail: txn.rail,
     rail: txn.rail,
     external_type: txn.externalType,
     external_reference_id: txn.externalReferenceId,
@@ -109,15 +108,11 @@ export function beneficiaryTransactionResource(
       email: txn.sender.email,
     };
   }
-  if (txn.quote) {
+  if (txn.quotes) {
     dto.quote = {
-// @ts-ignore - Catch-all auto-fix for: Property 'quotes' does not exi...
       unique_id: txn.quotes.uniqueId,
-// @ts-ignore - Catch-all auto-fix for: Property 'quotes' does not exi...
       fx_rate: txn.quotes.fxRate,
-// @ts-ignore - Catch-all auto-fix for: Property 'quotes' does not exi...
       receiving_amount: txn.quotes.receivingAmount.toString(),
-// @ts-ignore - Catch-all auto-fix for: Property 'quotes' does not exi...
       quote_type: txn.quotes.quoteType,
     };
   }

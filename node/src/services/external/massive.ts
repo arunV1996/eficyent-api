@@ -103,11 +103,16 @@ class MassiveQuoteDriver implements QuoteDriver {
         502,
       );
     }
+
+    // Mirror Laravel: prefer inner.last.bid, fallback to inner.fx_rate.
+    const last = inner["last"] as { bid?: number | string } | undefined;
+    const rate = last?.bid ?? inner.fx_rate ?? 0;
+
     return {
       amount: Number(inner.amount ?? payload.amount),
       receiving_amount: Number(inner.receiving_amount ?? 0),
-      fx_rate: Number(inner.fx_rate ?? 0),
-      external_fx_rate: Number(inner.fx_rate ?? 0),
+      fx_rate: Number(rate),
+      external_fx_rate: Number(rate),
       external_reference_id: inner.external_reference_id ?? undefined,
       expires_at: inner.expires_at ?? undefined,
       external_data: inner as Record<string, unknown>,
@@ -128,7 +133,12 @@ class MassiveQuoteDriver implements QuoteDriver {
     const secret = await loadSecret();
     const res = await call<{
       success?: boolean;
-      data?: { data?: { fx_rate?: number | string } };
+      data?: {
+        data?: {
+          fx_rate?: number | string;
+          last?: { bid?: number | string };
+        };
+      };
     }>(
       { provider: "massive", callFor: "quote" },
       {
@@ -145,9 +155,12 @@ class MassiveQuoteDriver implements QuoteDriver {
       },
     );
     const inner = res.body?.data?.data;
+    const last = inner?.last;
+    const rate = last?.bid ?? inner?.fx_rate;
+
     return {
-      success: res.body?.success === true && Boolean(inner?.fx_rate),
-      fx_rate: inner?.fx_rate ? Number(inner.fx_rate) : null,
+      success: res.body?.success === true && (rate !== undefined && rate !== null),
+      fx_rate: rate ? Number(rate) : null,
       from_currency: payload.from_currency,
       raw: inner,
     };

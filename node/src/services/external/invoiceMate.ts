@@ -87,7 +87,7 @@ async function postWithAuth(
   ctx: { callFor: string; referenceType?: string; referenceId?: bigint },
 ): Promise<InvoiceMateResponse> {
   const secret = await loadSecret();
-  if (!secret || secret.IS_ENABLED === false) {
+  if (!secret || String(secret.IS_ENABLED) === "false") {
     return { success: false, message: "InvoiceMate disabled" };
   }
   const token = await getAuthToken(secret);

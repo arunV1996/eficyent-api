@@ -64,14 +64,14 @@ export const Dispatch = {
   payout: (data: PayoutJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.Payout, "ProcessPayout", data, {
       jobId: data.beneficiaryTransactionId
-        ? `payout:${data.beneficiaryTransactionId}`
-        : `payout-job:${data.payoutJobUniqueId}`,
+        ? `payout-${data.beneficiaryTransactionId}`
+        : `payout-job-${data.payoutJobUniqueId}`,
       ...opts,
     }),
 
   bulkPayout: (data: BulkPayoutJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.BulkPayout, "ProcessBulkPayout", data, {
-      jobId: `bulk:${data.payoutJobUniqueId}`,
+      jobId: `bulk-${data.payoutJobUniqueId}`,
       ...opts,
     }),
 
@@ -89,19 +89,19 @@ export const Dispatch = {
 
   debitNotification: (data: DebitNotificationJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.DebitNotification, "SendDebitNotification", data, {
-      jobId: `debit:${data.beneficiaryTransactionId}`,
+      jobId: `debit-${data.beneficiaryTransactionId}`,
       ...opts,
     }),
 
   complianceBatch: (data: ComplianceBatchJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.ComplianceBatch, "ExecuteComplianceBatch", data, {
-      jobId: `compliance-batch:${Date.now()}`,
+      jobId: `compliance-batch-${Date.now()}`,
       ...opts,
     }),
 
   remittanceBatch: (data: RemittanceBatchJobPayload, opts?: JobsOptions) =>
     enqueue(QueueNames.RemittanceBatch, "ExecuteRemittanceBatch", data, {
-      jobId: `remittance-batch:${Date.now()}`,
+      jobId: `remittance-batch-${Date.now()}`,
       ...opts,
     }),
 };

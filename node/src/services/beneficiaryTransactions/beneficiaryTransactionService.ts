@@ -172,16 +172,13 @@ export async function createPayoutTransaction(
         senderId: resolvedSenderId,
         quoteId: quote.id,
         beneficiaryAccountId: beneficiaryAccount.id,
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-        virtualAccountId:
-          quote.sourceType === MORPH_VIRTUAL_ACCOUNT ? quote.sourceId : null,
         amount: quote.amount,
         commissionAmount: fees,
         totalAmount: quote.amount.plus(fees),
         recipientAmount: quote.receivingAmount,
         receivingCurrency: quote.receivingCurrency,
         externalType: quote.externalType,
-        paymentRail: quote.paymentRail,
+        rail: quote.paymentRail,
         purposeOfPayment: payload.purpose_of_payment ?? null,
         supportingDocument: payload.supporting_document ?? null,
         remarks: payload.remarks ?? null,
