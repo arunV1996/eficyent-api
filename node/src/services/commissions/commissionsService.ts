@@ -132,17 +132,15 @@ function calcFxFee(
   return { amount: 0, isFixed: false };
 }
 
-/**
- * Checks if a FIXED fx_fee exists for the given pair/user. If so, returns
- * that numeric rate to short-circuit the external quote provider call.
- */
 export async function getFixedRate(
   userId: bigint,
   merchantId: bigint | null,
   fromCurrency: string,
   toCurrency: string,
 ): Promise<number | null> {
-  const q = { feeName: FX_FEE, currency1: fromCurrency, currency2: toCurrency };
+  const c1 = fromCurrency.toUpperCase();
+  const c2 = toCurrency.toUpperCase();
+  const q = { feeName: FX_FEE, currency1: c1, currency2: c2 };
 
   // 1. User fixed fee
   const userFee = await findUserFee(userId, q);
@@ -158,14 +156,11 @@ export async function getFixedRate(
     }
   }
 
-  // 3. Global fixed fee
-  if (!merchantId) {
-    const globalFee = await findGlobalFee(q);
-    if (globalFee && parseInt(globalFee.feeType, 10) === FEE_TYPE_FIXED) {
-      return Number(globalFee.feeValue);
-    }
+  // 3. Global fixed fee fallback
+  const globalFee = await findGlobalFee(q);
+  if (globalFee && parseInt(globalFee.feeType, 10) === FEE_TYPE_FIXED) {
+    return Number(globalFee.feeValue);
   }
-
   return null;
 }
 
@@ -200,8 +195,8 @@ export async function calcFxCommissions(
   ctx: CalcContext,
 ): Promise<CalcFxResult> {
   const baseRate = q.fxRate;
-  const c1 = q.sourceCurrency;
-  const c2 = q.receivingCurrency;
+  const c1 = q.sourceCurrency.toUpperCase();
+  const c2 = q.receivingCurrency.toUpperCase();
 
   let userCommission = 0;
   let merchantCommission = 0;
@@ -307,15 +302,16 @@ export async function calcTransactionCommissions(
     merchant_commission_amount: 0,
   };
 
+  const receivingCurrency = q.receivingCurrency.toUpperCase();
   let userFee = await findUserFee(ctx.userId, {
     feeName: TRANSACTION_FEE,
-    currency1: q.receivingCurrency,
+    currency1: receivingCurrency,
     mode: q.paymentRail ?? null,
   });
   if (!userFee && !ctx.merchantId) {
     userFee = await findGlobalFee({
       feeName: TRANSACTION_FEE,
-      currency1: q.receivingCurrency,
+      currency1: receivingCurrency,
       mode: q.paymentRail ?? null,
     });
   }
@@ -326,13 +322,13 @@ export async function calcTransactionCommissions(
   if (ctx.merchantId) {
     let merchantFee = await findMerchantFee(ctx.merchantId, {
       feeName: TRANSACTION_FEE,
-      currency1: q.receivingCurrency,
+      currency1: receivingCurrency,
       mode: q.paymentRail ?? null,
     });
     if (!merchantFee) {
       merchantFee = await findGlobalFee({
         feeName: TRANSACTION_FEE,
-        currency1: q.receivingCurrency,
+        currency1: receivingCurrency,
         mode: q.paymentRail ?? null,
       });
     }
@@ -359,22 +355,23 @@ export async function calcDepositCommissions(
     commission_amount: 0,
     merchant_commission_amount: 0,
   };
+  const cur = currency.toUpperCase();
   let userFee = await findUserFee(ctx.userId, {
     feeName: DEPOSIT_FEE,
-    currency1: currency,
+    currency1: cur,
   });
   if (!userFee && !ctx.merchantId) {
-    userFee = await findGlobalFee({ feeName: DEPOSIT_FEE, currency1: currency });
+    userFee = await findGlobalFee({ feeName: DEPOSIT_FEE, currency1: cur });
   }
   if (userFee) out.merchant_commission_amount = calcFlatFee(userFee, amount);
 
   if (ctx.merchantId) {
     let merchantFee = await findMerchantFee(ctx.merchantId, {
       feeName: DEPOSIT_FEE,
-      currency1: currency,
+      currency1: cur,
     });
     if (!merchantFee) {
-      merchantFee = await findGlobalFee({ feeName: DEPOSIT_FEE, currency1: currency });
+      merchantFee = await findGlobalFee({ feeName: DEPOSIT_FEE, currency1: cur });
     }
     if (merchantFee) out.commission_amount = calcFlatFee(merchantFee, amount);
   } else {

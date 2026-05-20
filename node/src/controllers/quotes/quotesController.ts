@@ -90,12 +90,13 @@ async function buildResponse(
   quoteMode: QuoteMode["mode"],
   recipientTypeNumeric: number,
 ): Promise<Record<string, unknown>> {
+  const receivingCurrency = body.receiving_currency.toUpperCase();
   const isCrossBorderUsd =
-    body.recipient_country !== "USA" && body.receiving_currency.toUpperCase() === "USD";
+    body.recipient_country !== "USA" && receivingCurrency === "USD";
   const paymentRail = isCrossBorderUsd ? "swift" : body.payment_rail ?? null;
 
   if (source.kind === "wallet") {
-    if (source.row.currency !== body.receiving_currency) throw new ApiException(172);
+    if (source.row.currency !== receivingCurrency) throw new ApiException(172);
     if (source.row.status !== WALLET_STATUS_ACTIVE) throw new ApiException(169);
     return {
       amount: body.amount,
@@ -104,7 +105,7 @@ async function buildResponse(
       external_fx_rate: "1",
       internal_fx_rate: "1",
       recipient_country: body.recipient_country,
-      receiving_currency: body.receiving_currency,
+      receiving_currency: receivingCurrency,
       recipient_type: recipientTypeNumeric,
       quote_type: body.quote_type,
       receiving_amount: body.amount,
@@ -116,11 +117,11 @@ async function buildResponse(
   }
 
   // VirtualAccount source.
-  if (source.row.currency === body.receiving_currency) {
+  if (source.row.currency === receivingCurrency) {
     const tx = await calcTransactionCommissions(
       {
         amount: body.amount,
-        receivingCurrency: body.receiving_currency,
+        receivingCurrency: receivingCurrency,
         paymentRail,
       },
       { userId, merchantId },
@@ -134,7 +135,7 @@ async function buildResponse(
       internal_fx_rate: "1",
       receiving_amount: body.amount,
       recipient_country: body.recipient_country,
-      receiving_currency: body.receiving_currency,
+      receiving_currency: receivingCurrency,
       recipient_type: recipientTypeNumeric,
       quote_type: body.quote_type,
       payment_rail: paymentRail,
@@ -155,7 +156,7 @@ async function buildResponse(
     userId,
     merchantId,
     source.row.currency,
-    body.receiving_currency,
+    receivingCurrency,
   );
 
   if (fixedRate !== null) {
@@ -183,7 +184,7 @@ async function buildResponse(
       {
         amount: body.amount,
         from_currency: source.row.currency,
-        receiving_currency: body.receiving_currency,
+        receiving_currency: receivingCurrency,
         recipient_country: body.recipient_country,
         recipient_type: recipientTypeNumeric,
         quote_type: body.quote_type,
@@ -202,7 +203,7 @@ async function buildResponse(
       receivingAmount: driverResp.receiving_amount,
       fxRate: driverResp.fx_rate,
       quoteType: driverResp.quote_type,
-      receivingCurrency: body.receiving_currency,
+      receivingCurrency: receivingCurrency,
       sourceCurrency: source.row.currency,
       paymentRail,
     },
@@ -217,7 +218,7 @@ async function buildResponse(
     txCommission = await calcTransactionCommissions(
       {
         amount: driverResp.amount,
-        receivingCurrency: body.receiving_currency,
+        receivingCurrency: receivingCurrency,
         paymentRail,
       },
       { userId, merchantId },
@@ -247,7 +248,7 @@ async function buildResponse(
     merchant_commission_amount: txCommission.merchant_commission_amount,
     external_commission_amount: externalCommission,
     recipient_country: body.recipient_country,
-    receiving_currency: body.receiving_currency,
+    receiving_currency: receivingCurrency,
     recipient_type: recipientTypeNumeric,
     quote_type: body.quote_type,
     payment_rail: paymentRail,
