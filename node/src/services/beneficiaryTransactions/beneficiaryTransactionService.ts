@@ -183,7 +183,7 @@ export async function createPayoutTransaction(
         supportingDocument: payload.supporting_document ?? null,
         remarks: payload.remarks ?? null,
         clientReferenceId: payload.client_reference_id ?? null,
-        orderId: `TXN${Date.now().toString().slice(-8)}${uniqueId(4).toUpperCase()}`,
+        orderId: `TXN${Math.floor(Date.now() / 1000).toString().slice(-8)}${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
         status: finalStatus,
       },
     });
