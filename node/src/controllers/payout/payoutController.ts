@@ -85,7 +85,7 @@ async function findOneByAnyId(
           : { id: -1n },
       ],
     },
-    include: { beneficiaryAccount: true, quotes: true },
+    include: { beneficiaryAccount: true, quotes: true, senders: true, team_members: true },
   });
 }
 
@@ -129,10 +129,10 @@ export const payoutController = {
         orderBy: { createdAt: "desc" },
         skip,
         take,
-        include: { beneficiaryAccount: true, quotes: true },
+        include: { beneficiaryAccount: true, quotes: true, senders: true, team_members: true },
       }),
     ]);
-    return sendResponse(res, "", 200, {
+    return sendResponse(res, "", "", {
       total,
       beneficiary_transactions: rows.map(beneficiaryTransactionResource),
     });
@@ -142,7 +142,7 @@ export const payoutController = {
     if (!req.user) throw new ApiException(102);
     const body = req.body as PayoutStoreInput;
     const txn = await createPayoutTransaction(body, req.user);
-    return sendResponse(res, apiSuccess(108), 108, {
+    return sendResponse(res, apiSuccess(108), "", {
       beneficiary_transaction: beneficiaryTransactionResource(txn),
     });
   },
@@ -152,7 +152,7 @@ export const payoutController = {
     const q = req.query as unknown as PayoutShowInput;
     const txn = await findOneByAnyId(req.user.id, q);
     if (!txn) throw new ApiException(124);
-    return sendResponse(res, "Transaction fetched.", 200, {
+    return sendResponse(res, "Transaction fetched successfully.", "", {
       beneficiary_transaction: beneficiaryTransactionResource(txn),
     });
   },
