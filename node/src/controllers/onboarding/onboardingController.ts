@@ -108,6 +108,11 @@ function userInformationCreateData(infoPart: Record<string, unknown>): Prisma.Us
     ["id_type", "idType"],
     ["id_number", "idNumber"],
     ["business_verification_type", "businessVerificationType"],
+    ["purpose_of_transactions", "purposeOfTransactions"],
+    ["profession", "profession"],
+    ["source_of_income", "sourceOfIncome"],
+    ["type_of_business", "type_of_business"],
+    ["country_of_incorporation", "country_of_incorporation"],
   ];
   for (const [src, dst] of map) {
     if (infoPart[src] !== undefined) {

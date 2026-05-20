@@ -92,6 +92,12 @@ export const LOOKUP_TYPE_PROFESSION = "professions";
 export const LOOKUP_TYPE_SOURCE_OF_INCOME = "sources_of_incomes";
 export const LOOKUP_TYPE_PAYMENT_METHOD = "payment_methods";
 export const LOOKUP_BUSINESS_VERIFICATION_TYPES = "business_verification_types";
+export const LOOKUP_TYPE_ADDRESS_TYPES = "address_types";
+export const LOOKUP_TYPE_PROOF_OF_ADDRESS = "proof_of_address";
+export const LOOKUP_TYPE_ID_TYPE = "id_type";
+export const LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS = "purposes_of_transactions";
+export const LOOKUP_TYPE_EEC_PAYMENT_PURPOSE = "eec_payment_purposes";
+export const LOOKUP_TYPE_DOCUMENT_TYPES = "document_types";
 
 export const PAYMENT_RAIL_WIRE = "wire";
 export const PAYMENT_RAIL_SWIFT = "swift";

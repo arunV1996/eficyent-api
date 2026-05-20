@@ -28,6 +28,17 @@ import { lookupsService } from "../services/lookups/lookupsService";
 import { prisma } from "../db/prisma";
 import { settingGet } from "../services/settings/settingsService";
 import { PASSWORD_REGEX } from "./lookups";
+import {
+  LOOKUP_TYPE_DOCUMENT_TYPES,
+  LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS,
+  LOOKUP_TYPE_EEC_PAYMENT_PURPOSE,
+  LOOKUP_TYPE_ID_TYPE,
+  LOOKUP_TYPE_PROFESSION,
+  LOOKUP_TYPE_PROOF_OF_ADDRESS,
+  LOOKUP_TYPE_SOURCE_OF_FUNDS,
+  LOOKUP_TYPE_SOURCE_OF_INCOME,
+  LOOKUP_TYPE_ADDRESS_TYPES,
+} from "./constants";
 
 export interface FieldDef {
   field_key: string;
@@ -178,10 +189,32 @@ interface FormBuildContext {
   business_types: { label: string; value: string }[];
   id_types: { label: string; value: string }[];
   business_verification_types: { label: string; value: string }[];
+  address_types: { label: string; value: string }[];
+  proof_of_address: { label: string; value: string }[];
+  source_of_funds: { label: string; value: string }[];
+  purposes_of_transactions: { label: string; value: string }[];
+  sources_of_income: { label: string; value: string }[];
+  eec_payment_purposes: { label: string; value: string }[];
+  document_types: { label: string; value: string }[];
 }
 
 async function buildContext(): Promise<FormBuildContext> {
-  const [countries, mcc, states, professions, business_types, id_types, business_verification_types] = await Promise.all([
+  const [
+    countries,
+    mcc,
+    states,
+    professions,
+    business_types,
+    id_types,
+    business_verification_types,
+    address_types,
+    proof_of_address,
+    source_of_funds,
+    purposes_of_transactions,
+    sources_of_income,
+    eec_payment_purposes,
+    document_types,
+  ] = await Promise.all([
     lookupsService.countries().then((rows) =>
       rows.map((r) => ({ label: r.label, value: r.value, flag: r.flag })),
     ),
@@ -196,10 +229,17 @@ async function buildContext(): Promise<FormBuildContext> {
     lookupsService.states().then((rows) =>
       rows.map((r) => ({ label: r.label, value: r.value, parent_value: r.parent_value })),
     ),
-    lookupsService.professions(),
+    lookupsService.getLookups(LOOKUP_TYPE_PROFESSION),
     lookupsService.businessTypes(),
-    lookupsService.idTypes(),
+    lookupsService.getLookups(LOOKUP_TYPE_ID_TYPE),
     lookupsService.businessVerificationTypes(),
+    lookupsService.getLookups(LOOKUP_TYPE_ADDRESS_TYPES),
+    lookupsService.getLookups(LOOKUP_TYPE_PROOF_OF_ADDRESS),
+    lookupsService.getLookups(LOOKUP_TYPE_SOURCE_OF_FUNDS),
+    lookupsService.getLookups(LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS),
+    lookupsService.getLookups(LOOKUP_TYPE_SOURCE_OF_INCOME),
+    lookupsService.getLookups(LOOKUP_TYPE_EEC_PAYMENT_PURPOSE),
+    lookupsService.getLookups(LOOKUP_TYPE_DOCUMENT_TYPES),
   ]);
   return {
     countries,
@@ -209,6 +249,13 @@ async function buildContext(): Promise<FormBuildContext> {
     business_types,
     id_types,
     business_verification_types,
+    address_types,
+    proof_of_address,
+    source_of_funds,
+    purposes_of_transactions,
+    sources_of_income,
+    eec_payment_purposes,
+    document_types,
   };
 }
 
@@ -288,8 +335,12 @@ function baseBusinessFields(ctx: FormBuildContext): FieldDef[] {
 
 function registrationFormFields(ctx: FormBuildContext): FieldDef[] {
   return [
-    make("first_name", "First Name", { validation: VALIDATION_PRESETS.name }),
-    make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
+    make("user_type", "User Type", {
+      values: [
+        { label: "Individual", value: "Individual" },
+        { label: "Business", value: "Business" },
+      ],
+    }),
     make("email", "Email", { validation: VALIDATION_PRESETS.email }),
     make("password", "Password", {
       validation: VALIDATION_PRESETS.password,
@@ -298,32 +349,68 @@ function registrationFormFields(ctx: FormBuildContext): FieldDef[] {
       values: ctx.mobile_country_codes,
     }),
     make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
+    make("device_type", "Device Type", {
+      mandatory: false,
+      values: [
+        { label: "Android", value: "Android" },
+        { label: "IOS", value: "IOS" },
+        { label: "Web", value: "Web" },
+      ],
+    }),
   ];
 }
 
 function individualOnboardingFields(ctx: FormBuildContext): FieldDef[] {
   return [
+    make("title", "Title", {
+      values: [
+        { label: "Mr", value: "Mr" },
+        { label: "Mrs", value: "Mrs" },
+        { label: "Miss", value: "Miss" },
+      ],
+    }),
+    make("first_name", "First Name", { validation: VALIDATION_PRESETS.name }),
+    make("middle_name", "Middle Name", {
+      mandatory: false,
+      validation: VALIDATION_PRESETS.name,
+    }),
+    make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
     make("dob", "Date of Birth", {
       type: "date",
-      validation: { max_date: new Date(Date.now() - 18 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }
+      validation: {
+        max_date: new Date(Date.now() - 18 * 365 * 24 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0],
+      },
     }),
-    make("country", "Country of Residence", { values: ctx.countries }),
+    make("gender", "Gender", {
+      values: [
+        { label: "Male", value: "Male" },
+        { label: "Female", value: "Female" },
+        { label: "Others", value: "Others" },
+      ],
+    }),
     make("address_1", "Address Line 1", {
       validation: VALIDATION_PRESETS.address,
     }),
     make("address_2", "Address Line 2", {
-      mandatory: false,
       validation: VALIDATION_PRESETS.address,
     }),
+    make("country", "Country", { values: ctx.countries }),
+    make("state", "State / Province", { values: ctx.states, parent_key: "country" }),
     make("city", "City", { validation: VALIDATION_PRESETS.city }),
-    make("state", "State", { values: ctx.states, parent_key: "country" }),
     make("postal_code", "Postal Code", {
       validation: VALIDATION_PRESETS.postal_code,
     }),
-    make("id_type", "Identification Type", { values: ctx.id_types }),
-    make("id_number", "Identification Number", {
+    make("purpose_of_transactions", "Purpose of Transactions", {
+      values: ctx.purposes_of_transactions,
+    }),
+    make("id_type", "ID Type", { values: ctx.id_types }),
+    make("id_number", "ID Number", {
       validation: VALIDATION_PRESETS.id_number,
     }),
+    make("profession", "Profession", { values: ctx.professions }),
+    make("source_of_income", "Source of Income", { values: ctx.sources_of_income }),
   ];
 }
 
@@ -346,11 +433,10 @@ function businessOnboardingFields(ctx: FormBuildContext): FieldDef[] {
       validation: VALIDATION_PRESETS.address,
     }),
     make("address_2", "Address Line 2", {
-      mandatory: false,
       validation: VALIDATION_PRESETS.address,
     }),
     make("country", "Country", { values: ctx.countries }),
-    make("state", "State", { values: ctx.states, parent_key: "country" }),
+    make("state", "State / Province", { values: ctx.states, parent_key: "country" }),
     make("city", "City", { validation: VALIDATION_PRESETS.city }),
     make("postal_code", "Postal Code", {
       validation: VALIDATION_PRESETS.postal_code,
@@ -358,7 +444,7 @@ function businessOnboardingFields(ctx: FormBuildContext): FieldDef[] {
     make("business_verification_type", "Business Verification Type", {
       values: ctx.business_verification_types,
     }),
-    make("owners", "Owners", {
+    make("owners", "Business Owners", {
       type: "group",
       repeatable: true,
       validation: { min_length: 1, max_length: 10 },
@@ -367,7 +453,11 @@ function businessOnboardingFields(ctx: FormBuildContext): FieldDef[] {
         make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
         make("dob", "Date of Birth", {
           type: "date",
-          validation: { max_date: new Date(Date.now() - 18 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }
+          validation: {
+            max_date: new Date(Date.now() - 18 * 365 * 24 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split("T")[0],
+          },
         }),
         make("id_type", "ID Type", { values: ctx.id_types }),
         make("id_number", "ID Number", { validation: VALIDATION_PRESETS.id_number }),
@@ -430,19 +520,22 @@ function documentGroup(
 
 function getDocumentGroups(
   userType: number | bigint,
-  countries: FormBuildContext["countries"],
+  ctx: FormBuildContext,
 ): FieldDef[] {
+  const common = [
+    documentGroup("proof_of_address", "Proof of Address", ctx.countries, ctx.proof_of_address),
+    documentGroup("source_of_funds", "Source of Funds", [], ctx.source_of_funds),
+  ];
   if (Number(userType) === USER_TYPE_INDIVIDUAL) {
     return [
-      documentGroup("id_document", "Identity Document", countries),
-      documentGroup("proof_of_address", "Proof of Address", countries),
+      ...common,
+      documentGroup("id_document", "Identity Document", ctx.countries, ctx.id_types),
     ];
   }
   if (Number(userType) === USER_TYPE_BUSINESS) {
     return [
-      documentGroup("incorporation_certificate", "Incorporation Certificate", countries),
-      documentGroup("proof_of_address", "Proof of Address", countries),
-      documentGroup("proof_of_ownership", "Proof of Ownership", countries),
+      ...common,
+      documentGroup("proof_of_ownership", "Proof of Ownership", ctx.countries),
     ];
   }
   return [];
@@ -467,7 +560,7 @@ export async function onboardingFormFields(
       if (Number(userType) === USER_TYPE_BUSINESS) return businessOnboardingFields(ctx);
       return [];
     case 3:
-      return getDocumentGroups(userType, ctx.countries);
+      return getDocumentGroups(userType, ctx);
     default:
       return [];
   }
@@ -521,25 +614,20 @@ export async function beneficiaryFormFields(payload: {
     }),
   );
 
-  const additional: FieldDef[] = [];
+  const additionalFields = bankFieldsByCountry(
+    supportedCountry.countryCode,
+    supportedCountry.currency,
+    ctx,
+  );
 
-  // Bank fields by country/currency. The Laravel version has per-country
-  // overrides; for Phase 3 we apply the canonical USD rule + a minimal default.
-  if (payload.currency === "USD") {
-    additional.push(
-      make("account_number", "Account Number", {
-        validation: { min_length: 4, max_length: 17, regex: "/^[0-9]{4,17}$/" },
-      }),
-      make("routing_number", "Routing Number", {
-        validation: VALIDATION_PRESETS.routing,
-      }),
-      make("swift_code", "Swift Code", {
-        mandatory: false,
-        validation: VALIDATION_PRESETS.swift,
-      }),
-    );
-    // Intermediary bank fields are optional and only relevant for SWIFT.
-    additional.push(
+  const purposeOfTransactionField = make("purpose_of_transaction", "Purpose of Transactions", {
+    values: ctx.purposes_of_transactions,
+  });
+
+  let fields = [...base, ...additionalFields, purposeOfTransactionField];
+
+  if (supportedCountry.currency === "USD") {
+    const intermediary: FieldDef[] = [
       make("intermediary_bank_name", "Intermediary Bank Name", {
         mandatory: false,
         validation: VALIDATION_PRESETS.name,
@@ -573,49 +661,123 @@ export async function beneficiaryFormFields(payload: {
         mandatory: false,
         validation: VALIDATION_PRESETS.postal_code,
       }),
-    );
-  } else {
-    additional.push(
-      make("account_number", "Account Number", {
-        validation: { min_length: 4, max_length: 34 },
-      }),
-      make("iban", "IBAN", {
-        mandatory: false,
-        validation: VALIDATION_PRESETS.iban,
-      }),
-      make("swift_code", "Swift Code", {
-        mandatory: false,
-        validation: VALIDATION_PRESETS.swift,
-      }),
-    );
+    ];
+    fields = [...fields, ...intermediary];
   }
 
-  // Service bank vs free-form bank name.
+  // Service bank vs free-form bank name (Laravel-style conditional).
   if (supportedCountry.externalType === EXTERNAL_TYPE_DIGININE) {
     const isRequired = ["NPL", "PAK"].includes(supportedCountry.countryCode);
     const banks = await lookupsService.serviceBanks(payload.country, payload.currency);
-    additional.push(
-      make("service_bank", "Service Bank", { mandatory: isRequired, values: banks }),
-    );
-  } else {
-    additional.push(
-      make("bank_name", "Bank Name", { validation: VALIDATION_PRESETS.name }),
-    );
+    fields.push(make("service_bank", "Service Bank", { mandatory: isRequired, values: banks }));
   }
-
-  additional.push(
-    make("purpose_of_transaction", "Purpose of Transactions", {
-      values: [],
-    }),
-  );
-
-  const fields = [...base, ...additional];
 
   beneficiaryFormCache.set(cacheKey, {
     value: fields,
     expiresAt: Date.now() + BENEFICIARY_FORM_TTL_MS,
   });
   return fields;
+}
+
+function bankFieldsByCountry(country: string, currency: string, _ctx: FormBuildContext): FieldDef[] {
+  const accountTypeField = make("account_type", "Account Type", {
+    values: [
+      { label: "Checking", value: "Checking" },
+      { label: "Savings", value: "Savings" },
+      { label: "General Ledger", value: "General Ledger" },
+      { label: "Loan", value: "Loan" },
+    ],
+  });
+
+  const isForeignCurrency = currency === "USD" && country !== "USA";
+
+  switch (country.toUpperCase()) {
+    case "HKG":
+      return [
+        accountTypeField,
+        make("account_number", "Account Number", { validation: { regex: "^[A-Za-z0-9]{4,34}$" } }),
+        make("code", isForeignCurrency ? "SWIFT/BIC" : "Branch Code", {
+          validation: isForeignCurrency ? VALIDATION_PRESETS.swift : { regex: "^\\d{3}$" },
+        }),
+      ];
+    case "IND":
+      return [
+        accountTypeField,
+        make("account_number", "Account Number", { validation: { regex: "^[0-9]{9,18}$" } }),
+        make("code", isForeignCurrency ? "SWIFT/BIC" : "IFSC Code", {
+          validation: isForeignCurrency ? VALIDATION_PRESETS.swift : VALIDATION_PRESETS.ifsc,
+        }),
+      ];
+    case "ARE":
+      return [
+        accountTypeField,
+        make("account_number", "IBAN", { validation: VALIDATION_PRESETS.iban }),
+        make("code", "SWIFT/BIC", { validation: VALIDATION_PRESETS.swift }),
+      ];
+    case "LKA":
+      return [
+        accountTypeField,
+        make("account_number", "Account Number", { validation: { regex: "^\\d{6,15}$" } }),
+        make("code", isForeignCurrency ? "SWIFT/BIC" : "Bank Code", {
+          validation: isForeignCurrency ? VALIDATION_PRESETS.swift : { regex: "^\\d{4}$" },
+        }),
+      ];
+    case "NPL":
+      return [
+        accountTypeField,
+        make("account_number", "Account Number", { validation: { regex: "^[0-9]{10,18}$" } }),
+        make("code", "SWIFT/BIC", {
+          mandatory: false,
+          validation: VALIDATION_PRESETS.swift,
+        }),
+      ];
+    case "PAK":
+      return [
+        accountTypeField,
+        make("account_number", "IBAN", {
+          validation: { regex: "^[A-Z]{2}[0-9]{2}[A-Z]{4}[A-Z0-9]{16}$" },
+        }),
+        make("code", "Code", {
+          mandatory: false,
+          validation: VALIDATION_PRESETS.swift,
+        }),
+      ];
+    case "BGD":
+      return [
+        accountTypeField,
+        make("account_number", "Account Number", { validation: { regex: "^[0-9]{10,17}$" } }),
+        make("code", isForeignCurrency ? "SWIFT/BIC" : "Routing Number", {
+          validation: isForeignCurrency ? VALIDATION_PRESETS.swift : { regex: "^[0-9]{9}$" },
+        }),
+      ];
+    case "PHL":
+      return [
+        accountTypeField,
+        make("account_number", "Account Number", { validation: { regex: "^\\d{6,18}$" } }),
+        make("code", isForeignCurrency ? "SWIFT/BIC" : "BRSTN", {
+          validation: isForeignCurrency ? VALIDATION_PRESETS.swift : { regex: "^[a-zA-Z0-9]{8,12}$" },
+        }),
+      ];
+    case "USA":
+      return [
+        accountTypeField,
+        make("account_number", "Account Number", { mandatory: false }),
+        make("iban", "IBAN", { mandatory: false, validation: VALIDATION_PRESETS.iban }),
+        make("code", "SWIFT/BIC", { mandatory: false, validation: VALIDATION_PRESETS.swift }),
+        make("routing_number", "Routing Number", {
+          mandatory: false,
+          validation: VALIDATION_PRESETS.swift,
+        }),
+      ];
+    default:
+      return [
+        accountTypeField,
+        make("account_number", "Account Number / IBAN", {
+          validation: { regex: "^[A-Za-z0-9]{4,34}$" },
+        }),
+        make("code", "SWIFT/BIC/Routing Number", { validation: VALIDATION_PRESETS.swift }),
+      ];
+  }
 }
 
 /**
@@ -628,7 +790,7 @@ export async function updateProfileFormFields(
 ): Promise<FieldDef[]> {
   void externalType; // FvBank/Caliza-specific overrides land in Phase 8.
   const ctx = await buildContext();
-  return getDocumentGroups(user.userType, ctx.countries);
+  return getDocumentGroups(user.userType, ctx);
 }
 
 /**
@@ -645,35 +807,71 @@ export async function siteName(): Promise<string> {
  * (user, type, country) for per-corridor overrides; the simplified Phase 6
  * shape covers the canonical fields.
  */
-export async function transactionFormFields(): Promise<FieldDef[]> {
+export async function transactionFormFields(
+  user?: any,
+  type?: string,
+  country?: string,
+): Promise<FieldDef[]> {
+  const isSupportingDocumentRequired = await merchantSettingEnabled(
+    user,
+    "is_supporting_document_required",
+    true,
+  );
+  const isRemarksRequired = await merchantSettingEnabled(user, "is_remarks_required", true);
+  const isPurposeOfPaymentRequired = await merchantSettingEnabled(
+    user,
+    "is_purpose_of_payment_required",
+    false,
+  );
+  const isTransactionRefRequired = await merchantSettingEnabled(
+    user,
+    "is_transaction_reference_no_required",
+    false,
+  );
+
+  const isB2B = type === "B2B";
+  const isUSA = country?.toUpperCase() === "USA";
+
+  const finalSupportingDocRequired = isSupportingDocumentRequired || isB2B || isUSA;
+
+  const ctx = await buildContext();
+
   return [
-    make("amount", "Amount", {
-      type: "number",
-      validation: { min_value: 1, max_value: 10_000_000 },
-    }),
     make("quote_id", "Quote ID"),
     make("remarks", "Remarks", {
+      mandatory: isRemarksRequired,
+      validation: { max_length: 255 },
+    }),
+    make("client_reference_id", "Client Reference ID", {
       mandatory: false,
       validation: { max_length: 255 },
     }),
-    make("purpose_of_payment", "Purpose of Payment", { mandatory: false }),
+    make("purpose_of_payment", "Purpose of Payment", {
+      mandatory: isPurposeOfPaymentRequired,
+      values: ctx.eec_payment_purposes,
+    }),
     make("supporting_document", "Supporting Document", {
       type: "file",
-      mandatory: false,
+      mandatory: finalSupportingDocRequired,
       validation: {
         accepted_extensions: ["image/jpeg", "image/png", "image/jpg", "application/pdf"],
         max_file_size: 5 * 1024 * 1024,
       },
     }),
     make("txn_ref_no", "Transaction Reference Number", {
-      mandatory: false,
+      mandatory: isTransactionRefRequired,
       validation: { max_length: 64 },
     }),
-    make("client_reference_id", "Client Reference ID", {
-      mandatory: false,
-      validation: { max_length: 255 },
-    }),
   ];
+}
+
+async function merchantSettingEnabled(user: any, key: string, defaultValue: boolean): Promise<boolean> {
+  if (!user?.merchantId) return defaultValue;
+  const val = await prisma().merchantSetting.findFirst({
+    where: { merchantId: BigInt(user.merchantId), key },
+  });
+  if (!val || val.value === null) return defaultValue;
+  return val.value === "1";
 }
 
 /**
@@ -740,8 +938,10 @@ export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]
     make("postal_code", "Postal Code", {
       validation: VALIDATION_PRESETS.postal_code,
     }),
-    make("source_of_funds", "Source of Funds"),
-    make("id_type", "ID Type"),
+    make("source_of_funds", "Source of Funds", {
+      values: [...formCtx.source_of_funds, ...formCtx.eec_payment_purposes],
+    }),
+    make("id_type", "ID Type", { values: formCtx.id_types }),
     make("id_number", "ID Number", { validation: VALIDATION_PRESETS.id_number }),
   ];
   if (ctx.remitterDepositEnabled) {
@@ -816,31 +1016,12 @@ export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]
           mandatory: false,
           validation: VALIDATION_PRESETS.postal_code,
         }),
-        make("designation", "Designation"),
+        make("designation", "Designation", { values: formCtx.professions }),
       ],
     });
 
     const documents: FieldDef[] = [
-      make("proofs", "Proofs", {
-        type: "group",
-        children: [
-          make("document_file", "Document Front File", {
-            type: "file",
-            validation: {
-              accepted_extensions: ["image/jpeg", "image/png", "image/jpg", "application/pdf"],
-              max_file_size: 5 * 1024 * 1024,
-            },
-          }),
-          make("document_back_file", "Document Back File", {
-            type: "file",
-            mandatory: false,
-            validation: {
-              accepted_extensions: ["image/jpeg", "image/png", "image/jpg", "application/pdf"],
-              max_file_size: 5 * 1024 * 1024,
-            },
-          }),
-        ],
-      }),
+      documentGroup("proofs", "Proofs", [], formCtx.document_types),
     ];
 
     fields = [...business, ...common, ...documents, owners];

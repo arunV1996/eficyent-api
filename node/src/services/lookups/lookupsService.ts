@@ -316,6 +316,14 @@ export const lookupsService = {
     });
     return rows.map((r) => ({ label: r.value, value: r.key }));
   },
+
+  async getLookups(type: string): Promise<LookupItem[]> {
+    const rows = await prisma().lookup.findMany({
+      where: { type, status: ACTIVE },
+      orderBy: { value: "asc" },
+    });
+    return rows.map((r) => ({ label: r.value, value: r.key }));
+  },
 };
 
 function relativeTime(date: Date, _tz: string): string {
