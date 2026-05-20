@@ -116,8 +116,9 @@ export const ledgerController = {
       }),
     ]);
     const enriched = await Promise.all(rows.map(loadTransaction));
-    return sendResponse(res, "", 200, {
+    return sendResponse(res, "", "", {
       total,
+      receiving_currency: null,
       ledgers: enriched.map(ledgerResource),
     });
   },
@@ -130,7 +131,7 @@ export const ledgerController = {
     });
     if (!row) throw new ApiException(149);
     const enriched = await loadTransaction(row);
-    return sendResponse(res, "", 200, { ledger: ledgerResource(enriched) });
+    return sendResponse(res, "", "", { ledger: ledgerResource(enriched) });
   },
 
   async export(req: Request, res: Response): Promise<Response> {
@@ -214,6 +215,7 @@ async function loadTransaction(
     case MORPH_BENEFICIARY_TRANSACTION: {
       const t = await prisma().beneficiaryTransaction.findUnique({
         where: { id: ledger.transactionId },
+        include: { beneficiaryAccount: true },
       });
       return Object.assign(ledger, { transaction: t });
     }

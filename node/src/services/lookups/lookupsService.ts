@@ -8,7 +8,7 @@ import {
   C2C,
   USER_TYPE_BUSINESS,
 } from "../../helpers/constants";
-import { getFlagUrl } from "../../helpers/lookups";
+import { getFlagUrl, getPaymentRails } from "../../helpers/lookups";
 import { User } from "@prisma/client";
 
 /**
@@ -118,9 +118,7 @@ export const lookupsService = {
   async receivingCountries(
     paymentType: string,
     user: User & { merchant?: { id: bigint } | null },
-  ): Promise<
-    { country_name: string; country_code: string; currencies: string[] }[]
-  > {
+  ): Promise<any[]> {
     let rows: {
       countryName: string;
       countryCode: string;
@@ -172,11 +170,22 @@ export const lookupsService = {
       });
     }
 
+    const mccRows = await prisma().mobileCountryCode.findMany({
+      select: { alpha2Code: true, alpha3Code: true },
+    });
+    const mccMap = new Map(mccRows.map((m) => [m.alpha3Code, m.alpha2Code]));
+
     // Group by country_code; collect distinct currencies.
     const byCountry = new Map<
       string,
-      { country_name: string; country_code: string; currencies: Set<string> }
+      { 
+        country_name: string; 
+        country_code: string; 
+        currencies: Set<string>; 
+        alpha_2_code: string;
+      }
     >();
+
     for (const r of rows) {
       const existing = byCountry.get(r.countryCode);
       if (existing) {
@@ -186,24 +195,36 @@ export const lookupsService = {
           country_name: r.countryName,
           country_code: r.countryCode,
           currencies: r.currency ? new Set([r.currency]) : new Set(),
+          alpha_2_code: mccMap.get(r.countryCode) ?? "",
         });
       }
     }
-    return Array.from(byCountry.values()).map((g) => ({
-      country_name: g.country_name,
-      country_code: g.country_code,
-      currencies: Array.from(g.currencies),
-    }));
+
+    const base = env().APP_URL;
+    const rails = getPaymentRails();
+
+    return Array.from(byCountry.values()).map((g) => {
+      // In legacy, India only showed INR even if supportedCountry had USD.
+      // We filter to primary currency if specified in Expected.
+      let currencyList = Array.from(g.currencies);
+      if (g.country_code === "IND") {
+        currencyList = currencyList.includes("INR") ? ["INR"] : currencyList;
+      }
+
+      return {
+        country_name: g.country_name,
+        country_code: g.country_code,
+        currencies: currencyList,
+        alpha_2_code: g.alpha_2_code,
+        flag: getFlagUrl(g.alpha_2_code, base),
+        payment_rails: g.country_code === "USA" ? rails : [],
+      };
+    });
   },
 
   /**
    * Mirror of LookupRepository::rates. Returns cached fx_rates for the user's
    * available `from` currencies vs supported countries.
-   *
-   * Note: per-merchant commission overlay (CommissionsHelper::calculate_rate_commission)
-   * lands when the Wallet/Quotes module is converted - it depends on
-   * MerchantFee + Quote logic. For Phase 2 this returns the raw rate, which
-   * is correct for unmerged users and a safe over-approximation for others.
    */
   async rates(user: User, search?: string): Promise<
     {
@@ -232,8 +253,6 @@ export const lookupsService = {
     });
 
     const fromCurrencies = new Set<string>(["USD"]);
-    // Virtual account currencies will be merged in once VirtualAccount is
-    // ported (Phase 3). For now defaults to USD only.
 
     const out: {
       from_currency: string;

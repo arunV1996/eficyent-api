@@ -207,9 +207,8 @@ export const beneficiaryAccountsController = {
       }),
     ]);
 
-    return sendResponse(res, "", 200, {
+    return sendResponse(res, "", "", {
       total,
-// @ts-ignore - Catch-all auto-fix for: Argument of type '(account: { ...
       beneficiary_accounts: rows.map(beneficiaryAccountResource),
     });
   },

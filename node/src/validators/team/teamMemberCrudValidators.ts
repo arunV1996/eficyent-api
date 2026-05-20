@@ -60,6 +60,7 @@ export const TeamMemberUpdateSchema = z
     email: z.string().trim().toLowerCase().email().max(255),
     role,
     permission,
+    status: z.enum(Object.keys(TEAM_MEMBER_STATUS_MAP) as [string, ...string[]]).optional(),
     mobile_country_code: z.string().regex(/^\d{1,7}$/).optional(),
     mobile: z.string().regex(/^\d{8,15}$/).optional(),
   })
@@ -70,6 +71,7 @@ export const TeamMemberUpdateSchema = z
     email: v.email,
     role: USER_ROLE_MAP[v.role] as number,
     permission: USER_PERMISSION_MAP[v.permission] as number,
+    status: v.status ? TEAM_MEMBER_STATUS_MAP[v.status] : undefined,
     mobile_country_code: v.mobile_country_code,
     mobile: v.mobile,
   }));
@@ -79,6 +81,7 @@ export type TeamMemberUpdateInput = {
   email: string;
   role: number;
   permission: number;
+  status?: number;
   mobile_country_code?: string;
   mobile?: string;
 };

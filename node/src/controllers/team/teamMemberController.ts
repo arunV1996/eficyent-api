@@ -150,6 +150,7 @@ export const teamMemberCrudController = {
         mobile: body.mobile ?? null,
         role: body.role,
         permission: body.permission,
+        status: body.status,
       },
     });
     return res.status(200).json({

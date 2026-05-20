@@ -51,7 +51,7 @@ model User {
   deviceType                             String?                             @map("device_type") @db.VarChar(255)
   rememberToken                          String?                             @map("remember_token") @db.VarChar(100)
   memo                                   String?                             @db.VarChar(255)
-  createdAt                              DateTime?                           @map("created_at") @db.Timestamp(0)
+  createdAt                              DateTime?                           @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                              DateTime?                           @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt                              DateTime?                           @map("deleted_at") @db.Timestamp(0)
   beneficiary_account_validations        BeneficiaryAccountValidation[]
@@ -90,7 +90,7 @@ model PersonalAccessToken {
   abilities     String?   @db.Text
   lastUsedAt    DateTime? @map("last_used_at") @db.Timestamp(0)
   expiresAt     DateTime? @map("expires_at") @db.Timestamp(0)
-  createdAt     DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt     DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@index([tokenableType, tokenableId], map: "personal_access_tokens_tokenable_type_tokenable_id_index")
@@ -123,7 +123,7 @@ model UserInformation {
   ipAddress                String?   @map("ip_address") @db.VarChar(45)
   role                     String?   @db.VarChar(100)
   businessPersons          Json?     @map("business_persons")
-  createdAt                DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt                DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
   user                     User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_informations_user_id_foreign")
 
@@ -144,7 +144,7 @@ model UserDocument {
   status             Int       @default(1) @db.TinyInt
   verifiedAt         DateTime? @map("verified_at") @db.Timestamp(0)
   remarks            String?   @db.Text
-  createdAt          DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt          DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_documents_user_id_foreign")
 
@@ -167,7 +167,7 @@ model Merchant {
   telegram_channel                   String?           @db.VarChar(255)
   type                               Int               @default(1) @db.TinyInt
   status                             Int               @default(1) @db.TinyInt
-  createdAt                          DateTime?         @map("created_at") @db.Timestamp(0)
+  createdAt                          DateTime?         @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                          DateTime?         @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt                          DateTime?         @map("deleted_at") @db.Timestamp(0)
   settings                           MerchantSetting[]
@@ -185,7 +185,7 @@ model MerchantSetting {
   key        String    @db.VarChar(255)
   value      String    @db.Text
   status     Int       @default(1) @db.TinyInt
-  createdAt  DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt  DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
   merchant   Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "merchant_settings_merchant_id_foreign")
 
@@ -210,7 +210,7 @@ model Fee {
   currency1 String?   @map("currency_1") @db.Char(4)
   currency2 String?   @map("currency_2") @db.Char(4)
   status    Int       @default(1) @db.TinyInt
-  createdAt DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@index([ownerType, ownerId], map: "fees_owner_type_owner_id_index")
@@ -255,7 +255,7 @@ model BeneficiaryAccount {
   externalReferenceId        String?                       @map("external_reference_id") @db.VarChar(255)
   externalData               Json?                         @map("external_data")
   status                     Int                           @default(0) @db.TinyInt
-  createdAt                  DateTime?                     @map("created_at") @db.Timestamp(0)
+  createdAt                  DateTime?                     @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                  DateTime?                     @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt                  DateTime?                     @map("deleted_at") @db.Timestamp(0)
   team_members               TeamMember?                   @relation(fields: [team_member_id], references: [id], onUpdate: NoAction, map: "beneficiary_accounts_team_member_id_foreign")
@@ -289,7 +289,7 @@ model BeneficiaryAdditionalDetail {
   bankCountry          String?            @map("bank_country") @db.VarChar(3)
   userSourceOfIncome   String?            @map("user_source_of_income") @db.VarChar(255)
   purposeOfTransaction String?            @map("purpose_of_transaction") @db.VarChar(255)
-  createdAt            DateTime?          @map("created_at") @db.Timestamp(0)
+  createdAt            DateTime?          @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt            DateTime?          @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt            DateTime?          @map("deleted_at") @db.Timestamp(0)
   beneficiaryAccount   BeneficiaryAccount @relation(fields: [beneficiaryAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "beneficiary_additional_details_beneficiary_account_id_foreign")
@@ -313,7 +313,7 @@ model BeneficiaryAccountValidation {
   isAccountExists     Int       @default(0) @map("is_account_exists") @db.TinyInt
   isNreAccount        Int       @default(0) @map("is_nre_account") @db.TinyInt
   status              Int       @default(0) @db.TinyInt
-  createdAt           DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt           DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt           DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
   users               User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "beneficiary_account_validations_user_id_foreign")
 
@@ -338,7 +338,7 @@ model VirtualAccount {
   externalReferenceId  String?              @map("external_reference_id") @db.VarChar(255)
   externalData         Json?                @map("external_data")
   status               Int                  @default(0) @db.TinyInt
-  createdAt            DateTime?            @map("created_at") @db.Timestamp(0)
+  createdAt            DateTime?            @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt            DateTime?            @updatedAt @map("updated_at") @db.Timestamp(0)
   depositTransactions  DepositTransaction[]
   ledgers              Ledger[]
@@ -359,7 +359,7 @@ model UserService {
   externalStatus      String?   @map("external_status") @db.VarChar(255)
   status              Int       @default(1) @db.TinyInt
   isActive            Int       @default(1) @map("is_active") @db.TinyInt
-  createdAt           DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt           DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt           DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
   user                User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_services_user_id_foreign")
 
@@ -374,7 +374,7 @@ model Wallet {
   currency     String              @db.VarChar(3)
   balance      Decimal             @default(0.0000) @db.Decimal(20, 4)
   status       Int                 @default(1) @db.TinyInt
-  createdAt    DateTime?           @map("created_at") @db.Timestamp(0)
+  createdAt    DateTime?           @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt    DateTime?           @updatedAt @map("updated_at") @db.Timestamp(0)
   transactions WalletTransaction[]
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "wallets_user_id_foreign")
@@ -411,7 +411,7 @@ model Sender {
   businessPersons          Json?                    @map("business_persons")
   status                   Int                      @default(1) @db.TinyInt
   clientReferenceId        String?                  @map("client_reference_id") @db.VarChar(255)
-  createdAt                DateTime?                @map("created_at") @db.Timestamp(0)
+  createdAt                DateTime?                @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                DateTime?                @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt                DateTime?                @map("deleted_at") @db.Timestamp(0)
   beneficiary_transactions BeneficiaryTransaction[]
@@ -435,7 +435,7 @@ model SenderDocument {
   status          Int       @default(1) @db.TinyInt
   verifiedAt      DateTime? @map("verified_at") @db.Timestamp(0)
   remarks         String?   @db.Text
-  createdAt       DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt       DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
   sender          Sender    @relation(fields: [senderId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "sender_documents_sender_id_foreign")
 
@@ -472,7 +472,7 @@ model Quote {
   externalReferenceId      String?                  @map("external_reference_id") @db.VarChar(255)
   externalData             Json?                    @map("external_data")
   expiresAt                DateTime?                @map("expires_at") @db.Timestamp(0)
-  createdAt                DateTime?                @map("created_at") @db.Timestamp(0)
+  createdAt                DateTime?                @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                DateTime?                @updatedAt @map("updated_at") @db.Timestamp(0)
   beneficiary_transactions BeneficiaryTransaction[]
   beneficiary_accounts     BeneficiaryAccount?      @relation(fields: [beneficiaryAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "quotes_beneficiary_account_id_foreign")
@@ -501,7 +501,7 @@ model WalletTransaction {
   balanceAfter             Decimal?  @map("balance_after") @db.Decimal(15, 2)
   type                     Int       @default(1) @db.TinyInt
   status                   Int       @default(0) @db.TinyInt
-  createdAt                DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt                DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
   quote                    Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "wallet_transactions_quote_id_foreign")
   users                    User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "wallet_transactions_user_id_foreign")
@@ -525,7 +525,7 @@ model Ledger {
   externalType     String?         @map("external_type") @db.VarChar(255)
   description      String?         @db.Text
   refundLedgerId   BigInt?         @map("refund_ledger_id") @db.UnsignedBigInt
-  createdAt        DateTime?       @map("created_at") @db.Timestamp(0)
+  createdAt        DateTime?       @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt        DateTime?       @updatedAt @map("updated_at") @db.Timestamp(0)
   ledgers          Ledger?         @relation("ledgersToledgers", fields: [refundLedgerId], references: [id], onUpdate: NoAction, map: "ledgers_refund_ledger_id_foreign")
   other_ledgers    Ledger[]        @relation("ledgersToledgers")
@@ -570,7 +570,7 @@ model BeneficiaryTransaction {
   complianceStatus       Int                                   @default(0) @map("compliance_status") @db.TinyInt
   complianceNotes        String?                               @map("compliance_notes") @db.VarChar(255)
   rail                   String?                               @db.VarChar(255)
-  createdAt              DateTime?                             @map("created_at") @db.Timestamp(0)
+  createdAt              DateTime?                             @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt              DateTime?                             @updatedAt @map("updated_at") @db.Timestamp(0)
   senderId               BigInt?                               @map("sender_id") @db.UnsignedBigInt
   proofs                 BeneficiaryTransactionProof[]
@@ -601,7 +601,7 @@ model BeneficiaryTransactionStatusHistory {
   changedByType            String?                @map("changed_by_type") @db.VarChar(255)
   changedAt                DateTime               @map("changed_at") @db.Timestamp(0)
   meta                     Json?
-  createdAt                DateTime?              @map("created_at") @db.Timestamp(0)
+  createdAt                DateTime?              @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                DateTime?              @updatedAt @map("updated_at") @db.Timestamp(0)
   transaction              BeneficiaryTransaction @relation(fields: [beneficiaryTransactionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "bt_status_hist_bt_id_fk")
 
@@ -619,7 +619,7 @@ model BeneficiaryTransactionProof {
   fileUrl                  String?                @map("file_url") @db.Text
   requestedAt              DateTime?              @map("requested_at") @db.Timestamp(0)
   uploadedAt               DateTime?              @map("uploaded_at") @db.Timestamp(0)
-  createdAt                DateTime?              @map("created_at") @db.Timestamp(0)
+  createdAt                DateTime?              @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                DateTime?              @updatedAt @map("updated_at") @db.Timestamp(0)
   transaction              BeneficiaryTransaction @relation(fields: [beneficiaryTransactionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "bt_proofs_bt_id_fk")
 
@@ -639,7 +639,7 @@ model PayoutJob {
   beneficiaryTransactionId BigInt?   @map("beneficiary_transaction_id") @db.UnsignedBigInt
   errorMessage             String?   @map("error_message") @db.Text
   attempts                 Int       @default(0)
-  createdAt                DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt                DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@index([createdAt], map: "payout_jobs_created_at_index")
@@ -661,7 +661,7 @@ model ExternalServiceCall {
   external_reference_id      String?                 @db.VarChar(255)
   errorMessage               String?                 @map("error_message") @db.Text
   response_time_ms           Int?
-  createdAt                  DateTime?               @map("created_at") @db.Timestamp(0)
+  createdAt                  DateTime?               @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt                  DateTime?               @updatedAt @map("updated_at") @db.Timestamp(0)
   beneficiary_transactions   BeneficiaryTransaction? @relation(fields: [beneficiary_transaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "external_service_calls_beneficiary_transaction_id_foreign")
   deposit_transactions       DepositTransaction?     @relation(fields: [deposit_transaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "external_service_calls_deposit_transaction_id_foreign")
@@ -675,7 +675,7 @@ model Setting {
   id        Int       @id @default(autoincrement()) @db.UnsignedInt
   key       String    @db.VarChar(255)
   value     String    @db.Text
-  createdAt DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@index([key], map: "settings_key_index")
@@ -690,7 +690,7 @@ model StaticPage {
   type          static_pages_type @default(others)
   footerSection Int               @default(0) @map("footer_section") @db.TinyInt
   status        Int               @default(1) @db.TinyInt
-  createdAt     DateTime?         @map("created_at") @db.Timestamp(0)
+  createdAt     DateTime?         @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt     DateTime?         @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@index([title], map: "static_pages_title_index")
@@ -706,7 +706,7 @@ model MobileCountryCode {
   alpha2Code  String    @map("alpha_2_code") @db.VarChar(5)
   alpha3Code  String    @map("alpha_3_code") @db.VarChar(5)
   status      Int       @default(1) @db.TinyInt
-  createdAt   DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt   DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@map("mobile_country_codes")
@@ -720,7 +720,7 @@ model State {
   countryAlpha3 String?   @map("country_alpha3") @db.VarChar(255)
   stateCode     String    @map("state_code") @db.VarChar(255)
   status        Int       @default(1) @db.TinyInt
-  createdAt     DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt     DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@map("states")
@@ -734,7 +734,7 @@ model Lookup {
   type         String    @db.VarChar(255)
   externalType String    @default("ed") @map("external_type") @db.VarChar(255)
   status       Int       @default(1) @db.TinyInt
-  createdAt    DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt    DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@map("lookups")
@@ -749,7 +749,7 @@ model SupportedCountry {
   type         String?   @db.VarChar(3)
   externalType String?   @map("external_type") @db.VarChar(255)
   status       Int       @default(1) @db.TinyInt
-  createdAt    DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt    DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@map("supported_countries")
@@ -766,7 +766,7 @@ model ServiceBank {
   serviceType  String?   @map("service_type") @db.VarChar(3)
   externalType String?   @map("external_type") @db.VarChar(11)
   status       String    @default("1") @db.VarChar(255)
-  createdAt    DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt    DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
   deletedAt    DateTime? @map("deleted_at") @db.Timestamp(0)
 
@@ -779,7 +779,7 @@ model FxRate {
   toCurrency   String    @map("to_currency") @db.VarChar(255)
   rate         Decimal   @db.Decimal(18, 8)
   provider     String?   @db.VarChar(255)
-  createdAt    DateTime? @map("created_at") @db.Timestamp(0)
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt    DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@map("fx_rates")
@@ -793,7 +793,7 @@ model AdminWallet {
   network              String?              @db.VarChar(50)
   status               Int                  @default(1) @db.TinyInt
   deleted_at           DateTime?            @db.Timestamp(0)
-  createdAt            DateTime?            @map("created_at") @db.Timestamp(0)
+  createdAt            DateTime?            @default(now()) @map("created_at") @db.Timestamp(0)
   updatedAt            DateTime?            @updatedAt @map("updated_at") @db.Timestamp(0)
   deposit_transactions DepositTransaction[]
 

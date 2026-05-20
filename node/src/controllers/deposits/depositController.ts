@@ -249,7 +249,6 @@ export const depositController = {
           depositCurrency: body.deposit_currency ?? null,
           fromWalletAddress: body.from_wallet_address ?? null,
           transactionHash: body.transaction_hash ?? null,
-          createdAt: new Date(),
         },
       });
       await tx.depositTransactionStatusHistory.create({
