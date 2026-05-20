@@ -1,4 +1,5 @@
 import { Wallet, WalletTransaction } from "@prisma/client";
+import { walletTransactionStatusLabel } from "../../helpers/constants";
 
 export interface WalletDto {
   unique_id: string;
@@ -26,7 +27,7 @@ export interface WalletTransactionDto {
   fees: string;
   total_amount: string;
   type: number;
-  status: number;
+  status: string;
   balance_before: string | null;
   balance_after: string | null;
   quote_id: string | null;
@@ -41,7 +42,7 @@ export function walletTransactionResource(t: WalletTransaction): WalletTransacti
     fees: t.fees.toString(),
     total_amount: t.totalAmount.toString(),
     type: t.type,
-    status: t.status,
+    status: walletTransactionStatusLabel(t.status),
     balance_before: t.balanceBefore ? t.balanceBefore.toString() : null,
     balance_after: t.balanceAfter ? t.balanceAfter.toString() : null,
     quote_id: t.quoteId ? t.quoteId.toString() : null,

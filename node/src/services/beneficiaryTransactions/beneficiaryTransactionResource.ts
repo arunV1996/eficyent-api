@@ -4,7 +4,7 @@ import {
   Sender,
   Quote,
 } from "@prisma/client";
-import { BENEFICIARY_TRANSACTION_STATUS_MAP } from "../../helpers/constants";
+import { beneficiaryTransactionStatusLabel } from "../../helpers/constants";
 import { formatDate } from "../../helpers/lookups";
 import { beneficiaryAccountResource } from "../beneficiaryAccounts/beneficiaryResource";
 
@@ -55,10 +55,7 @@ export function beneficiaryTransactionResource(
     team_members?: { uniqueId: string } | null;
   },
 ): BeneficiaryTransactionDto {
-  const statusLabel =
-    Object.keys(BENEFICIARY_TRANSACTION_STATUS_MAP).find(
-      (key) => BENEFICIARY_TRANSACTION_STATUS_MAP[key] === txn.status,
-    ) ?? "PENDING";
+  const statusLabel = beneficiaryTransactionStatusLabel(txn.status);
 
   const dto: BeneficiaryTransactionDto = {
     unique_id: txn.uniqueId,
