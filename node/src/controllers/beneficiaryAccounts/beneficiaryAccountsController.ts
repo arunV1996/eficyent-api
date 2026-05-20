@@ -232,7 +232,7 @@ export const beneficiaryAccountsController = {
       include: { additionalDetails: true },
     });
     if (!row) throw new ApiException(118);
-    return sendResponse(res, "Beneficiary fetched successfully.", 200, {
+    return sendResponse(res, "Beneficiary fetched successfully.", "", {
 // @ts-ignore - Catch-all auto-fix for: Argument of type '{ additional...
       beneficiary_account: beneficiaryAccountResource(row),
     });
