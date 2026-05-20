@@ -132,6 +132,43 @@ function calcFxFee(
   return { amount: 0, isFixed: false };
 }
 
+/**
+ * Checks if a FIXED fx_fee exists for the given pair/user. If so, returns
+ * that numeric rate to short-circuit the external quote provider call.
+ */
+export async function getFixedRate(
+  userId: bigint,
+  merchantId: bigint | null,
+  fromCurrency: string,
+  toCurrency: string,
+): Promise<number | null> {
+  const q = { feeName: FX_FEE, currency1: fromCurrency, currency2: toCurrency };
+
+  // 1. User fixed fee
+  const userFee = await findUserFee(userId, q);
+  if (userFee && parseInt(userFee.feeType, 10) === FEE_TYPE_FIXED) {
+    return Number(userFee.feeValue);
+  }
+
+  // 2. Merchant fixed fee
+  if (merchantId) {
+    const merchantFee = await findMerchantFee(merchantId, q);
+    if (merchantFee && parseInt(merchantFee.feeType, 10) === FEE_TYPE_FIXED) {
+      return Number(merchantFee.feeValue);
+    }
+  }
+
+  // 3. Global fixed fee
+  if (!merchantId) {
+    const globalFee = await findGlobalFee(q);
+    if (globalFee && parseInt(globalFee.feeType, 10) === FEE_TYPE_FIXED) {
+      return Number(globalFee.feeValue);
+    }
+  }
+
+  return null;
+}
+
 export interface CalcContext {
   userId: bigint;
   merchantId: bigint | null;

@@ -53,7 +53,7 @@ class MassiveQuoteDriver implements QuoteDriver {
     const secret = await loadSecret();
     const body = {
       amount: payload.amount,
-      from_currency: undefined as string | undefined, // resolved in caller; Massive infers from VA
+      from_currency: payload.from_currency,
       to_currency: payload.receiving_currency,
       to_country: payload.recipient_country,
       recipient_type: payload.recipient_type === 2 ? "BUSINESS" : "INDIVIDUAL",

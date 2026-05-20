@@ -20,8 +20,12 @@ import { quoteResource } from "../../services/quotes/quoteResource";
 import {
   calcFxCommissions,
   calcTransactionCommissions,
+  getFixedRate,
 } from "../../services/commissions/commissionsService";
-import { QuoteFactory } from "../../services/external/quoteFactory";
+import {
+  QuoteDriverResponse,
+  QuoteFactory,
+} from "../../services/external/quoteFactory";
 import { applyAedOverrideToQuote } from "../../services/quotes/aedOverride";
 
 const ZERO = new Prisma.Decimal(0);
@@ -143,22 +147,54 @@ async function buildResponse(
     };
   }
 
-  // Cross-currency: Massive provider (Phase 8 stub throws).
-  const driver = QuoteFactory.resolve(EXTERNAL_TYPE_MASSIVE);
-  const rawDriverResp = await driver.create(
-    {
-      amount: body.amount,
-      receiving_currency: body.receiving_currency,
-      recipient_country: body.recipient_country,
-      recipient_type: recipientTypeNumeric,
-      quote_type: body.quote_type,
-      payment_rail: paymentRail,
-      source_id: source.row.id,
-      virtual_account_id: source.row.id,
-    },
-    { id: userId },
+  // Cross-currency: Resolve provider.
+  // Check for FIXED FX fee override first. If set, we skip the Massive
+  // API provider call to avoid 189 errors when market quotes aren't needed.
+  let driverResp: QuoteDriverResponse;
+  const fixedRate = await getFixedRate(
+    userId,
+    merchantId,
+    source.row.currency,
+    body.receiving_currency,
   );
-  const driverResp = applyAedOverrideToQuote(rawDriverResp, source.row.currency);
+
+  if (fixedRate !== null) {
+    // Short-circuit: use the fixed rate from database.
+    const amt =
+      body.quote_type === QUOTE_TYPE_REVERSE
+        ? body.amount * fixedRate
+        : body.amount;
+    const recv =
+      body.quote_type === QUOTE_TYPE_REVERSE
+        ? body.amount
+        : body.amount / fixedRate;
+
+    driverResp = {
+      amount: amt,
+      receiving_amount: recv,
+      fx_rate: fixedRate,
+      external_fx_rate: fixedRate,
+      quote_type: body.quote_type,
+    };
+  } else {
+    // Normal flow: Hit the external provider (Massive).
+    const driver = QuoteFactory.resolve(EXTERNAL_TYPE_MASSIVE);
+    const rawDriverResp = await driver.create(
+      {
+        amount: body.amount,
+        from_currency: source.row.currency,
+        receiving_currency: body.receiving_currency,
+        recipient_country: body.recipient_country,
+        recipient_type: recipientTypeNumeric,
+        quote_type: body.quote_type,
+        payment_rail: paymentRail,
+        source_id: source.row.id,
+        virtual_account_id: source.row.id,
+      },
+      { id: userId },
+    );
+    driverResp = applyAedOverrideToQuote(rawDriverResp, source.row.currency);
+  }
 
   const fx = await calcFxCommissions(
     {

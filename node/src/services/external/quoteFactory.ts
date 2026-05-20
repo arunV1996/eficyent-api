@@ -17,6 +17,7 @@ import {
 
 export interface QuoteDriverPayload {
   amount: number;
+  from_currency: string;
   receiving_currency: string;
   recipient_country: string;
   recipient_type: number;
