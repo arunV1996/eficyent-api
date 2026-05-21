@@ -16,6 +16,7 @@ import {
 } from "../../helpers/constants";
 import { format_processing_unit_fx_rate } from "../../helpers/lookups";
 import { lookupsService } from "../lookups/lookupsService";
+import { logger } from "../../helpers/logger";
 
 /**
  * Shared payload builder for ProcessingUnit + Compliance.
@@ -144,6 +145,11 @@ async function remitterFromUser(
 
   // BUSINESS: Mirror: $sender_documents = UserDocument::where('user_id', $user->id)->first();
   const userDocument = await prisma().userDocument.findFirst({ where: { userId: user.id } });
+
+  logger.info(
+    { userId: user.id.toString(), userDocumentId: userDocument?.id?.toString() ?? null, documentFile: userDocument?.documentFile ?? null, documentType: userDocument?.documentType ?? null },
+    "[PU_DEBUG] remitterFromUser BUSINESS - userDocument fetched"
+  );
 
   const remitter: Record<string, unknown> = {
     // Mirror: $user->type == USER_TYPE_INDIVIDUAL ? 'INDIVIDUAL' : 'BUSINESS'
