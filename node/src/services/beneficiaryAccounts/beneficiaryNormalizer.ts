@@ -84,7 +84,7 @@ export async function validateAndNormalize(
   }
 
   // SWIFT/BIC fallback when only bank_name is supplied.
-  let swiftCode = validated.swift_code as string | undefined;
+  let swiftCode = (validated.swift_code || validated.code) as string | undefined;
   if (!swiftCode && validated.bank_name) {
     const bank = await prisma().serviceBank.findFirst({
       where: { bankName: String(validated.bank_name) },
@@ -116,7 +116,7 @@ export async function validateAndNormalize(
     payment_rail: validated.payment_rail ?? "",
     service_bank: serviceBankBankId ?? "",
     bank_name: serviceBankName ?? validated.bank_name ?? "",
-    routing_number: validated.routing_number ?? "",
+    routing_number: validated.routing_number ?? validated.code ?? "",
     account_name: accountName,
     account_number: validated.account_number ?? "",
     account_type: validated.account_type ?? "",

@@ -23,6 +23,9 @@ import {
   computeBankBalance,
   getWalletBalance,
 } from "../virtualAccounts/balanceService";
+import {
+  getVirtualAccountScope,
+} from "../virtualAccounts/virtualAccountService";
 import { uniqueId, generateTransactionRefNumber } from "../../helpers/uniqueId";
 import { Dispatch } from "../../queues/dispatchers";
 import { createRefund } from "./refundService";
@@ -107,8 +110,9 @@ export async function createPayoutTransaction(
   if (!quote.sourceType || !quote.sourceId) throw new ApiException(120);
   let checkBalance = ZERO;
   if (quote.sourceType === MORPH_VIRTUAL_ACCOUNT) {
+    const baseScope = await getVirtualAccountScope(user);
     const va = await prisma().virtualAccount.findFirst({
-      where: { id: quote.sourceId, userId: user.id },
+      where: { ...baseScope, id: quote.sourceId },
     });
     if (!va) throw new ApiException(120);
     checkBalance = await computeBankBalance(user, va);
@@ -411,8 +415,13 @@ export async function listWhere(
   };
 
   if (q.status) {
-    const s = BENEFICIARY_TRANSACTION_STATUS_MAP[q.status];
-    if (s !== undefined) where.status = s;
+    const { beneficiaryTransactionStatusLabel } = await import("../../helpers/constants");
+    const matchingStatuses = Array.from({ length: 18 }, (_, i) => i).filter(
+      (code) => beneficiaryTransactionStatusLabel(code) === q.status,
+    );
+    where.status = matchingStatuses.length > 0
+      ? { in: matchingStatuses }
+      : BENEFICIARY_TRANSACTION_STATUS_MAP[q.status];
   }
   if (q.from_date && q.to_date) {
     where.createdAt = {

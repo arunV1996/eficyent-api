@@ -115,6 +115,21 @@ function resolvePartyTypes(typeRaw?: string): {
   return { payment_type: pt, ...map[pt] };
 }
 
+async function handleSupportingDocument(
+  doc: string | undefined,
+  userId: bigint,
+): Promise<string | undefined> {
+  if (doc && doc.startsWith("data:")) {
+    try {
+      return await s3Service.uploadBase64(doc, "beneficiary_transactions");
+    } catch (err) {
+      logger.error({ err, userId: userId.toString() }, "S3 upload for supporting_document failed");
+      throw new ApiException(109);
+    }
+  }
+  return doc;
+}
+
 export const payoutController = {
   async index(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
@@ -141,6 +156,12 @@ export const payoutController = {
   async store(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const body = req.body as PayoutStoreInput;
+
+    body.supporting_document = await handleSupportingDocument(
+      body.supporting_document,
+      req.user.id,
+    );
+
     const txn = await createPayoutTransaction(body, req.user);
     return sendResponse(res, apiSuccess(108), "", {
       beneficiary_transaction: beneficiaryTransactionResource(txn),
@@ -314,6 +335,11 @@ export const payoutController = {
     const transaction = body.transaction as Record<string, unknown>;
     if (!transaction.quote_id) throw new ApiException(121);
 
+    transaction.supporting_document = await handleSupportingDocument(
+      transaction.supporting_document as string | undefined,
+      req.user.id,
+    );
+
     const beneficiaryEmail = beneficiary.beneficiaryAccount.email as string | undefined;
     const accountNumber = beneficiary.beneficiaryAccount.account_number as string | undefined;
     const currency = String(beneficiary.beneficiaryAccount.currency ?? "");
@@ -392,6 +418,14 @@ export const payoutController = {
   async instant(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const body = req.body as InstantPayoutInput;
+
+    if (body.transaction) {
+      const transaction = body.transaction as Record<string, unknown>;
+      transaction.supporting_document = await handleSupportingDocument(
+        transaction.supporting_document as string | undefined,
+        req.user.id,
+      );
+    }
 
     // Persist a single PayoutJob row carrying the entire row payload; the
     // worker (Phase 8) does the quote create + beneficiary upsert + sender

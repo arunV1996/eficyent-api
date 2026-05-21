@@ -464,28 +464,27 @@ export const beneficiaryAccountsController = {
     }
 
     const created: { row: number; beneficiary_id: string }[] = [];
-    for (const row of result.validatedRows) {
-      const ben = await prisma().beneficiaryAccount.create({
-        data: {
-          uniqueId: uniqueId(24),
-          userId: req.user.id,
-          country: String(row.beneficiary.beneficiaryAccount.country ?? country),
-          currency: String(row.beneficiary.beneficiaryAccount.currency ?? currency),
-          firstName:
-            (row.beneficiary.beneficiaryAccount.first_name as string) ?? null,
-          lastName:
-            (row.beneficiary.beneficiaryAccount.last_name as string) ?? null,
-          email: (row.beneficiary.beneficiaryAccount.email as string) ?? null,
-          accountNumber:
-            (row.beneficiary.beneficiaryAccount.account_number as string) ?? null,
-          accountName:
-            (row.beneficiary.beneficiaryAccount.account_name as string) ?? null,
-          bankName: (row.beneficiary.beneficiaryAccount.bank_name as string) ?? null,
-          status: 1,
-        },
-      });
-      created.push({ row: row.row, beneficiary_id: ben.uniqueId });
-    }
+    await prisma().$transaction(async (tx) => {
+      for (const row of result.validatedRows) {
+        const baseInsert = toBeneficiaryInsert(
+          row.beneficiary.beneficiaryAccount,
+          req.user!.id,
+        );
+        const ben = await tx.beneficiaryAccount.create({
+          data: {
+            ...baseInsert,
+            status: 1,
+          },
+        });
+        const additional = toAdditionalInsert(
+          row.beneficiary.beneficiaryAccountAdditionalDetail,
+        );
+        await tx.beneficiaryAdditionalDetail.create({
+          data: { ...additional, beneficiaryAccountId: ben.id },
+        });
+        created.push({ row: row.row, beneficiary_id: ben.uniqueId });
+      }
+    });
     return sendResponse(res, "Bulk import accepted.", 200, {
       success: created,
       errors: [],

@@ -194,10 +194,13 @@ interface PayoutPayloadInput {
   quote: Quote;
   source: { currency: string };
   externalReferenceId: string | null;
+  documentFile: string | null;
+  documentType: string | null;
+  documentCountry: string | null;
 }
 
 function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown> {
-  const { txn, user, userInformation, beneficiaryAccount, beneficiaryAdditional, sender, quote, source } = input;
+  const { txn, user, userInformation, beneficiaryAccount, beneficiaryAdditional, sender, quote, source, documentFile, documentType, documentCountry } = input;
 
   const common = {
     order_id: txn.orderId,
@@ -260,6 +263,9 @@ function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown
         id_type: userInformation?.idType,
         id_number: userInformation?.idNumber,
         source_of_funds: userInformation?.sourceOfIncome,
+        document_file: documentFile,
+        document_type: documentType,
+        document_country: documentCountry,
       };
     } else {
       remitter = {
@@ -278,6 +284,9 @@ function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown
         id_number: userInformation?.idNumber,
         source_of_funds: userInformation?.sourceOfIncome,
         country: userInformation?.country,
+        document_file: documentFile,
+        document_type: documentType,
+        document_country: documentCountry,
       };
     }
   } else if (Number(sender.type) === USER_TYPE_INDIVIDUAL) {
@@ -300,6 +309,9 @@ function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown
       id_type: sender.idType,
       id_number: sender.idNumber,
       source_of_funds: sender.sourceOfFunds,
+      document_file: documentFile,
+      document_type: documentType,
+      document_country: documentCountry,
     };
   } else {
     remitter = {
@@ -318,6 +330,9 @@ function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown
       id_number: sender.idNumber,
       source_of_funds: sender.sourceOfFunds,
       country: sender.country,
+      document_file: documentFile,
+      document_type: documentType,
+      document_country: documentCountry,
     };
   }
 
@@ -379,14 +394,45 @@ function prepareDepositPayload(
 // Driver entrypoints (the things called from controllers/handlers)
 // ---------------------------------------------------------------------------
 
+async function recordFailedInitiation(
+  txnId: bigint,
+  action: string,
+  errorMessage: string,
+  startTime: number,
+  payload?: unknown,
+  endpoint?: string,
+): Promise<void> {
+  try {
+    await prisma().externalServiceCall.create({
+      data: {
+        externalType: "processingunit",
+        action: `initiation_failed:${action}`,
+        method: "POST",
+        endpoint: endpoint ?? null,
+        beneficiary_transaction_id: txnId,
+        requestPayload: payload ? ({ body: payload } as never) : (null as never),
+        response_payload: null as never,
+        http_status: null,
+        success: false,
+        errorMessage,
+        response_time_ms: Date.now() - startTime,
+      },
+    });
+  } catch (logErr) {
+    logger.error({ err: logErr, txnId: txnId.toString() }, "Failed to write initiation failure audit log");
+  }
+}
+
 export const ProcessingUnit = {
   /**
    * Mirror of ExternalServices\\ProcessingUnit\\ProcessingUnit::make.
    * Initiates a payout through the upstream Processing Unit.
    */
   async make(txn: BeneficiaryTransaction, user: User): Promise<void> {
+    const startTime = Date.now();
+    let payload: unknown = undefined;
     try {
-      const [account, additional, sender, quote, userInformation] = await Promise.all([
+      const [account, additional, sender, senderDocument, quote, userInformation, userDocument] = await Promise.all([
         txn.beneficiaryAccountId
           ? prisma().beneficiaryAccount.findUnique({
               where: { id: txn.beneficiaryAccountId },
@@ -399,16 +445,21 @@ export const ProcessingUnit = {
         txn.senderId
           ? prisma().sender.findUnique({ where: { id: txn.senderId } })
           : Promise.resolve(null),
+        txn.senderId
+          ? prisma().senderDocument.findFirst({ where: { senderId: txn.senderId } })
+          : Promise.resolve(null),
         txn.quoteId
           ? prisma().quote.findUnique({ where: { id: txn.quoteId } })
           : Promise.resolve(null),
         prisma().userInformation.findFirst({ where: { userId: user.id } }),
+        txn.senderId
+          ? Promise.resolve(null)
+          : prisma().userDocument.findFirst({ where: { userId: user.id } }),
       ]);
       if (!account || !quote) {
-        logger.warn(
-          { txnId: txn.uniqueId },
-          "ProcessingUnit.make - missing beneficiary or quote",
-        );
+        const errorMsg = "ProcessingUnit.make - missing beneficiary or quote";
+        logger.warn({ txnId: txn.uniqueId }, errorMsg);
+        await recordFailedInitiation(txn.id, "build_payload", errorMsg, startTime);
         return;
       }
 
@@ -426,9 +477,8 @@ export const ProcessingUnit = {
       // setting if PAYOUT, else the user's active Caliza UserService.
       let externalReferenceId: string | null = null;
       if (user.merchantId) {
-        const merchant = await prisma().merchant.findFirst({
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-          where: { uniqueId: user.merchantId },
+        const merchant = await prisma().merchant.findUnique({
+          where: { id: user.merchantId },
         });
         if (merchant?.type === MERCHANT_TYPE_PAYOUT) {
           const setting = await prisma().merchantSetting.findUnique({
@@ -448,7 +498,11 @@ export const ProcessingUnit = {
         externalReferenceId = us?.externalReferenceId ?? null;
       }
 
-      const payload = preparePayoutPayload({
+      const docFile = sender ? senderDocument?.documentFile : userDocument?.documentFile;
+      const docType = sender ? senderDocument?.documentType : userDocument?.documentType;
+      const docCountry = sender ? senderDocument?.documentCountry : userDocument?.documentCountry;
+
+      payload = preparePayoutPayload({
         txn,
         user,
         userInformation,
@@ -458,6 +512,9 @@ export const ProcessingUnit = {
         quote,
         source: { currency: sourceCurrency },
         externalReferenceId,
+        documentFile: docFile ?? null,
+        documentType: docType ?? null,
+        documentCountry: docCountry ?? null,
       });
 
       const response = await postJSON<{ status?: string }>(
@@ -501,6 +558,17 @@ export const ProcessingUnit = {
       });
     } catch (err) {
       logger.error({ err, txnId: txn.uniqueId }, "ProcessingUnit.make threw");
+      const existingAudit = await prisma().externalServiceCall.findFirst({
+        where: {
+          beneficiary_transaction_id: txn.id,
+          externalType: "processingunit",
+          action: "create",
+        },
+      });
+      if (!existingAudit) {
+        const errorMsg = `Pre-request or configuration failure: ${err instanceof Error ? err.message : String(err)}`;
+        await recordFailedInitiation(txn.id, "make_failure", errorMsg, startTime, payload, ENDPOINTS.CREATE_TRANSACTION);
+      }
       await prisma()
         .beneficiaryTransaction.update({
           where: { id: txn.id },

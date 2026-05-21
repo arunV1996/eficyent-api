@@ -65,6 +65,7 @@ export function shapeFullUser(
   info: UserInformation | null,
   docs: UserDocument[] = [],
   isMerchant: boolean = false,
+  businessModel: string = "MTO",
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {
     unique_id: user.uniqueId,
@@ -126,6 +127,7 @@ export function shapeFullUser(
   result["documents"] = docs.map(shapeDocument);
   result["role"] = roleLabel(user.userRole);
   result["is_merchant"] = yesNo(isMerchant);
+  result["business_model"] = businessModel;
 
   return result;
 }
@@ -208,6 +210,7 @@ export function shapeStatusUser(
   user: User,
   isMerchant: boolean,
   info: UserInformation | null = null,
+  businessModel: string = "MTO",
 ): Record<string, unknown> {
   let name = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
   if (Number(user.userType) === USER_TYPE_BUSINESS && info) {
@@ -226,5 +229,6 @@ export function shapeStatusUser(
     sender_enabled: yesNo(user.enableSender),
     tour_status: tourLabel(user.tourStatus),
     user_type: Number(user.userType) === USER_TYPE_BUSINESS ? "BUSINESS" : "PERSONAL",
+    business_model: businessModel,
   };
 }

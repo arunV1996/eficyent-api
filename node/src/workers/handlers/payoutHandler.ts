@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import { Job } from "bullmq";
 import { prisma } from "../../db/prisma";
 import { logger } from "../../helpers/logger";
@@ -155,10 +156,6 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
 }
 
 function cryptoRandomId(): string {
-  // Hot-path random id for unique_id columns - avoid an extra import cycle
-  // with helpers/uniqueId by inlining a base36 timestamp + random suffix.
-  return (
-    Date.now().toString(36) +
-    Math.random().toString(36).slice(2, 12)
-  );
+  // Generate a standard UUID v4 string for the unique_id column.
+  return uuidv4();
 }

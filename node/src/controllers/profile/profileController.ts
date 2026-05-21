@@ -25,6 +25,7 @@ import {
 } from "../../validators/profile/profileValidators";
 import { settingGet } from "../../services/settings/settingsService";
 import { logger } from "../../helpers/logger";
+import { getBusinessModel } from "../../services/merchants/merchantService";
 // Removed unused imports
 
 const USER_DOCUMENT_FILE_PATH = "user_documents";
@@ -63,8 +64,9 @@ export const profileController = {
         select: { id: true },
       }),
     ]);
+    const businessModel = await getBusinessModel(merchant?.id ?? req.user.merchantId);
     return emptyEnvelope(res, "", {
-      user: shapeFullUser(req.user, info, docs, !!merchant),
+      user: shapeFullUser(req.user, info, docs, !!merchant, businessModel),
     });
   },
 
@@ -128,8 +130,9 @@ export const profileController = {
       }),
     ]);
 
+    const businessModel = await getBusinessModel(merchant?.id ?? user.merchantId);
     const data: Record<string, unknown> = {
-      user: shapeStatusUser(user, !!merchant, info),
+      user: shapeStatusUser(user, !!merchant, info, businessModel),
     };
 
     // 3. Optional id_verification_url if individual (mirror of onboarding step 3)
@@ -562,8 +565,9 @@ export const profileController = {
 
     logger.info({ userId: req.user.id.toString() }, "Profile updated");
 
+    const businessModel = await getBusinessModel(merchant?.id ?? refreshed.merchantId);
     return emptyEnvelope(res, "Profile updated successfully.", {
-      user: shapeFullUser(refreshed, info, docs, !!merchant),
+      user: shapeFullUser(refreshed, info, docs, !!merchant, businessModel),
     });
   },
 };

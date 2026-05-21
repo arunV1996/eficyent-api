@@ -20,6 +20,9 @@ import { virtualAccountResource } from "../../services/virtualAccounts/virtualAc
 import { OnboardingFactory } from "../../services/external/onboardingFactory";
 import { VirtualAccountFactory } from "../../services/external/virtualAccountFactory";
 import {
+  getVirtualAccountScope,
+} from "../../services/virtualAccounts/virtualAccountService";
+import {
   ActivateInput,
   VirtualAccountIdInput,
   VirtualAccountListInput,
@@ -42,9 +45,6 @@ import { settingGet } from "../../services/settings/settingsService";
  * accounts sharing an external_type collapse into a parent + .swift child.
  */
 
-function userScope(userId: bigint): Prisma.VirtualAccountWhereInput {
-  return { userId };
-}
 
 function groupAccountsByExternalType(
   accounts: VirtualAccount[],
@@ -87,8 +87,9 @@ export const virtualAccountsController = {
         ? VIRTUAL_ACCOUNT_STATUS_MAP[q.status]
         : null;
 
+    const baseScope = await getVirtualAccountScope(req.user, req.merchant);
     const where: Prisma.VirtualAccountWhereInput = {
-      ...userScope(req.user.id),
+      ...baseScope,
       ...(q.country ? { country: q.country } : {}),
       ...(q.currency ? { currency: q.currency } : {}),
       ...(q.account_number ? { accountNumber: q.account_number } : {}),
@@ -166,8 +167,9 @@ export const virtualAccountsController = {
       }
     }
 
+    const baseScope = await getVirtualAccountScope(user, req.merchant);
     const existing = await prisma().virtualAccount.findMany({
-      where: { userId: user.id, status: VIRTUAL_ACCOUNT_STATUS_CREATED },
+      where: { ...baseScope, status: VIRTUAL_ACCOUNT_STATUS_CREATED },
       select: { externalType: true },
     });
     const existingTypes = new Set(existing.map((e) => e.externalType));
@@ -194,8 +196,9 @@ export const virtualAccountsController = {
     const userService = await prisma().userService.findFirst({
       where: { userId: req.user.id, serviceType: body.type },
     });
+    const baseScope = await getVirtualAccountScope(req.user, req.merchant);
     const userVa = await prisma().virtualAccount.findFirst({
-      where: { userId: req.user.id, externalType: body.type },
+      where: { ...baseScope, externalType: body.type },
     });
     if (userService && userVa) throw new ApiException(115);
 
@@ -220,8 +223,9 @@ export const virtualAccountsController = {
   async getBalance(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as VirtualAccountIdInput;
+    const baseScope = await getVirtualAccountScope(req.user, req.merchant);
     const va = await prisma().virtualAccount.findFirst({
-      where: { ...userScope(req.user.id), uniqueId: q.unique_id },
+      where: { ...baseScope, uniqueId: q.unique_id },
     });
     if (!va) throw new ApiException(116);
     const acc: VirtualAccount & { balance?: string } = { ...va };
@@ -233,14 +237,15 @@ export const virtualAccountsController = {
   async show(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as VirtualAccountIdInput;
+    const baseScope = await getVirtualAccountScope(req.user, req.merchant);
     const va = await prisma().virtualAccount.findFirst({
-      where: { ...userScope(req.user.id), uniqueId: q.unique_id },
+      where: { ...baseScope, uniqueId: q.unique_id },
     });
     if (!va) throw new ApiException(116);
 
     // Group with siblings of the same external_type (ACH + SWIFT pairing).
     const siblings = await prisma().virtualAccount.findMany({
-      where: { ...userScope(req.user.id), externalType: va.externalType },
+      where: { ...baseScope, externalType: va.externalType },
     });
     const grouped = groupAccountsByExternalType(siblings);
     const account =
@@ -263,8 +268,9 @@ export const virtualAccountsController = {
 
   async balances(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
+    const baseScope = await getVirtualAccountScope(req.user, req.merchant);
     const accounts = await prisma().virtualAccount.findMany({
-      where: userScope(req.user.id),
+      where: baseScope,
     });
     const balances = await Promise.all(
       accounts.map(async (a) => ({
@@ -278,8 +284,9 @@ export const virtualAccountsController = {
   async getVirtualAccounts(req: Request, res: Response): Promise<Response> {
     // Backwards-compatible alias used by some merchant integrations.
     if (!req.user) throw new ApiException(102);
+    const baseScope = await getVirtualAccountScope(req.user, req.merchant);
     const accounts = await prisma().virtualAccount.findMany({
-      where: userScope(req.user.id),
+      where: baseScope,
       orderBy: { createdAt: "desc" },
     });
     const grouped = groupAccountsByExternalType(accounts);

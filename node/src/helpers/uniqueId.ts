@@ -1,7 +1,8 @@
-import { customAlphabet, nanoid } from "nanoid";
+import { customAlphabet } from "nanoid";
+import { v4 as uuidv4 } from "uuid";
 
-/** URL-safe random id, 21 chars by default. */
-export const uniqueId = (size = 21): string => nanoid(size);
+/** Generate a UUID v4 string. */
+export const uniqueId = (_size = 21): string => uuidv4();
 
 const numericAlphabet = "0123456789";
 const numericNano = customAlphabet(numericAlphabet, 16);

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { Prisma, Quote, VirtualAccount, Wallet } from "@prisma/client";
+import { Prisma, Quote, User, VirtualAccount, Wallet } from "@prisma/client";
 import { prisma } from "../../db/prisma";
 import { ApiException } from "../../helpers/errors";
 import { sendResponse } from "../../helpers/response";
@@ -15,6 +15,7 @@ import {
 } from "../../helpers/constants";
 import { USER_TYPE_MAP } from "../../helpers/lookups";
 import { uniqueId } from "../../helpers/uniqueId";
+import { getVirtualAccountScope } from "../../services/virtualAccounts/virtualAccountService";
 import { QuoteStoreInput } from "../../validators/quotes/quoteValidators";
 import { quoteResource } from "../../services/quotes/quoteResource";
 import {
@@ -59,18 +60,19 @@ type ResolvedSource = SourceVirtualAccount | SourceWallet;
 
 async function resolveSource(
   body: QuoteStoreInput,
-  userId: bigint,
+  user: User,
 ): Promise<ResolvedSource> {
   if (body.bank_account_id) {
+    const baseScope = await getVirtualAccountScope(user);
     const va = await prisma().virtualAccount.findFirst({
-      where: { uniqueId: body.bank_account_id, userId },
+      where: { ...baseScope, uniqueId: body.bank_account_id },
     });
     if (!va) throw new ApiException(120);
     return { kind: "virtual_account", row: va };
   }
   if (body.wallet_id) {
     const wallet = await prisma().wallet.findFirst({
-      where: { uniqueId: body.wallet_id, userId },
+      where: { uniqueId: body.wallet_id, userId: user.id },
     });
     if (!wallet) throw new ApiException(120);
     return { kind: "wallet", row: wallet };
@@ -322,7 +324,7 @@ export const quotesController = (mode: QuoteMode["mode"]) => ({
           ?.id ?? null
       : null;
     const recipientType = USER_TYPE_MAP[body.recipient_type] ?? 1;
-    const source = await resolveSource(body, req.user.id);
+    const source = await resolveSource(body, req.user);
     const response = await buildResponse(
       body,
       source,

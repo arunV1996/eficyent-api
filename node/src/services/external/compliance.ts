@@ -116,6 +116,35 @@ async function postJSON<T>(
   };
 }
 
+async function recordFailedInitiation(
+  txnId: bigint,
+  action: string,
+  errorMessage: string,
+  startTime: number,
+  payload?: unknown,
+  endpoint?: string,
+): Promise<void> {
+  try {
+    await prisma().externalServiceCall.create({
+      data: {
+        externalType: "compliance",
+        action: `initiation_failed:${action}`,
+        method: "POST",
+        endpoint: endpoint ?? null,
+        beneficiary_transaction_id: txnId,
+        requestPayload: payload ? ({ body: payload } as never) : (null as never),
+        response_payload: null as never,
+        http_status: null,
+        success: false,
+        errorMessage,
+        response_time_ms: Date.now() - startTime,
+      },
+    });
+  } catch (logErr) {
+    logger.error({ err: logErr, txnId: txnId.toString() }, "Failed to write initiation failure audit log");
+  }
+}
+
 /**
  * Mirror of ComplianceService::make. Submits a payout to the compliance
  * gateway; on success the transaction status flips to
@@ -128,16 +157,18 @@ async function postJSON<T>(
  */
 export const Compliance = {
   async make(txn: BeneficiaryTransaction, user: User, updateStatus = true): Promise<void> {
+    const startTime = Date.now();
+    let payload: unknown = undefined;
+    let endpoint: string | undefined = undefined;
     try {
       // Compliance uses the same payload structure as ProcessingUnit.
       // Build it through the shared helper there to avoid drift.
       const { buildPayoutPayload } = await import("./processingUnitPayload");
-      const payload = await buildPayoutPayload(txn, user);
+      payload = await buildPayoutPayload(txn, user);
       if (!payload) {
-        logger.warn(
-          { txnId: txn.uniqueId },
-          "Compliance.make - cannot build payload (missing related rows)",
-        );
+        const errorMsg = "Compliance.make - cannot build payload (missing related rows)";
+        logger.warn({ txnId: txn.uniqueId }, errorMsg);
+        await recordFailedInitiation(txn.id, "build_payload", errorMsg, startTime);
         if (updateStatus) {
           await prisma().beneficiaryTransaction.update({
             where: { id: txn.id },
@@ -147,16 +178,43 @@ export const Compliance = {
         return;
       }
 
-      const secret = await loadSecret();
-      const response = await postJSON<{ status?: string }>(
-        secret.CREATE_TRANSACTION_ENDPOINT,
-        payload,
-        {
-          callFor: "create",
-          referenceType: "App\\Models\\BeneficiaryTransaction",
-          referenceId: txn.id,
-        },
-      );
+      let secret: ComplianceSecret;
+      try {
+        secret = await loadSecret();
+        endpoint = secret.CREATE_TRANSACTION_ENDPOINT;
+      } catch (err) {
+        const errorMsg = `Failed to load compliance secrets: ${err instanceof Error ? err.message : String(err)}`;
+        await recordFailedInitiation(txn.id, "load_secrets", errorMsg, startTime, payload);
+        throw err;
+      }
+
+      let response;
+      try {
+        response = await postJSON<{ status?: string }>(
+          endpoint,
+          payload,
+          {
+            callFor: "create",
+            referenceType: "App\\Models\\BeneficiaryTransaction",
+            referenceId: txn.id,
+          },
+        );
+      } catch (err) {
+        // If postJSON threw, check if an audit log was written by call().
+        // If no audit log was created, log the exception.
+        const existingAudit = await prisma().externalServiceCall.findFirst({
+          where: {
+            beneficiary_transaction_id: txn.id,
+            externalType: "compliance",
+            action: "create",
+          },
+        });
+        if (!existingAudit) {
+          const errorMsg = `Pre-request or authentication failure: ${err instanceof Error ? err.message : String(err)}`;
+          await recordFailedInitiation(txn.id, "authenticate_or_post", errorMsg, startTime, payload, endpoint);
+        }
+        throw err;
+      }
 
       if (!response.success || !response.data) {
         logger.warn(

@@ -24,6 +24,9 @@ import {
   getWalletBalance,
 } from "../../services/virtualAccounts/balanceService";
 import {
+  getVirtualAccountScope,
+} from "../../services/virtualAccounts/virtualAccountService";
+import {
   ConvertInput,
   WalletListInput,
   WalletShowInput,
@@ -54,8 +57,9 @@ async function createAllWallets(user: User): Promise<void> {
   ) {
     return;
   }
+  const baseScope = await getVirtualAccountScope(user);
   const va = await prisma().virtualAccount.findFirst({
-    where: { userId: user.id },
+    where: baseScope,
   });
   if (!va) return;
 
@@ -155,8 +159,9 @@ export const walletController = {
 
     // Source-balance check (mirror Helper::bankBalance($user, $quote->source)).
     if (!quote.sourceId) throw new ApiException(120);
-    const va = await prisma().virtualAccount.findUnique({
-      where: { id: quote.sourceId },
+    const baseScope = await getVirtualAccountScope(req.user);
+    const va = await prisma().virtualAccount.findFirst({
+      where: { ...baseScope, id: quote.sourceId },
     });
     if (!va) throw new ApiException(120);
     const checkBalance = await computeBankBalance(req.user, va);

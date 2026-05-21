@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import http from "http";
 import pinoHttp from "pino-http";
+import path from "path";
 import { env } from "./config/env";
 import { bootstrapSecrets } from "./config/secrets";
 import { closeRedis } from "./config/redis";
@@ -71,6 +72,7 @@ async function main(): Promise<void> {
   app.use(compressionMiddleware());
   app.use(requestTimeout(30_000));
   app.use(await defaultRateLimit());
+  app.use(express.static(path.join(process.cwd(), "public")));
 
   app.use("/api", await apiRouter());
 

@@ -14,6 +14,7 @@ import {
 import { uniqueId } from "../../helpers/uniqueId";
 import { s3Service } from "../../services/storage/s3Service";
 import { calcDepositCommissions } from "../../services/commissions/commissionsService";
+import { getVirtualAccountScope } from "../../services/virtualAccounts/virtualAccountService";
 import { depositTransactionResource } from "../../services/deposits/depositResource";
 import { logger } from "../../helpers/logger";
 import { TelegramNotifier } from "../../services/external/telegram";
@@ -83,8 +84,9 @@ export const depositController = {
 
     let virtualAccountId: bigint | null = null;
     if (q.bank_account_id) {
+      const baseScope = await getVirtualAccountScope(req.user);
       const va = await prisma().virtualAccount.findFirst({
-        where: { uniqueId: q.bank_account_id, userId: req.user.id },
+        where: { ...baseScope, uniqueId: q.bank_account_id },
       });
       if (!va) throw new ApiException(120);
       virtualAccountId = va.id;
@@ -144,8 +146,9 @@ export const depositController = {
   async quote(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as DepositQuoteInput;
+    const baseScope = await getVirtualAccountScope(req.user);
     const va = await prisma().virtualAccount.findFirst({
-      where: { uniqueId: q.bank_account_id, userId: req.user.id },
+      where: { ...baseScope, uniqueId: q.bank_account_id },
     });
     if (!va) throw new ApiException(120);
     const merchantId = req.user.merchantId
@@ -176,8 +179,9 @@ export const depositController = {
     if (!req.user) throw new ApiException(102);
     const body = req.body as DepositCreateInput;
 
+    const baseScope = await getVirtualAccountScope(req.user);
     const va = await prisma().virtualAccount.findFirst({
-      where: { uniqueId: body.bank_account_id, userId: req.user.id },
+      where: { ...baseScope, uniqueId: body.bank_account_id },
     });
     if (!va) throw new ApiException(120);
 
@@ -306,8 +310,9 @@ export const depositController = {
         : null;
     let virtualAccountId: bigint | null = null;
     if (q.bank_account_id) {
+      const baseScope = await getVirtualAccountScope(req.user);
       const va = await prisma().virtualAccount.findFirst({
-        where: { uniqueId: q.bank_account_id, userId: req.user.id },
+        where: { ...baseScope, uniqueId: q.bank_account_id },
       });
       if (!va) throw new ApiException(120);
       virtualAccountId = va.id;

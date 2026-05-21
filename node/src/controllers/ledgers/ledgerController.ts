@@ -16,6 +16,9 @@ import {
   LedgerListInput,
   LedgerShowInput,
 } from "../../validators/ledgers/ledgerValidators";
+import {
+  getVirtualAccountScope,
+} from "../../services/virtualAccounts/virtualAccountService";
 
 /**
  * Mirror of Api\\LedgerController + LedgerRepository.
@@ -37,8 +40,9 @@ export const ledgerController = {
     const where: Prisma.LedgerWhereInput = { userId: req.user.id };
 
     if (q.bank_account_id) {
+      const baseScope = await getVirtualAccountScope(req.user);
       const va = await prisma().virtualAccount.findFirst({
-        where: { uniqueId: q.bank_account_id, userId: req.user.id },
+        where: { ...baseScope, uniqueId: q.bank_account_id },
       });
       if (va) where.virtualAccountId = va.id;
       else where.id = -1n; // mirror Laravel `whereRaw('1 = 0')`
@@ -147,8 +151,9 @@ export const ledgerController = {
       };
     }
     if (q.bank_account_id) {
+      const baseScope = await getVirtualAccountScope(req.user);
       const va = await prisma().virtualAccount.findFirst({
-        where: { uniqueId: q.bank_account_id, userId: req.user.id },
+        where: { ...baseScope, uniqueId: q.bank_account_id },
       });
       if (va) where.virtualAccountId = va.id;
     }

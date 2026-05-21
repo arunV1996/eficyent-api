@@ -9,13 +9,14 @@ import {
 import { USER_TYPE_MAP } from "../../helpers/lookups";
 
 const recipientTypeKey = z.enum(Object.keys(USER_TYPE_MAP) as [string, ...string[]]);
-const paymentRail = z
-  .enum([
+const paymentRail = z.preprocess(
+  (val) => (typeof val === "string" ? val.toUpperCase() : val),
+  z.enum([
     PAYMENT_RAIL_ACH.toUpperCase(),
     PAYMENT_RAIL_SWIFT.toUpperCase(),
     PAYMENT_RAIL_WIRE.toUpperCase(),
-  ] as [string, ...string[]])
-  .transform((v) => v.toLowerCase());
+  ] as [string, ...string[]]),
+).transform((v) => v.toLowerCase());
 
 export const QuoteStoreSchema = z
   .object({
