@@ -14,6 +14,8 @@ import {
   MORPH_VIRTUAL_ACCOUNT,
   USER_TYPE_INDIVIDUAL,
 } from "../../helpers/constants";
+import { format_processing_unit_fx_rate } from "../../helpers/lookups";
+import { lookupsService } from "../lookups/lookupsService";
 
 /**
  * Shared payload builder for ProcessingUnit + Compliance.
@@ -25,7 +27,7 @@ import {
 
 function removeEmpty<T extends Record<string, unknown>>(obj: T): T {
   for (const [k, v] of Object.entries(obj)) {
-    if (v === null || v === undefined || v === "") {
+    if (v === null || v === undefined) {
       delete obj[k];
       continue;
     }
@@ -98,7 +100,16 @@ async function loadRelated(
     if (merchant?.type === MERCHANT_TYPE_PAYOUT) {
       const setting = await prisma().merchantSetting.findFirst({ where: { merchantId: merchant.id, key: "caliza_account_id"  },
       });
-      if (setting?.value) externalReferenceId = setting.value;
+      if (setting?.value) {
+        externalReferenceId = setting.value;
+      } else {
+        const va = await prisma().virtualAccount.findFirst({
+            where: { userId: user.id }
+        });
+        if (va) {
+            externalReferenceId = va.externalReferenceId;
+        }
+      }
     }
   }
   if (!externalReferenceId) {
@@ -109,7 +120,10 @@ async function loadRelated(
     externalReferenceId = us?.externalReferenceId ?? null;
   }
 
-  const documentFile = sender ? senderDocument?.documentFile : userDocument?.documentFile;
+  let documentFile = sender ? senderDocument?.documentFile : userDocument?.documentFile;
+  if (!documentFile || documentFile.trim() === "") {
+    documentFile = txn.supportingDocument;
+  }
   const documentType = sender ? senderDocument?.documentType : userDocument?.documentType;
   const documentCountry = sender ? senderDocument?.documentCountry : userDocument?.documentCountry;
 
@@ -127,13 +141,13 @@ async function loadRelated(
   };
 }
 
-function remitterFromUser(
+async function remitterFromUser(
   user: User,
   userInformation: UserInformation | null,
-  documentFile: string | null,
-  documentType: string | null,
-  documentCountry: string | null,
-): Record<string, unknown> {
+  docFile: string | null,
+  docType: string | null,
+  docCountry: string | null,
+): Promise<Record<string, unknown>> {
   if (Number(user.userType) === USER_TYPE_INDIVIDUAL) {
     return {
       type: "INDIVIDUAL",
@@ -150,18 +164,22 @@ function remitterFromUser(
       city: userInformation?.city,
       state: userInformation?.state,
       postal_code: userInformation?.postalCode,
-      id_type: userInformation?.idType,
+      id_type: await lookupsService.findValuebyKey(userInformation?.idType, "id_types"),
       id_number: userInformation?.idNumber,
       source_of_funds: userInformation?.sourceOfIncome,
-      document_file: documentFile,
-      document_type: documentType,
-      document_country: documentCountry,
+      document_file: docFile,
+      document_type: docType ? await lookupsService.findValuebyKey(docType, "document_types") : (docFile ? "Other" : null),
+      document_country: docCountry,
     };
   }
-  return {
+
+  const remitter: Record<string, unknown> = {
     type: "BUSINESS",
     business_name: userInformation?.businessName,
-    type_of_business: "Company",
+    type_of_business: await lookupsService.findValuebyKey(
+      userInformation?.type_of_business,
+      "business_types",
+    ) || "Company",
     email: user.email,
     mobile_country_code: user.mobileCountryCode,
     mobile: user.mobile,
@@ -170,24 +188,59 @@ function remitterFromUser(
     city: userInformation?.city,
     state: userInformation?.state,
     postal_code: userInformation?.postalCode,
-    id_type: userInformation?.idType,
+    id_type: await lookupsService.findValuebyKey(userInformation?.idType, "id_types"),
     id_number: userInformation?.idNumber,
     source_of_funds: userInformation?.sourceOfIncome,
     country: userInformation?.country,
-    document_file: documentFile,
-    document_type: documentType,
-    document_country: documentCountry,
+    document_file: docFile,
+    document_type: docType ? await lookupsService.findValuebyKey(docType, "document_types") : (docFile ? "Other" : null),
+    document_country: docCountry,
   };
+
+  if (userInformation?.businessPersons) {
+    let persons: any[] = [];
+    try {
+      persons = typeof userInformation.businessPersons === "string" 
+        ? JSON.parse(userInformation.businessPersons) 
+        : userInformation.businessPersons as any[];
+    } catch {
+      persons = [];
+    }
+
+    if (Array.isArray(persons) && persons.length > 0) {
+      const hasUbo = persons.some((p: any) => Number(p.designation_id) === 5);
+      if (!hasUbo && persons[0]) {
+        persons[0].designation_id = 5;
+      }
+
+      remitter.business_persons = await Promise.all(
+        persons.map(async (person: any) => ({
+          first_name: person.first_name ?? null,
+          last_name: person.last_name ?? null,
+          mobile_country_code: person.mobile_country_code ?? null,
+          mobile: person.mobile ?? null,
+          country: person.country ?? null,
+          id_type: await lookupsService.findValuebyKey(person.id_type, "id_types"),
+          id_number: person.id_number ?? null,
+          designation: person.designation_id
+            ? await lookupsService.findValuebyKey(person.designation_id, "professions")
+            : null,
+        })),
+      );
+    }
+  }
+
+  return remitter;
 }
 
-function remitterFromSender(
+async function remitterFromSender(
   sender: Sender,
   user: User,
   userInformation: UserInformation | null,
-  documentFile: string | null,
-  documentType: string | null,
-  documentCountry: string | null,
-): Record<string, unknown> {
+  docFile: string | null,
+  docType: string | null,
+  docCountry: string | null,
+): Promise<Record<string, unknown>> {
   if (Number(sender.type) === USER_TYPE_INDIVIDUAL) {
     return {
       type: "INDIVIDUAL",
@@ -205,18 +258,22 @@ function remitterFromSender(
       city: sender.city ?? userInformation?.city,
       state: sender.state,
       postal_code: sender.postalCode,
-      id_type: sender.idType,
+      id_type: await lookupsService.findValuebyKey(sender.idType, "id_types"),
       id_number: sender.idNumber,
       source_of_funds: sender.sourceOfFunds,
-      document_file: documentFile,
-      document_type: documentType,
-      document_country: documentCountry,
+      document_file: docFile,
+      document_type: docType ? await lookupsService.findValuebyKey(docType, "document_types") : (docFile ? "Other" : null),
+      document_country: docCountry,
     };
   }
-  return {
+
+  const remitter: Record<string, unknown> = {
     type: "BUSINESS",
     business_name: sender.firstName,
-    type_of_business: "Company",
+    type_of_business: await lookupsService.findValuebyKey(
+      userInformation?.type_of_business,
+      "business_types",
+    ) || "Company",
     email: sender.email,
     mobile_country_code: sender.mobileCountryCode,
     mobile: sender.mobile,
@@ -225,14 +282,49 @@ function remitterFromSender(
     city: sender.city,
     state: sender.state,
     postal_code: sender.postalCode,
-    id_type: sender.idType,
+    id_type: await lookupsService.findValuebyKey(sender.idType, "id_types"),
     id_number: sender.idNumber,
     source_of_funds: sender.sourceOfFunds,
     country: sender.country,
-    document_file: documentFile,
-    document_type: documentType,
-    document_country: documentCountry,
+    document_file: docFile,
+    document_type: docType ? await lookupsService.findValuebyKey(docType, "document_types") : (docFile ? "Other" : null),
+    document_country: docCountry,
   };
+
+  if (sender.businessPersons) {
+    let persons: any[] = [];
+    try {
+      persons = typeof sender.businessPersons === "string" 
+        ? JSON.parse(sender.businessPersons) 
+        : sender.businessPersons as any[];
+    } catch {
+      persons = [];
+    }
+
+    if (Array.isArray(persons) && persons.length > 0) {
+      const hasUbo = persons.some((p: any) => Number(p.designation_id) === 5);
+      if (!hasUbo && persons[0]) {
+        persons[0].designation_id = 5;
+      }
+
+      remitter.business_persons = await Promise.all(
+        persons.map(async (person: any) => ({
+          first_name: person.first_name ?? null,
+          last_name: person.last_name ?? null,
+          mobile_country_code: person.mobile_country_code ?? null,
+          mobile: person.mobile ?? null,
+          country: person.country ?? null,
+          id_type: await lookupsService.findValuebyKey(person.id_type, "id_types"),
+          id_number: person.id_number ?? null,
+          designation: person.designation_id
+            ? await lookupsService.findValuebyKey(person.designation_id, "professions")
+            : null,
+        })),
+      );
+    }
+  }
+
+  return remitter;
 }
 
 export async function buildPayoutPayload(
@@ -241,14 +333,14 @@ export async function buildPayoutPayload(
 ): Promise<Record<string, unknown> | null> {
   const related = await loadRelated(txn, user);
   if (!related) return null;
-  const { account, additional, sender, quote, userInformation, sourceCurrency, externalReferenceId, documentFile, documentType, documentCountry } = related;
+  const { account, additional, sender, quote, userInformation, sourceCurrency, externalReferenceId } = related;
 
   const common = {
     order_id: txn.orderId,
-    from_amount: txn.amount.toString(),
+    from_amount: txn.amount,
     from_currency: sourceCurrency,
-    amount: txn.recipientAmount?.toString() ?? null,
-    exchange_rate: quote.fxRate,
+    amount: txn.recipientAmount,
+    exchange_rate: format_processing_unit_fx_rate(quote.fxRate),
     receiving_currency: txn.receivingCurrency,
     side: quote.quoteType,
     remarks: txn.remarks,
@@ -284,15 +376,19 @@ export async function buildPayoutPayload(
   };
 
   const remitter = sender
-    ? remitterFromSender(sender, user, userInformation, documentFile, documentType, documentCountry)
-    : remitterFromUser(user, userInformation, documentFile, documentType, documentCountry);
+    ? await remitterFromSender(sender, user, userInformation, related.documentFile, related.documentType, related.documentCountry)
+    : await remitterFromUser(user, userInformation, related.documentFile, related.documentType, related.documentCountry);
+
+  const merchantName = user.merchantId
+    ? (await prisma().merchant.findUnique({ where: { id: user.merchantId } }))?.name ?? user.firstName ?? user.email
+    : user.firstName ?? user.email;
 
   const payload = {
     ...common,
     beneficiary,
     remitter,
     merchant: {
-      name: user.firstName ?? user.email,
+      name: merchantName,
       email: user.email,
     },
     meta_data: {

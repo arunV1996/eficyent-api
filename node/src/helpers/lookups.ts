@@ -164,3 +164,13 @@ export function formatDate(date: Date | null | undefined): string {
   const h = String(hours).padStart(2, "0");
   return `${String(d).padStart(2, "0")} ${m} ${y} ${h}:${minutes} ${ampm}`;
 }
+export function format_processing_unit_fx_rate(fxRate: string | number | null | undefined): string | number {
+  if (!fxRate) return "";
+  if (typeof fxRate === "string" && fxRate.includes("=")) {
+    const parts = fxRate.split("=");
+    if (parts[1]) {
+      return parts[1].trim().replace(/[^\d.]/g, "");
+    }
+  }
+  return fxRate;
+}

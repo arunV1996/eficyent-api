@@ -1,13 +1,8 @@
 import { createHmac, randomBytes } from "crypto";
 import {
-  BeneficiaryAccount,
-  BeneficiaryAdditionalDetail,
   BeneficiaryTransaction,
   DepositTransaction,
-  Quote,
-  Sender,
   User,
-  UserInformation,
   VirtualAccount,
   AdminWallet,
 } from "@prisma/client";
@@ -19,15 +14,13 @@ import { TelegramNotifier } from "./telegram";
 import {
   BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
   DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED,
-  EXTERNAL_TYPE_CALIZA,
   EXTERNAL_TYPE_PROCESSING_UNIT,
-  MERCHANT_TYPE_PAYOUT,
-  USER_TYPE_INDIVIDUAL,
 } from "../../helpers/constants";
 import {
   DEPOSIT_PURPOSE,
   DEPOSIT_SOURCE_OF_FUNDS,
 } from "../../helpers/lookups";
+import { buildPayoutPayload } from "./processingUnitPayload";
 
 /**
  * Mirror of App\\ExternalServices\\ProcessingUnit\\ProcessingUnit +
@@ -184,174 +177,6 @@ function removeEmpty<T extends Record<string, unknown>>(obj: T): T {
   return obj;
 }
 
-interface PayoutPayloadInput {
-  txn: BeneficiaryTransaction;
-  user: User;
-  userInformation: UserInformation | null;
-  beneficiaryAccount: BeneficiaryAccount;
-  beneficiaryAdditional: BeneficiaryAdditionalDetail | null;
-  sender: Sender | null;
-  quote: Quote;
-  source: { currency: string };
-  externalReferenceId: string | null;
-  documentFile: string | null;
-  documentType: string | null;
-  documentCountry: string | null;
-}
-
-function preparePayoutPayload(input: PayoutPayloadInput): Record<string, unknown> {
-  const { txn, user, userInformation, beneficiaryAccount, beneficiaryAdditional, sender, quote, source, documentFile, documentType, documentCountry } = input;
-
-  const common = {
-    order_id: txn.orderId,
-    from_amount: txn.amount.toString(),
-    from_currency: source.currency,
-    amount: txn.recipientAmount?.toString() ?? null,
-    exchange_rate: quote.fxRate,
-    receiving_currency: txn.receivingCurrency,
-    side: quote.quoteType,
-    remarks: txn.remarks,
-    supporting_document: txn.supportingDocument,
-    purpose_of_payment: beneficiaryAdditional?.purposeOfTransaction ?? null,
-    rail: (beneficiaryAccount.paymentRail ?? "").toUpperCase(),
-  };
-
-  const beneficiary = {
-    type: Number(beneficiaryAccount.type) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
-    first_name: beneficiaryAccount.firstName,
-    last_name: beneficiaryAccount.lastName ?? beneficiaryAccount.firstName,
-    business_name: beneficiaryAccount.businessName,
-    address_1: beneficiaryAdditional?.addressLine1 ?? null,
-    address_2: beneficiaryAdditional?.addressLine2 ?? null,
-    city: beneficiaryAdditional?.city ?? userInformation?.city ?? null,
-    state: beneficiaryAdditional?.state ?? null,
-    postal_code: beneficiaryAdditional?.postalCode ?? null,
-    country: beneficiaryAdditional?.country ?? null,
-    currency: beneficiaryAccount.currency,
-    bank_name: beneficiaryAccount.bankName ?? beneficiaryAccount.swiftCode,
-    account_name: beneficiaryAccount.accountName,
-    account_number: beneficiaryAccount.accountNumber,
-    iban: beneficiaryAccount.accountNumber,
-    account_type: beneficiaryAccount.accountType ?? "Checking",
-    routing_number: beneficiaryAccount.routingNumber,
-    swift_code: beneficiaryAccount.swiftCode,
-    ifsc_code: beneficiaryAccount.swiftCode,
-    iso_code: beneficiaryAccount.swiftCode,
-    email: beneficiaryAccount.email ?? user.email,
-    mobile_country_code: beneficiaryAccount.mobileCountryCode ?? user.mobileCountryCode,
-    mobile: beneficiaryAccount.mobile ?? user.mobile,
-  };
-
-  let remitter: Record<string, unknown>;
-  if (!sender) {
-    if (Number(user.userType) === USER_TYPE_INDIVIDUAL) {
-      remitter = {
-        type: "INDIVIDUAL",
-        first_name: user.firstName,
-        last_name: user.lastName ?? user.firstName,
-        country: userInformation?.country,
-        email: user.email,
-        mobile_country_code: user.mobileCountryCode,
-        mobile: user.mobile,
-        dob: user.dob,
-        nationality: userInformation?.country,
-        address_1: userInformation?.address1,
-        address_2: userInformation?.address2,
-        city: userInformation?.city,
-        state: userInformation?.state,
-        postal_code: userInformation?.postalCode,
-        id_type: userInformation?.idType,
-        id_number: userInformation?.idNumber,
-        source_of_funds: userInformation?.sourceOfIncome,
-        document_file: documentFile,
-        document_type: documentType,
-        document_country: documentCountry,
-      };
-    } else {
-      remitter = {
-        type: "BUSINESS",
-        business_name: userInformation?.businessName,
-        type_of_business: "Company",
-        email: user.email,
-        mobile_country_code: user.mobileCountryCode,
-        mobile: user.mobile,
-        address_1: userInformation?.address1,
-        address_2: userInformation?.address2,
-        city: userInformation?.city,
-        state: userInformation?.state,
-        postal_code: userInformation?.postalCode,
-        id_type: userInformation?.idType,
-        id_number: userInformation?.idNumber,
-        source_of_funds: userInformation?.sourceOfIncome,
-        country: userInformation?.country,
-        document_file: documentFile,
-        document_type: documentType,
-        document_country: documentCountry,
-      };
-    }
-  } else if (Number(sender.type) === USER_TYPE_INDIVIDUAL) {
-    remitter = {
-      type: "INDIVIDUAL",
-      title: sender.title,
-      first_name: sender.firstName,
-      last_name: sender.lastName ?? sender.firstName,
-      country: sender.country,
-      email: sender.email ?? user.email,
-      mobile_country_code: sender.mobileCountryCode ?? user.mobileCountryCode,
-      mobile: sender.mobile ?? user.mobile,
-      dob: sender.dob,
-      nationality: sender.nationality ?? sender.country,
-      address_1: sender.address1,
-      address_2: sender.address2,
-      city: sender.city ?? userInformation?.city,
-      state: sender.state,
-      postal_code: sender.postalCode,
-      id_type: sender.idType,
-      id_number: sender.idNumber,
-      source_of_funds: sender.sourceOfFunds,
-      document_file: documentFile,
-      document_type: documentType,
-      document_country: documentCountry,
-    };
-  } else {
-    remitter = {
-      type: "BUSINESS",
-      business_name: sender.firstName,
-      type_of_business: "Company",
-      email: sender.email,
-      mobile_country_code: sender.mobileCountryCode,
-      mobile: sender.mobile,
-      address_1: sender.address1,
-      address_2: sender.address2,
-      city: sender.city,
-      state: sender.state,
-      postal_code: sender.postalCode,
-      id_type: sender.idType,
-      id_number: sender.idNumber,
-      source_of_funds: sender.sourceOfFunds,
-      country: sender.country,
-      document_file: documentFile,
-      document_type: documentType,
-      document_country: documentCountry,
-    };
-  }
-
-  const payload = {
-    ...common,
-    beneficiary,
-    remitter,
-    merchant: {
-      name: user.firstName ?? user.email,
-      email: user.email,
-    },
-    meta_data: {
-      user_reference_id: input.externalReferenceId,
-      beneficiary_reference_id: beneficiaryAccount.externalReferenceId,
-      search_reference_id: txn.clientReferenceId ?? txn.txnRefNo,
-    },
-  };
-  return removeEmpty(payload as Record<string, unknown>);
-}
 
 function prepareDepositPayload(
   txn: DepositTransaction & { virtualAccount: VirtualAccount; adminWallet?: AdminWallet | null },
@@ -430,92 +255,16 @@ export const ProcessingUnit = {
    */
   async make(txn: BeneficiaryTransaction, user: User): Promise<void> {
     const startTime = Date.now();
-    let payload: unknown = undefined;
+    let payload: Record<string, unknown> | null = null;
     try {
-      const [account, additional, sender, senderDocument, quote, userInformation, userDocument] = await Promise.all([
-        txn.beneficiaryAccountId
-          ? prisma().beneficiaryAccount.findUnique({
-              where: { id: txn.beneficiaryAccountId },
-            })
-          : Promise.resolve(null),
-        txn.beneficiaryAccountId
-          ? prisma().beneficiaryAdditionalDetail.findFirst({ where: { beneficiaryAccountId: txn.beneficiaryAccountId },
-            })
-          : Promise.resolve(null),
-        txn.senderId
-          ? prisma().sender.findUnique({ where: { id: txn.senderId } })
-          : Promise.resolve(null),
-        txn.senderId
-          ? prisma().senderDocument.findFirst({ where: { senderId: txn.senderId } })
-          : Promise.resolve(null),
-        txn.quoteId
-          ? prisma().quote.findUnique({ where: { id: txn.quoteId } })
-          : Promise.resolve(null),
-        prisma().userInformation.findFirst({ where: { userId: user.id } }),
-        txn.senderId
-          ? Promise.resolve(null)
-          : prisma().userDocument.findFirst({ where: { userId: user.id } }),
-      ]);
-      if (!account || !quote) {
-        const errorMsg = "ProcessingUnit.make - missing beneficiary or quote";
+      payload = await buildPayoutPayload(txn, user);
+
+      if (!payload) {
+        const errorMsg = "ProcessingUnit.make - buildPayoutPayload returned null (missing related data)";
         logger.warn({ txnId: txn.uniqueId }, errorMsg);
         await recordFailedInitiation(txn.id, "build_payload", errorMsg, startTime);
         return;
       }
-
-      // Resolve the source virtual-account currency for the from_currency
-      // payload key.
-      let sourceCurrency = "";
-      if (quote.sourceType === "App\\Models\\VirtualAccount" && quote.sourceId) {
-        const va = await prisma().virtualAccount.findUnique({
-          where: { id: quote.sourceId },
-        });
-        sourceCurrency = va?.currency ?? "";
-      }
-
-      // Resolve external_reference_id - merchant's caliza_account_id
-      // setting if PAYOUT, else the user's active Caliza UserService.
-      let externalReferenceId: string | null = null;
-      if (user.merchantId) {
-        const merchant = await prisma().merchant.findUnique({
-          where: { id: user.merchantId },
-        });
-        if (merchant?.type === MERCHANT_TYPE_PAYOUT) {
-          const setting = await prisma().merchantSetting.findUnique({
-            where: {
-// @ts-expect-error - schema changed
-              merchantId_key: { merchantId: merchant.id, key: "caliza_account_id" },
-            },
-          });
-          if (setting?.value) externalReferenceId = setting.value;
-        }
-      }
-      if (!externalReferenceId) {
-        const us = await prisma().userService.findFirst({
-          where: { userId: user.id, serviceType: EXTERNAL_TYPE_CALIZA, isActive: 1 },
-          select: { externalReferenceId: true },
-        });
-        externalReferenceId = us?.externalReferenceId ?? null;
-      }
-
-      const docFile = sender ? senderDocument?.documentFile : userDocument?.documentFile;
-      const docType = sender ? senderDocument?.documentType : userDocument?.documentType;
-      const docCountry = sender ? senderDocument?.documentCountry : userDocument?.documentCountry;
-
-      payload = preparePayoutPayload({
-        txn,
-        user,
-        userInformation,
-        beneficiaryAccount: account,
-        beneficiaryAdditional: additional,
-        sender,
-        quote,
-        source: { currency: sourceCurrency },
-        externalReferenceId,
-        documentFile: docFile ?? null,
-        documentType: docType ?? null,
-        documentCountry: docCountry ?? null,
-      });
 
       const response = await postJSON<{ status?: string }>(
         ENDPOINTS.CREATE_TRANSACTION,
@@ -550,11 +299,10 @@ export const ProcessingUnit = {
       await TelegramNotifier.processingUnitInitiationFailed({
         id: txn.uniqueId,
         user: user.firstName ?? user.email,
-        currency: sourceCurrency,
+        currency: (payload.from_currency as string) ?? "",
         status: BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
         message: response.message,
-// @ts-expect-error - Auto-fixed: 'txn.createdAt' is possibly 'null'.
-        created_at: txn.createdAt.toISOString(),
+        created_at: txn.createdAt?.toISOString() ?? "",
       });
     } catch (err) {
       logger.error({ err, txnId: txn.uniqueId }, "ProcessingUnit.make threw");
@@ -581,8 +329,7 @@ export const ProcessingUnit = {
         currency: "",
         status: BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
         message: err instanceof Error ? err.message : String(err),
-// @ts-expect-error - Auto-fixed: 'txn.createdAt' is possibly 'null'.
-        created_at: txn.createdAt.toISOString(),
+        created_at: txn.createdAt?.toISOString() ?? "",
       });
     }
   },
