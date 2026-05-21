@@ -21,20 +21,21 @@ import { lookupsService } from "../lookups/lookupsService";
  * Shared payload builder for ProcessingUnit + Compliance.
  *
  * Mirror of App\\ExternalServices\\ProcessingUnit\\ProcessingUnit::preparePayload.
- * Both providers accept the same shape in production; keeping the builder
- * here avoids drift between the two drivers.
  */
 
+/**
+ * Mirror of Laravel's removeEmptyValues — strips null, undefined, and empty strings.
+ */
 function removeEmpty<T extends Record<string, unknown>>(obj: T): T {
   for (const [k, v] of Object.entries(obj)) {
-    if (v === null || v === undefined) {
+    if (v === null || v === undefined || v === "") {
       delete obj[k];
       continue;
     }
     if (typeof v === "object" && !Array.isArray(v)) {
       const cleaned = removeEmpty(v as Record<string, unknown>);
       if (Object.keys(cleaned).length === 0) delete obj[k];
-// @ts-ignore - Catch-all auto-fix for: Type 'T' is generic and can on...
+      // @ts-ignore
       else obj[k] = cleaned as never;
     }
   }
@@ -49,66 +50,50 @@ interface RelatedRows {
   userInformation: UserInformation | null;
   sourceCurrency: string;
   externalReferenceId: string | null;
-  documentFile: string | null;
-  documentType: string | null;
-  documentCountry: string | null;
 }
 
 async function loadRelated(
   txn: BeneficiaryTransaction,
   user: User,
 ): Promise<RelatedRows | null> {
-  const [account, additional, sender, senderDocument, quote, userInformation, userDocument] = await Promise.all([
+  const [account, additional, sender, quote, userInformation] = await Promise.all([
     txn.beneficiaryAccountId
-      ? prisma().beneficiaryAccount.findUnique({
-          where: { id: txn.beneficiaryAccountId },
-        })
+      ? prisma().beneficiaryAccount.findUnique({ where: { id: txn.beneficiaryAccountId } })
       : Promise.resolve(null),
     txn.beneficiaryAccountId
-      ? prisma().beneficiaryAdditionalDetail.findFirst({ where: { beneficiaryAccountId: txn.beneficiaryAccountId },
-        })
+      ? prisma().beneficiaryAdditionalDetail.findFirst({ where: { beneficiaryAccountId: txn.beneficiaryAccountId } })
       : Promise.resolve(null),
     txn.senderId
       ? prisma().sender.findUnique({ where: { id: txn.senderId } })
-      : Promise.resolve(null),
-    txn.senderId
-      ? prisma().senderDocument.findFirst({ where: { senderId: txn.senderId } })
       : Promise.resolve(null),
     txn.quoteId
       ? prisma().quote.findUnique({ where: { id: txn.quoteId } })
       : Promise.resolve(null),
     prisma().userInformation.findFirst({ where: { userId: user.id } }),
-    txn.senderId
-      ? Promise.resolve(null)
-      : prisma().userDocument.findFirst({ where: { userId: user.id } }),
   ]);
+
   if (!account || !quote) return null;
 
+  // Resolve source currency from the quote's virtual account
   let sourceCurrency = "";
   if (quote.sourceType === MORPH_VIRTUAL_ACCOUNT && quote.sourceId) {
-    const va = await prisma().virtualAccount.findUnique({
-      where: { id: quote.sourceId },
-    });
+    const va = await prisma().virtualAccount.findUnique({ where: { id: quote.sourceId } });
     sourceCurrency = va?.currency ?? "";
   }
 
+  // Resolve externalReferenceId (mirrors Laravel's merchant/userservice logic)
   let externalReferenceId: string | null = null;
   if (user.merchantId) {
-    const merchant = await prisma().merchant.findUnique({
-      where: { id: user.merchantId },
-    });
+    const merchant = await prisma().merchant.findUnique({ where: { id: user.merchantId } });
     if (merchant?.type === MERCHANT_TYPE_PAYOUT) {
-      const setting = await prisma().merchantSetting.findFirst({ where: { merchantId: merchant.id, key: "caliza_account_id"  },
+      const setting = await prisma().merchantSetting.findFirst({
+        where: { merchantId: merchant.id, key: "caliza_account_id" },
       });
       if (setting?.value) {
         externalReferenceId = setting.value;
       } else {
-        const va = await prisma().virtualAccount.findFirst({
-            where: { userId: user.id }
-        });
-        if (va) {
-            externalReferenceId = va.externalReferenceId;
-        }
+        const va = await prisma().virtualAccount.findFirst({ where: { userId: user.id } });
+        if (va) externalReferenceId = va.externalReferenceId;
       }
     }
   }
@@ -120,34 +105,21 @@ async function loadRelated(
     externalReferenceId = us?.externalReferenceId ?? null;
   }
 
-  let documentFile = sender ? senderDocument?.documentFile : userDocument?.documentFile;
-  if (!documentFile || documentFile.trim() === "") {
-    documentFile = txn.supportingDocument;
-  }
-  const documentType = sender ? senderDocument?.documentType : userDocument?.documentType;
-  const documentCountry = sender ? senderDocument?.documentCountry : userDocument?.documentCountry;
-
-  return {
-    account,
-    additional,
-    sender,
-    quote,
-    userInformation,
-    sourceCurrency,
-    externalReferenceId,
-    documentFile: documentFile ?? null,
-    documentType: documentType ?? null,
-    documentCountry: documentCountry ?? null,
-  };
+  return { account, additional, sender, quote, userInformation, sourceCurrency, externalReferenceId };
 }
 
+/**
+ * Builds the remitter object when there is NO sender (user is the remitter).
+ *
+ * Mirrors Laravel lines 221–300:
+ *   - INDIVIDUAL: no document fields
+ *   - BUSINESS: fetches UserDocument, includes document_file/document_type
+ */
 async function remitterFromUser(
   user: User,
   userInformation: UserInformation | null,
-  docFile: string | null,
-  docType: string | null,
-  docCountry: string | null,
 ): Promise<Record<string, unknown>> {
+  // Mirror: if ($user->user_type == USER_TYPE_INDIVIDUAL)
   if (Number(user.userType) === USER_TYPE_INDIVIDUAL) {
     return {
       type: "INDIVIDUAL",
@@ -167,19 +139,24 @@ async function remitterFromUser(
       id_type: await lookupsService.findValuebyKey(userInformation?.idType, "id_types"),
       id_number: userInformation?.idNumber,
       source_of_funds: userInformation?.sourceOfIncome,
-      document_file: docFile,
-      document_type: docType ? await lookupsService.findValuebyKey(docType, "document_types") : (docFile ? "Other" : null),
-      document_country: docCountry,
     };
   }
 
+  // BUSINESS: Mirror: $sender_documents = UserDocument::where('user_id', $user->id)->first();
+  const userDocument = await prisma().userDocument.findFirst({ where: { userId: user.id } });
+
   const remitter: Record<string, unknown> = {
-    type: "BUSINESS",
+    // Mirror: $user->type == USER_TYPE_INDIVIDUAL ? 'INDIVIDUAL' : 'BUSINESS'
+    // Note: Laravel uses $user->type (not user_type) here — maps to userType in Node
+    type: Number(user.userType) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
     business_name: userInformation?.businessName,
-    type_of_business: await lookupsService.findValuebyKey(
-      userInformation?.type_of_business,
-      "business_types",
-    ) || "Company",
+    type_of_business:
+      await lookupsService.findValuebyKey(userInformation?.type_of_business, "business_types") ||
+      "Company",
+    document_file: userDocument?.documentFile ?? null,
+    document_type: userDocument?.documentType
+      ? await lookupsService.findValuebyKey(userDocument.documentType, "document_types")
+      : null,
     email: user.email,
     mobile_country_code: user.mobileCountryCode,
     mobile: user.mobile,
@@ -192,17 +169,16 @@ async function remitterFromUser(
     id_number: userInformation?.idNumber,
     source_of_funds: userInformation?.sourceOfIncome,
     country: userInformation?.country,
-    document_file: docFile,
-    document_type: docType ? await lookupsService.findValuebyKey(docType, "document_types") : (docFile ? "Other" : null),
-    document_country: docCountry,
   };
 
+  // Mirror: if (!empty($user->userInformation->business_persons))
   if (userInformation?.businessPersons) {
     let persons: any[] = [];
     try {
-      persons = typeof userInformation.businessPersons === "string" 
-        ? JSON.parse(userInformation.businessPersons) 
-        : userInformation.businessPersons as any[];
+      persons =
+        typeof userInformation.businessPersons === "string"
+          ? JSON.parse(userInformation.businessPersons)
+          : (userInformation.businessPersons as any[]);
     } catch {
       persons = [];
     }
@@ -212,7 +188,6 @@ async function remitterFromUser(
       if (!hasUbo && persons[0]) {
         persons[0].designation_id = 5;
       }
-
       remitter.business_persons = await Promise.all(
         persons.map(async (person: any) => ({
           first_name: person.first_name ?? null,
@@ -220,7 +195,9 @@ async function remitterFromUser(
           mobile_country_code: person.mobile_country_code ?? null,
           mobile: person.mobile ?? null,
           country: person.country ?? null,
-          id_type: await lookupsService.findValuebyKey(person.id_type, "id_types"),
+          id_type: !person.id_type
+            ? null
+            : await lookupsService.findValuebyKey(person.id_type, "id_types"),
           id_number: person.id_number ?? null,
           designation: person.designation_id
             ? await lookupsService.findValuebyKey(person.designation_id, "professions")
@@ -233,14 +210,19 @@ async function remitterFromUser(
   return remitter;
 }
 
+/**
+ * Builds the remitter object when a sender IS present.
+ *
+ * Mirrors Laravel lines 302–382:
+ *   - INDIVIDUAL sender: no document fields
+ *   - BUSINESS sender: fetches SenderDocument, includes document_file/document_type
+ */
 async function remitterFromSender(
   sender: Sender,
   user: User,
   userInformation: UserInformation | null,
-  docFile: string | null,
-  docType: string | null,
-  docCountry: string | null,
 ): Promise<Record<string, unknown>> {
+  // Mirror: if ($sender->type == USER_TYPE_INDIVIDUAL)
   if (Number(sender.type) === USER_TYPE_INDIVIDUAL) {
     return {
       type: "INDIVIDUAL",
@@ -261,19 +243,22 @@ async function remitterFromSender(
       id_type: await lookupsService.findValuebyKey(sender.idType, "id_types"),
       id_number: sender.idNumber,
       source_of_funds: sender.sourceOfFunds,
-      document_file: docFile,
-      document_type: docType ? await lookupsService.findValuebyKey(docType, "document_types") : (docFile ? "Other" : null),
-      document_country: docCountry,
     };
   }
+
+  // BUSINESS: Mirror: $sender_documents = SenderDocument::where('sender_id', $sender->id)->first();
+  const senderDocument = await prisma().senderDocument.findFirst({ where: { senderId: sender.id } });
 
   const remitter: Record<string, unknown> = {
     type: "BUSINESS",
     business_name: sender.firstName,
-    type_of_business: await lookupsService.findValuebyKey(
-      userInformation?.type_of_business,
-      "business_types",
-    ) || "Company",
+    type_of_business:
+      await lookupsService.findValuebyKey(userInformation?.type_of_business, "business_types") ||
+      "Company",
+    document_file: senderDocument?.documentFile ?? null,
+    document_type: senderDocument?.documentType
+      ? await lookupsService.findValuebyKey(senderDocument.documentType, "document_types")
+      : null,
     email: sender.email,
     mobile_country_code: sender.mobileCountryCode,
     mobile: sender.mobile,
@@ -286,17 +271,16 @@ async function remitterFromSender(
     id_number: sender.idNumber,
     source_of_funds: sender.sourceOfFunds,
     country: sender.country,
-    document_file: docFile,
-    document_type: docType ? await lookupsService.findValuebyKey(docType, "document_types") : (docFile ? "Other" : null),
-    document_country: docCountry,
   };
 
+  // Mirror: if (!empty($sender->business_persons))
   if (sender.businessPersons) {
     let persons: any[] = [];
     try {
-      persons = typeof sender.businessPersons === "string" 
-        ? JSON.parse(sender.businessPersons) 
-        : sender.businessPersons as any[];
+      persons =
+        typeof sender.businessPersons === "string"
+          ? JSON.parse(sender.businessPersons)
+          : (sender.businessPersons as any[]);
     } catch {
       persons = [];
     }
@@ -306,7 +290,6 @@ async function remitterFromSender(
       if (!hasUbo && persons[0]) {
         persons[0].designation_id = 5;
       }
-
       remitter.business_persons = await Promise.all(
         persons.map(async (person: any) => ({
           first_name: person.first_name ?? null,
@@ -314,7 +297,9 @@ async function remitterFromSender(
           mobile_country_code: person.mobile_country_code ?? null,
           mobile: person.mobile ?? null,
           country: person.country ?? null,
-          id_type: await lookupsService.findValuebyKey(person.id_type, "id_types"),
+          id_type: person.id_type
+            ? await lookupsService.findValuebyKey(person.id_type, "id_types")
+            : null,
           id_number: person.id_number ?? null,
           designation: person.designation_id
             ? await lookupsService.findValuebyKey(person.designation_id, "professions")
@@ -333,6 +318,7 @@ export async function buildPayoutPayload(
 ): Promise<Record<string, unknown> | null> {
   const related = await loadRelated(txn, user);
   if (!related) return null;
+
   const { account, additional, sender, quote, userInformation, sourceCurrency, externalReferenceId } = related;
 
   const common = {
@@ -376,11 +362,14 @@ export async function buildPayoutPayload(
   };
 
   const remitter = sender
-    ? await remitterFromSender(sender, user, userInformation, related.documentFile, related.documentType, related.documentCountry)
-    : await remitterFromUser(user, userInformation, related.documentFile, related.documentType, related.documentCountry);
+    ? await remitterFromSender(sender, user, userInformation)
+    : await remitterFromUser(user, userInformation);
 
+  // Mirror: $txn->user->merchant ? $txn->user->merchant->name : $txn->user->name
   const merchantName = user.merchantId
-    ? (await prisma().merchant.findUnique({ where: { id: user.merchantId } }))?.name ?? user.firstName ?? user.email
+    ? (await prisma().merchant.findUnique({ where: { id: user.merchantId } }))?.name ??
+      user.firstName ??
+      user.email
     : user.firstName ?? user.email;
 
   const payload = {
@@ -397,5 +386,6 @@ export async function buildPayoutPayload(
       search_reference_id: txn.clientReferenceId ?? txn.txnRefNo,
     },
   };
+
   return removeEmpty(payload as Record<string, unknown>);
 }
