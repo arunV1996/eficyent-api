@@ -380,14 +380,16 @@ export const senderController = {
       "../../services/exports/excelImportService"
     );
     const flat = flattenFormFields({ remitter: fields }, ["remitter"]);
+    const { validateAndNormalizeSender, createSenderValidationCache } = await import(
+      "../../services/senders/senderNormalizer"
+    );
+    const senderCache = createSenderValidationCache();
     const result = await processExcel(buffer, flat, async (payload, rowNumber) => {
-      const { validateAndNormalizeSender } = await import(
-        "../../services/senders/senderNormalizer"
-      );
       const normalized = await validateAndNormalizeSender(
         payload.remitter as Record<string, unknown>,
         req.user!,
         depositEnabled,
+        senderCache,
       );
       return { row: rowNumber, sender: normalized };
     });

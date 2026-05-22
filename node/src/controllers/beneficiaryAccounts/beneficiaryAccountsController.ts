@@ -457,7 +457,7 @@ export const beneficiaryAccountsController = {
         const { flattenFormFields, processExcel } = await import(
           "../../services/exports/excelImportService"
         );
-        const { validateAndNormalize } = await import(
+        const { validateAndNormalize, createBeneficiaryValidationCache } = await import(
           "../../services/beneficiaryAccounts/beneficiaryNormalizer"
         );
 
@@ -465,6 +465,7 @@ export const beneficiaryAccountsController = {
         const paymentType = ls.formatPaymentType(user.userType, type);
         const supportedCountries = await ls.receivingCountries(paymentType, user);
         const fields = flattenFormFields({ beneficiary }, ["beneficiary"]);
+        const beneficiaryCache = createBeneficiaryValidationCache();
 
         const result = await processExcel(buffer, fields, async (payload, rowNumber) => {
           payload.beneficiary.country = country;
@@ -473,6 +474,7 @@ export const beneficiaryAccountsController = {
             payload.beneficiary as Record<string, unknown>,
             user,
             supportedCountries,
+            beneficiaryCache,
           );
           return { row: rowNumber, beneficiary: ben };
         });
