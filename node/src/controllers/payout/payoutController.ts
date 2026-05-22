@@ -772,24 +772,37 @@ export const payoutController = {
       { quote, beneficiary, remitter },
       ["quote", "beneficiary", "remitter"],
     );
+    const {
+      validateAndNormalize,
+      createBeneficiaryValidationCache,
+    } = await import("../../services/beneficiaryAccounts/beneficiaryNormalizer");
+    const {
+      validateAndNormalizeSender,
+      createSenderValidationCache,
+    } = await import("../../services/senders/senderNormalizer");
+    // (country, currency, type) and the remitter-deposit flag are constant for
+    // the whole file, so resolve the per-row-constant lookups once and reuse
+    // them across every row — otherwise each row re-issues ~40 DB queries and
+    // large files time out.
+    const beneficiaryCache = createBeneficiaryValidationCache();
+    const senderCache = createSenderValidationCache();
+// @ts-ignore - Catch-all auto-fix for: Argument of type 'bigint | nul...
+    const remitterDepositEnabled = await isRemitterDepositEnabled(req.user!.merchantId);
+
     const result = await processExcel(buffer, fields, async (payload, rowNumber) => {
-      const { validateAndNormalize } = await import(
-        "../../services/beneficiaryAccounts/beneficiaryNormalizer"
-      );
-      const { validateAndNormalizeSender } = await import(
-        "../../services/senders/senderNormalizer"
-      );
       payload.beneficiary.country = country;
       payload.beneficiary.currency = currency;
       const ben = await validateAndNormalize(
         payload.beneficiary as Record<string, unknown>,
         req.user!,
+        undefined,
+        beneficiaryCache,
       );
       const sen = await validateAndNormalizeSender(
         payload.remitter as Record<string, unknown>,
         req.user!,
-// @ts-ignore - Catch-all auto-fix for: Argument of type 'bigint | nul...
-        await isRemitterDepositEnabled(req.user!.merchantId),
+        remitterDepositEnabled,
+        senderCache,
       );
       return {
         row: rowNumber,

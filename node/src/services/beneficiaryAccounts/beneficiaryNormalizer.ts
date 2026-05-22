@@ -28,6 +28,23 @@ export interface NormalizedBeneficiaryPayload {
   beneficiaryAccountAdditionalDetail: Record<string, unknown>;
 }
 
+/**
+ * Optional per-request memoization for bulk imports. The (country, currency,
+ * type) tuple is constant across every row of a bulk file, so the supported
+ * country list and dynamic form-field definitions resolve identically for each
+ * row. Recomputing them per row issues ~30 redundant DB queries each time and
+ * is what makes large bulk uploads time out. Callers that loop over many rows
+ * pass a single shared cache so these lookups run once per distinct key.
+ */
+export interface BeneficiaryValidationCache {
+  supported: Map<string, any[]>;
+  fields: Map<string, FieldDef[]>;
+}
+
+export function createBeneficiaryValidationCache(): BeneficiaryValidationCache {
+  return { supported: new Map(), fields: new Map() };
+}
+
 function coerceType(input: unknown): number {
   if (input === USER_TYPE_INDIVIDUAL || input === USER_TYPE_BUSINESS) return input;
   if (typeof input === "string") {
@@ -44,6 +61,7 @@ export async function validateAndNormalize(
   payload: Record<string, unknown>,
   user: User,
   cachedSupportedCountries?: any[],
+  cache?: BeneficiaryValidationCache,
 ): Promise<NormalizedBeneficiaryPayload> {
   const type = coerceType(payload.type);
   const country = String(payload.country ?? "");
@@ -58,7 +76,18 @@ export async function validateAndNormalize(
   const paymentType = lookupsService.formatPaymentType(user.userType, type);
   if (paymentType === C2B) throw new ApiException(195);
 
-  const supported = cachedSupportedCountries ?? (await lookupsService.receivingCountries(paymentType, user));
+  let supported: any[];
+  if (cache) {
+    const hit = cache.supported.get(paymentType);
+    if (hit) {
+      supported = hit;
+    } else {
+      supported = cachedSupportedCountries ?? (await lookupsService.receivingCountries(paymentType, user));
+      cache.supported.set(paymentType, supported);
+    }
+  } else {
+    supported = cachedSupportedCountries ?? (await lookupsService.receivingCountries(paymentType, user));
+  }
   const country_match = supported.find((c) => c.country_code === country);
   if (!country_match) {
     throw new ApiException(422, "Country is not supported for this beneficiary type.", 422);
@@ -67,7 +96,19 @@ export async function validateAndNormalize(
     throw new ApiException(422, "Currency is not supported for the selected country.", 422);
   }
 
-  const fields: FieldDef[] = await beneficiaryFormFields({ country, currency, type });
+  let fields: FieldDef[];
+  if (cache) {
+    const fieldsKey = `${country}|${currency}|${type}`;
+    const hit = cache.fields.get(fieldsKey);
+    if (hit) {
+      fields = hit;
+    } else {
+      fields = await beneficiaryFormFields({ country, currency, type });
+      cache.fields.set(fieldsKey, fields);
+    }
+  } else {
+    fields = await beneficiaryFormFields({ country, currency, type });
+  }
   const result = validateAgainstFields(fields, payload);
   const validated = ensureNoFieldErrors(result);
 
