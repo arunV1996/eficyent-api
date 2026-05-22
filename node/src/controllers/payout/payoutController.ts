@@ -738,20 +738,29 @@ export const payoutController = {
    * bulk-payout worker (Phase 6 already wired the worker).
    */
   async bulkStore(req: Request, res: Response): Promise<Response> {
+    console.log("[BulkStore] Starting bulk store process");
     res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
-    // multer middleware places the uploaded XLSX as a base64 data URL on
-    // req.body.file.
+    console.log("[BulkStore] User validated");
+    const startTime = Date.now();
+    logger.info({ userId: req.user.id.toString() }, "[BulkStore] Starting bulk store process");
+
     const fileField = (req.body as { file?: string }).file;
     if (!fileField || !fileField.startsWith("data:")) {
+      console.log("[BulkStore] Missing or invalid file payload");
+      logger.warn({ userId: req.user.id.toString() }, "[BulkStore] Missing or invalid file payload");
       throw new ApiException(422, "Excel file (multipart 'file') required.", 422);
     }
+    console.log("[BulkStore] Base64 buffer parsed successfully");
     const buffer = Buffer.from(fileField.split(",")[1] ?? "", "base64");
+    logger.info({ bufferSize: buffer.length }, "[BulkStore] Base64 buffer parsed successfully");
 
     const country = String((req.body as { country?: string }).country ?? "");
     const currency = String((req.body as { currency?: string }).currency ?? "");
     const type = Number((req.body as { type?: number }).type ?? 1);
 
+    const fieldsStart = Date.now();
+    console.log("[BulkStore] Fetching form fields");
     const beneficiary = await beneficiaryFormFields({ country, currency, type });
     const quote = await quoteFormFields();
     const merchantRow = req.user.merchantId
@@ -763,6 +772,7 @@ export const payoutController = {
 // @ts-ignore - Catch-all auto-fix for: Argument of type 'bigint | nul...
       remitterDepositEnabled: await isRemitterDepositEnabled(req.user.merchantId),
     });
+    logger.info({ durationMs: Date.now() - fieldsStart }, "[BulkStore] Form fields retrieved and initialized");
 
     const {
       flattenFormFields,
@@ -780,18 +790,21 @@ export const payoutController = {
       validateAndNormalizeSender,
       createSenderValidationCache,
     } = await import("../../services/senders/senderNormalizer");
-    // (country, currency, type) and the remitter-deposit flag are constant for
-    // the whole file, so resolve the per-row-constant lookups once and reuse
-    // them across every row — otherwise each row re-issues ~40 DB queries and
-    // large files time out.
+
     const beneficiaryCache = createBeneficiaryValidationCache();
     const senderCache = createSenderValidationCache();
 // @ts-ignore - Catch-all auto-fix for: Argument of type 'bigint | nul...
     const remitterDepositEnabled = await isRemitterDepositEnabled(req.user!.merchantId);
 
+    logger.info("[BulkStore] Beginning Excel parsing and row-by-row validation");
+    const validationStart = Date.now();
+    let processedRowsCount = 0;
+
     const result = await processExcel(buffer, fields, async (payload, rowNumber) => {
+      const rowStart = Date.now();
       payload.beneficiary.country = country;
       payload.beneficiary.currency = currency;
+      
       const ben = await validateAndNormalize(
         payload.beneficiary as Record<string, unknown>,
         req.user!,
@@ -804,6 +817,15 @@ export const payoutController = {
         remitterDepositEnabled,
         senderCache,
       );
+
+      processedRowsCount++;
+      if (processedRowsCount % 10 === 0 || processedRowsCount === 1) {
+        logger.info(
+          { rowNumber, durationMs: Date.now() - rowStart, processedCount: processedRowsCount },
+          `[BulkStore] Parsed & validated row ${rowNumber}`
+        );
+      }
+
       return {
         row: rowNumber,
         beneficiary: ben,
@@ -814,17 +836,30 @@ export const payoutController = {
       };
     });
 
+    const validationTime = Date.now() - validationStart;
+    logger.info(
+      { 
+        durationMs: validationTime, 
+        totalRows: result.validatedRows.length, 
+        errorCount: result.errors.length 
+      }, 
+      "[BulkStore] Excel parsing and validation completed"
+    );
+
     if (result.errors.length > 0) {
+      logger.warn({ errorCount: result.errors.length }, "[BulkStore] Bulk import failed validation");
       return sendResponse(res, "Bulk import failed.", 200, {
         errors: result.errors,
       });
     }
 
-    // Enqueue one PayoutJob per row (the bulk-payout worker materialises
-    // the quote + beneficiary + sender + transaction).
+    logger.info("[BulkStore] Beginning database PayoutJob insertion and Queue dispatching");
+    const enqueueStart = Date.now();
     const { Dispatch } = await import("../../queues/dispatchers");
     const created: { row: number; payout_job_id: string }[] = [];
+
     for (const row of result.validatedRows) {
+      const rowEnqueueStart = Date.now();
       const job = await prisma().payoutJob.create({
         data: {
           uniqueId: uniqueId(24),
@@ -842,12 +877,32 @@ export const payoutController = {
           } as Prisma.InputJsonValue,
         },
       });
+
       await Dispatch.bulkPayout({
         payoutJobUniqueId: job.uniqueId,
         userId: req.user.id.toString(),
       });
+
       created.push({ row: row.row, payout_job_id: job.uniqueId });
+
+      if (created.length % 10 === 0 || created.length === 1) {
+        logger.info(
+          { row: row.row, durationMs: Date.now() - rowEnqueueStart, progress: `${created.length}/${result.validatedRows.length}` },
+          `[BulkStore] PayoutJob created and enqueued for row ${row.row}`
+        );
+      }
     }
+
+    const enqueueTime = Date.now() - enqueueStart;
+    const totalTime = Date.now() - startTime;
+    logger.info(
+      { 
+        enqueueDurationMs: enqueueTime, 
+        totalDurationMs: totalTime, 
+        rowsEnqueued: created.length 
+      }, 
+      "[BulkStore] Bulk store process finished successfully"
+    );
 
     return sendResponse(res, "Bulk import accepted.", 200, {
       success: created,
