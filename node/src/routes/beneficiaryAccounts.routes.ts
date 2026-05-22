@@ -51,7 +51,7 @@ export function beneficiaryAccountsRoutes(): Router {
   );
 
   // Bulk endpoints surface a clean 501 until Phase 8 ships ExcelImportService.
-  r.get("/bulk/template", beneficiaryAccountsController.bulkTemplate);
-  r.post("/bulk/store", beneficiaryAccountsController.bulkStore);
+  r.get("/bulk/template", asyncHandler(beneficiaryAccountsController.bulkTemplate));
+  r.post("/bulk/store", asyncHandler(beneficiaryAccountsController.bulkStore));
   return r;
 }

@@ -15,6 +15,7 @@ import { USER_TYPE_MAP } from "../../helpers/lookups";
 import { senderFields } from "../../helpers/formFields";
 import { senderResource } from "../../services/senders/senderResource";
 import { validateAndNormalizeSender } from "../../services/senders/senderNormalizer";
+import { extractUploadedFileBuffer } from "../../middleware/fileUpload";
 import { uniqueId } from "../../helpers/uniqueId";
 import { s3Service } from "../../services/storage/s3Service";
 import {
@@ -358,11 +359,10 @@ export const senderController = {
   async bulkStore(req: Request, res: Response): Promise<Response> {
     res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
-    const fileField = (req.body as { file?: string }).file;
-    if (!fileField || !fileField.startsWith("data:")) {
+    const buffer = extractUploadedFileBuffer(req, "file");
+    if (!buffer || buffer.length === 0) {
       throw new ApiException(422, "Excel file (multipart 'file') required.", 422);
     }
-    const buffer = Buffer.from(fileField.split(",")[1] ?? "", "base64");
     const type = Number((req.body as { type?: number }).type ?? 1);
     const merchant = req.user.merchantId
       ? await prisma().merchant.findFirst({

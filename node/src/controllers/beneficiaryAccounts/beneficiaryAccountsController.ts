@@ -18,6 +18,7 @@ import {
   beneficiaryFormFields,
 } from "../../helpers/formFields";
 import { beneficiaryAccountResource } from "../../services/beneficiaryAccounts/beneficiaryResource";
+import { extractUploadedFileBuffer } from "../../middleware/fileUpload";
 import {
   NormalizedBeneficiaryPayload,
   validateAndNormalize,
@@ -429,13 +430,12 @@ export const beneficiaryAccountsController = {
    */
   async bulkStore(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
-    const fileField = (req.body as { file?: string }).file;
-    if (!fileField || !fileField.startsWith("data:")) {
+    const buffer = extractUploadedFileBuffer(req, "file");
+    if (!buffer || buffer.length === 0) {
       throw new ApiException(422, "Excel file (multipart 'file') required.", 422);
     }
 
     // Capture everything we need before the response is sent.
-    const buffer = Buffer.from(fileField.split(",")[1] ?? "", "base64");
     const country = String((req.body as { country?: string }).country ?? "");
     const currency = String((req.body as { currency?: string }).currency ?? "");
     const type = Number((req.body as { type?: number }).type ?? 1);

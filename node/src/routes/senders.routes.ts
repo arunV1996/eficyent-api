@@ -53,7 +53,7 @@ export function sendersRoutes(): Router {
   );
 
   // Bulk endpoints land in Phase 8 (Excel).
-  r.get("/bulk/template", senderController.bulkTemplate);
-  r.post("/bulk/store", senderController.bulkStore);
+  r.get("/bulk/template", asyncHandler(senderController.bulkTemplate));
+  r.post("/bulk/store", asyncHandler(senderController.bulkStore));
   return r;
 }

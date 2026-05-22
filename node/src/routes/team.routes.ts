@@ -292,8 +292,8 @@ export async function teamAuthedRoutes(): Promise<Router> {
     validate({ query: BeneficiaryShowSchema }),
     asyncHandler(beneficiaryAccountsController.destroy),
   );
-  r.get("/beneficiaries/bulk/template", beneficiaryAccountsController.bulkTemplate);
-  r.post("/beneficiaries/bulk/store", beneficiaryAccountsController.bulkStore);
+  r.get("/beneficiaries/bulk/template", asyncHandler(beneficiaryAccountsController.bulkTemplate));
+  r.post("/beneficiaries/bulk/store", asyncHandler(beneficiaryAccountsController.bulkStore));
 
   // ----- Senders -----
   r.get(
@@ -318,8 +318,8 @@ export async function teamAuthedRoutes(): Promise<Router> {
     validate({ query: SenderShowQuerySchema }),
     asyncHandler(senderController.destroy),
   );
-  r.get("/remitters/bulk/template", senderController.bulkTemplate);
-  r.post("/remitters/bulk/store", senderController.bulkStore);
+  r.get("/remitters/bulk/template", asyncHandler(senderController.bulkTemplate));
+  r.post("/remitters/bulk/store", asyncHandler(senderController.bulkStore));
 
   // ----- Quotes -----
   r.post(
@@ -399,12 +399,12 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.get(
     "/beneficiary-transactions/bulk/template",
-    payoutController.payoutTemplate,
+    asyncHandler(payoutController.payoutTemplate),
   );
   r.post(
     "/beneficiary-transactions/bulk/store",
     limited,
-    payoutController.bulkStore,
+    asyncHandler(payoutController.bulkStore),
   );
   r.get(
     "/beneficiary-transactions/transaction-form-fields",

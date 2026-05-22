@@ -102,8 +102,8 @@ export async function payoutRoutes(): Promise<Router> {
     asyncHandler(payoutController.direct),
   );
 
-  r.get("/bulk/template", payoutController.payoutTemplate);
-  r.post("/bulk/store", payoutController.bulkStore);
+  r.get("/bulk/template", asyncHandler(payoutController.payoutTemplate));
+  r.post("/bulk/store", asyncHandler(payoutController.bulkStore));
 
   r.get(
     "/instant/get-form-fields",

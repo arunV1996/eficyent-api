@@ -93,6 +93,36 @@ export function fileUpload() {
 }
 
 /**
+ * Resolve an uploaded file to a Buffer, regardless of transport:
+ *   1. a base64 `data:` URL inlined on req.body[fieldName] (JSON / fileUpload()), or
+ *   2. a multipart file parsed onto req.files by the global `multer().any()`.
+ *
+ * Bulk-import endpoints receive XLSX via multipart, which the global multer
+ * puts on req.files (NOT as a data URL on req.body), so reading req.body.file
+ * alone always missed it. This reads whichever shape is present.
+ */
+export function extractUploadedFileBuffer(
+  req: Request,
+  fieldName = "file",
+): Buffer | null {
+  const bodyVal = (req.body as Record<string, unknown> | undefined)?.[fieldName];
+  if (typeof bodyVal === "string" && bodyVal.startsWith("data:")) {
+    return Buffer.from(bodyVal.split(",")[1] ?? "", "base64");
+  }
+
+  const filesUnknown = (req as Request & { files?: unknown }).files;
+  if (filesUnknown && (Array.isArray(filesUnknown) || typeof filesUnknown === "object")) {
+    const fileList: MulterFile[] = Array.isArray(filesUnknown)
+      ? (filesUnknown as MulterFile[])
+      : Object.values(filesUnknown as Record<string, MulterFile[]>).flat();
+    const match = fileList.find((f) => f.fieldname === fieldName) ?? fileList[0];
+    if (match?.buffer && match.buffer.length > 0) return match.buffer;
+  }
+
+  return null;
+}
+
+/**
  * Direct-to-S3 helper used by handlers that want a pre-uploaded URL on
  * a non-multipart code path. Accepts either an https:// URL (no-op) or a
  * data: URL and returns the canonical S3 URL.
