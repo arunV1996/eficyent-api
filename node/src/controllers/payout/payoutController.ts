@@ -1,6 +1,10 @@
 import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma";
+import fs from "fs";
+import path from "path";
+import ejs from "ejs";
+import puppeteer from "puppeteer";
 import { ApiException } from "../../helpers/errors";
 import { sendResponse } from "../../helpers/response";
 import { apiSuccess } from "../../helpers/messages";
@@ -13,6 +17,7 @@ import {
   PAYOUT_JOB_STATUS_FAILED,
   PAYOUT_JOB_STATUS_PENDING,
   TAKE_COUNT,
+  beneficiaryTransactionStatusLabel,
 } from "../../helpers/constants";
 import {
   beneficiaryFormFields,
@@ -60,13 +65,21 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  * this file is replaced.
  */
 
-async function isRemitterDepositEnabled(merchantId: string | null): Promise<boolean> {
+async function isRemitterDepositEnabled(merchantId: bigint | string | null): Promise<boolean> {
   if (!merchantId) return false;
-  const merchant = await prisma().merchant.findFirst({ where: { uniqueId: merchantId } });
+  const where = typeof merchantId === "bigint" ? { id: merchantId } : { uniqueId: merchantId };
+  const merchant = await prisma().merchant.findFirst({ where });
   if (!merchant || merchant.type !== 1) return false;
-  const setting = await prisma().merchantSetting.findFirst({ where: { merchantId: merchant.id, key: "enable_remitter_deposit"  },
+  const setting = await prisma().merchantSetting.findFirst({
+    where: { merchantId: merchant.id, key: "enable_remitter_deposit" },
   });
   return setting?.value === "1";
+}
+
+async function renderInvoiceHtml(details: any): Promise<string> {
+  const templatePath = path.join(__dirname, "..", "..", "views", "invoice", "invoice.ejs");
+  const templateHtml = await fs.promises.readFile(templatePath, "utf-8");
+  return ejs.render(templateHtml, { invoice_details: details });
 }
 
 async function findOneByAnyId(
@@ -133,7 +146,7 @@ export const payoutController = {
   async index(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as PayoutListInput;
-    const where = await listWhere(req.user, q);
+    const where = await listWhere(req.user, q, !!req.teamMember);
     const skip = q.skip ?? 0;
     const take = q.take ?? TAKE_COUNT;
     const [total, rows] = await Promise.all([
@@ -148,7 +161,7 @@ export const payoutController = {
     ]);
     return sendResponse(res, "", "", {
       total,
-      beneficiary_transactions: rows.map(beneficiaryTransactionResource),
+      beneficiary_transactions: rows.map((r) => beneficiaryTransactionResource(r, !!req.teamMember)),
     });
   },
 
@@ -161,9 +174,9 @@ export const payoutController = {
       req.user.id,
     );
 
-    const txn = await createPayoutTransaction(body, req.user);
+    const txn = await createPayoutTransaction(body, req.user, req.teamMember);
     return sendResponse(res, apiSuccess(108), "", {
-      beneficiary_transaction: beneficiaryTransactionResource(txn),
+      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -173,7 +186,7 @@ export const payoutController = {
     const txn = await findOneByAnyId(req.user.id, q);
     if (!txn) throw new ApiException(124);
     return sendResponse(res, "Transaction fetched successfully.", "", {
-      beneficiary_transaction: beneficiaryTransactionResource(txn),
+      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -203,7 +216,7 @@ export const payoutController = {
     }
 
     return sendResponse(res, "Transaction fetched.", 200, {
-      beneficiary_transaction: beneficiaryTransactionResource(txn),
+      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -408,9 +421,10 @@ export const payoutController = {
         client_reference_id: (transaction.client_reference_id as string) ?? undefined,
       },
       req.user,
+      req.teamMember,
     );
     return sendResponse(res, apiSuccess(108), 108, {
-      beneficiary_transaction: beneficiaryTransactionResource(txn),
+      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -538,56 +552,67 @@ export const payoutController = {
     const sender = txn.senderId
       ? await prisma().sender.findUnique({ where: { id: txn.senderId } })
       : null;
-    const userInfo = await prisma().userInformation.findFirst({ where: { userId: req.user.id },
-    });
+    const userInfo = await prisma().userInformation.findFirst({ where: { userId: req.user.id } });
 
     const senderName = sender
       ? `${sender.firstName ?? ""} ${sender.lastName ?? ""}`.trim()
       : `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim();
 
-    const { generateReceiptPdf, safeReceipt } = await import(
-      "../../services/exports/pdfReceipt"
-    );
-    const buffer = await generateReceiptPdf(
-      safeReceipt({
-        unique_id: txn.uniqueId,
-// @ts-expect-error - Auto-fixed: 'txn.createdAt' is possibly 'null'.
-        created_at: txn.createdAt.toISOString(),
-        name: senderName,
-        amount: txn.recipientAmount?.toString() ?? "",
-        currency: txn.receivingCurrency ?? "",
-        purpose_of_payment: txn.purposeOfPayment ?? "",
-// @ts-expect-error - Prisma include likely missing
-        fx_rate: txn.quote?.fxRate ?? "",
-        status: String(txn.status),
-        remarks: txn.remarks ?? "",
-        beneficiary_name:
-// @ts-ignore - Prisma include likely missing
-          txn.beneficiaryAccount?.businessName ??
-// @ts-ignore - Prisma include likely missing
-          `${txn.beneficiaryAccount?.firstName ?? ""} ${
-// @ts-ignore - Prisma include likely missing
-            txn.beneficiaryAccount?.lastName ?? ""
-          }`.trim(),
-// @ts-ignore - Prisma include likely missing
-        account_number: txn.beneficiaryAccount?.accountNumber ?? "",
-// @ts-ignore - Prisma include likely missing
-        bank_name: txn.beneficiaryAccount?.bankName ?? "",
-// @ts-ignore - Prisma include likely missing
-        bank_code: txn.beneficiaryAccount?.swiftCode ?? "",
-// @ts-ignore - Prisma include likely missing
-        routing_number: txn.beneficiaryAccount?.routingNumber ?? "",
-        sender_name: senderName,
-        sender_address: sender?.address1 ?? userInfo?.address1 ?? "",
-        sender_city: sender?.city ?? userInfo?.city ?? "",
-        sender_state: sender?.state ?? userInfo?.state ?? "",
-        sender_postal_code: sender?.postalCode ?? userInfo?.postalCode ?? "",
-        sender_country: sender?.country ?? userInfo?.country ?? "",
-        utr_no: txn.externalReferenceId ?? "",
-        txn_ref_no: txn.txnRefNo ?? "",
-      }),
-    );
-    const { s3Service } = await import("../../services/storage/s3Service");
+    const { formatDate } = await import("../../helpers/lookups");
+
+    const statusLabel = beneficiaryTransactionStatusLabel(txn.status);
+
+    const html = await renderInvoiceHtml({
+      unique_id: txn.uniqueId,
+      created_at: formatDate(txn.createdAt),
+      txn_ref_no: txn.txnRefNo ?? "",
+      utr_no: txn.externalReferenceId ?? "",
+      sender_name: senderName,
+      sender_address: sender?.address1 ?? userInfo?.address1 ?? "",
+      sender_city: sender?.city ?? userInfo?.city ?? "",
+      sender_state: sender?.state ?? userInfo?.state ?? "",
+      sender_country: sender?.country ?? userInfo?.country ?? "",
+      sender_postal_code: sender?.postalCode ?? userInfo?.postalCode ?? "",
+      beneficiary_name:
+        // @ts-ignore
+        txn.beneficiaryAccount?.businessName ??
+        // @ts-ignore
+        `${txn.beneficiaryAccount?.firstName ?? ""} ${
+          // @ts-ignore
+          txn.beneficiaryAccount?.lastName ?? ""
+        }`.trim(),
+      // @ts-ignore
+      account_number: txn.beneficiaryAccount?.accountNumber ?? "",
+      // @ts-ignore
+      bank_name: txn.beneficiaryAccount?.bankName ?? "",
+      // @ts-ignore
+      bank_code: txn.beneficiaryAccount?.swiftCode ?? "",
+      // @ts-ignore
+      routing_number: txn.beneficiaryAccount?.routingNumber ?? "",
+      currency: txn.receivingCurrency ?? "",
+      amount: txn.recipientAmount?.toString() ?? "",
+      remarks: txn.remarks ?? "",
+      status: statusLabel,
+    });
+    const browser = await puppeteer.launch({
+      headless: "new" as any,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+    const page = await browser.newPage();
+    await page.setContent(html);
+    const pdfUint8Array = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: {
+        top: "30px",
+        right: "30px",
+        bottom: "30px",
+        left: "30px",
+      },
+    });
+    const buffer = Buffer.from(pdfUint8Array);
+    await browser.close();
+
     const url = await s3Service.upload(
       { buffer, contentType: "application/pdf", extension: "pdf" },
       "exports/transaction-receipts",
@@ -603,7 +628,7 @@ export const payoutController = {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as PayoutListInput;
     const fileType = String((req.query as { type?: string }).type ?? "pdf").toLowerCase();
-    const where = await listWhere(req.user, q);
+    const where = await listWhere(req.user, q, !!req.teamMember);
     const rows = await prisma().beneficiaryTransaction.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -662,6 +687,7 @@ export const payoutController = {
    * payout template XLSX with dropdowns from the form fields.
    */
   async payoutTemplate(req: Request, res: Response): Promise<Response> {
+    res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as GetFormFieldsInput;
     const parties = resolvePartyTypes(q.type);
@@ -673,8 +699,7 @@ export const payoutController = {
     const quote = await quoteFormFields();
     const merchantRow = req.user.merchantId
       ? await prisma().merchant.findFirst({
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-          where: { uniqueId: req.user.merchantId },
+          where: { id: req.user.merchantId },
         })
       : null;
     const remitter = await senderFields({
@@ -682,6 +707,7 @@ export const payoutController = {
       merchantId: merchantRow?.id ?? null,
 // @ts-ignore - Catch-all auto-fix for: Argument of type 'bigint | nul...
       remitterDepositEnabled: await isRemitterDepositEnabled(req.user.merchantId),
+      country: q.country,
     });
 
     const { flattenFormFields, generateBulkTemplate } = await import(
@@ -712,6 +738,7 @@ export const payoutController = {
    * bulk-payout worker (Phase 6 already wired the worker).
    */
   async bulkStore(req: Request, res: Response): Promise<Response> {
+    res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
     // multer middleware places the uploaded XLSX as a base64 data URL on
     // req.body.file.
@@ -728,8 +755,7 @@ export const payoutController = {
     const beneficiary = await beneficiaryFormFields({ country, currency, type });
     const quote = await quoteFormFields();
     const merchantRow = req.user.merchantId
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-      ? await prisma().merchant.findFirst({ where: { uniqueId: req.user.merchantId } })
+      ? await prisma().merchant.findFirst({ where: { id: req.user.merchantId } })
       : null;
     const remitter = await senderFields({
       type,

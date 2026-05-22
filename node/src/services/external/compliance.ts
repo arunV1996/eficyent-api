@@ -8,6 +8,7 @@ import { logger } from "../../helpers/logger";
 import {
   BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED,
   BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
+  EXTERNAL_TYPE_COMPLIANCE,
 } from "../../helpers/constants";
 import { uniqueId } from "../../helpers/uniqueId";
 
@@ -50,7 +51,7 @@ async function getAccessToken(): Promise<string> {
 
   const secret = await loadSecret();
   const res = await call<{ data?: { tokens?: { accessToken?: string } } }>(
-    { provider: "compliance", callFor: "create" },
+    { provider: EXTERNAL_TYPE_COMPLIANCE, callFor: "create" },
     {
       method: "POST",
       baseUrl: secret.URL,
@@ -96,7 +97,7 @@ async function postJSON<T>(
   const headers = await authedHeaders();
   const res = await call<{ success?: boolean; message?: string; data?: T }>(
     {
-      provider: "compliance",
+      provider: EXTERNAL_TYPE_COMPLIANCE,
       callFor: ctx.callFor,
       referenceType: ctx.referenceType,
       referenceId: ctx.referenceId,
@@ -128,7 +129,7 @@ async function recordFailedInitiation(
   try {
     await prisma().externalServiceCall.create({
       data: {
-        externalType: "compliance",
+        externalType: EXTERNAL_TYPE_COMPLIANCE,
         action: `initiation_failed:${action}`,
         method: "POST",
         endpoint: endpoint ?? null,
@@ -272,7 +273,7 @@ export const Compliance = {
         const existingAudit = await prisma().externalServiceCall.findFirst({
           where: {
             beneficiary_transaction_id: txn.id,
-            externalType: "compliance",
+            externalType: EXTERNAL_TYPE_COMPLIANCE,
             action: "create",
           },
         });

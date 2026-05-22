@@ -20,7 +20,7 @@ export const teamProfileController = {
   async profile(req: Request, res: Response): Promise<Response> {
     if (!req.teamMember) throw new ApiException(102);
     return sendResponse(res, "", 200, {
-      user: teamMemberResource(req.teamMember),
+      user: teamMemberResource(req.teamMember, req.user),
     });
   },
 

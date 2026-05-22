@@ -72,7 +72,8 @@ async function main(): Promise<void> {
   app.use(compressionMiddleware());
   app.use(requestTimeout(30_000));
   app.use(await defaultRateLimit());
-  app.use(express.static(path.join(process.cwd(), "public")));
+  app.use(express.static(path.join(__dirname, "..", "public")));
+  app.use("/api", express.static(path.join(__dirname, "..", "public")));
 
   app.use("/api", await apiRouter());
 

@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma";
-import { ApiException } from "../../helpers/errors";
+import { ApiException, ValidationException } from "../../helpers/errors";
 import {
   TAKE_COUNT,
   TEAM_MEMBER_ACTIVE,
@@ -74,7 +74,7 @@ export const teamMemberCrudController = {
       code: "",
       data: {
         total,
-        team_members: rows.map(teamMemberResource),
+        team_members: rows.map((row) => teamMemberResource(row, req.user)),
       },
     });
   },
@@ -90,6 +90,15 @@ export const teamMemberCrudController = {
       });
       if (!sender) throw new ApiException(132);
       senderId = sender.id;
+    }
+
+    const existing = await prisma().teamMember.findFirst({
+      where: { email: body.email },
+    });
+    if (existing) {
+      throw new ValidationException({
+        email: ["The email has already been taken."],
+      });
     }
 
     const member = await prisma().teamMember.create({
@@ -112,7 +121,7 @@ export const teamMemberCrudController = {
       message: "Team member created successfully.",
       code: "",
       data: {
-        team_member: teamMemberResource(member),
+        team_member: teamMemberResource(member, req.user),
       },
     });
   },
@@ -129,7 +138,7 @@ export const teamMemberCrudController = {
       message: "Team member fetched successfully.",
       code: "",
       data: {
-        team_member: teamMemberResource(member),
+        team_member: teamMemberResource(member, req.user),
       },
     });
   },
@@ -141,6 +150,19 @@ export const teamMemberCrudController = {
       where: { userId: req.user.id, uniqueId: body.team_member_id, deletedAt: null },
     });
     if (!member) throw new ApiException(159);
+
+    const existing = await prisma().teamMember.findFirst({
+      where: {
+        email: body.email,
+        id: { not: member.id },
+      },
+    });
+    if (existing) {
+      throw new ValidationException({
+        email: ["The email has already been taken."],
+      });
+    }
+
     const updated = await prisma().teamMember.update({
       where: { id: member.id },
       data: {
@@ -158,7 +180,7 @@ export const teamMemberCrudController = {
       message: "Team member updated successfully.",
       code: "",
       data: {
-        team_member: teamMemberResource(updated),
+        team_member: teamMemberResource(updated, req.user),
       },
     });
   },

@@ -152,3 +152,43 @@ export async function createRefund(
   );
   return true;
 }
+
+export async function reverseRefund(
+  txn: BeneficiaryTransaction,
+): Promise<boolean> {
+  const originalLedger = await prisma().ledger.findFirst({
+    where: {
+      transactionType: MORPH_BENEFICIARY_TRANSACTION,
+      transactionId: txn.id,
+    },
+  });
+  if (!originalLedger) return false;
+
+  const refundLedger = await prisma().ledger.findFirst({
+    where: { refundLedgerId: originalLedger.id },
+  });
+  if (!refundLedger) return false;
+
+  await prisma().$transaction(async (tx) => {
+    if (refundLedger.transactionId) {
+      if (refundLedger.transactionType === MORPH_WALLET_TRANSACTION) {
+        await tx.walletTransaction.delete({
+          where: { id: refundLedger.transactionId },
+        });
+      } else if (refundLedger.transactionType === MORPH_DEPOSIT_TRANSACTION) {
+        await tx.depositTransaction.delete({
+          where: { id: refundLedger.transactionId },
+        });
+      }
+    }
+    await tx.ledger.delete({
+      where: { id: refundLedger.id },
+    });
+  });
+
+  logger.info(
+    { txnId: txn.uniqueId, userId: txn.userId.toString() },
+    "Refund chain reversed (deleted)",
+  );
+  return true;
+}

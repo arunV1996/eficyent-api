@@ -198,7 +198,7 @@ interface FormBuildContext {
   document_types: { label: string; value: string }[];
 }
 
-async function buildContext(): Promise<FormBuildContext> {
+async function buildContext(countryCode?: string): Promise<FormBuildContext> {
   const [
     countries,
     mcc,
@@ -226,7 +226,7 @@ async function buildContext(): Promise<FormBuildContext> {
         flag: r.flag,
       })),
     ),
-    lookupsService.states().then((rows) =>
+    lookupsService.states(countryCode).then((rows) =>
       rows.map((r) => ({ label: r.label, value: r.value, parent_value: r.parent_value })),
     ),
     lookupsService.getLookups(LOOKUP_TYPE_PROFESSION),
@@ -548,8 +548,9 @@ function getDocumentGroups(
 export async function onboardingFormFields(
   userType: number | bigint,
   step: number | bigint,
+  countryCode?: string,
 ): Promise<FieldDef[]> {
-  const ctx = await buildContext();
+  const ctx = await buildContext(countryCode);
   switch (step) {
     case 1:
       return Number(userType) === USER_TYPE_INDIVIDUAL || Number(userType) === USER_TYPE_BUSINESS
@@ -584,17 +585,18 @@ export async function onboardingFormFieldsNew(
  * payout-target form for (country, currency, type). Cached for 60 minutes
  * because lookups + supported-country rows are read-mostly.
  */
-const beneficiaryFormCache = new Map<string, { value: FieldDef[]; expiresAt: number }>();
-const BENEFICIARY_FORM_TTL_MS = 60 * 60 * 1000;
+// Cache temporarily disabled — every request fetches fresh data from DB.
+// const beneficiaryFormCache = new Map<string, { value: FieldDef[]; expiresAt: number }>();
+// const BENEFICIARY_FORM_TTL_MS = 60 * 60 * 1000;
 
 export async function beneficiaryFormFields(payload: {
   country: string;
   currency: string;
   type: number | bigint;
 }): Promise<FieldDef[]> {
-  const cacheKey = `${payload.country}:${payload.currency}:${payload.type}`;
-  const hit = beneficiaryFormCache.get(cacheKey);
-  if (hit && hit.expiresAt > Date.now()) return hit.value;
+  // const cacheKey = `${payload.country}:${payload.currency}:${payload.type}`;
+  // const hit = beneficiaryFormCache.get(cacheKey);
+  // if (hit && hit.expiresAt > Date.now()) return hit.value;
 
   const supportedCountry = await prisma().supportedCountry.findFirst({
     where: { countryCode: payload.country, currency: payload.currency, status: 1 },
@@ -602,7 +604,7 @@ export async function beneficiaryFormFields(payload: {
   if (!supportedCountry) {
     return [];
   }
-  const ctx = await buildContext();
+  const ctx = await buildContext(payload.country);
   const base =
     Number(payload.type) === USER_TYPE_BUSINESS
       ? baseBusinessFields(ctx)
@@ -672,10 +674,10 @@ export async function beneficiaryFormFields(payload: {
     fields.push(make("service_bank", "Service Bank", { mandatory: isRequired, values: banks }));
   }
 
-  beneficiaryFormCache.set(cacheKey, {
-    value: fields,
-    expiresAt: Date.now() + BENEFICIARY_FORM_TTL_MS,
-  });
+  // beneficiaryFormCache.set(cacheKey, {
+  //   value: fields,
+  //   expiresAt: Date.now() + BENEFICIARY_FORM_TTL_MS,
+  // });
   return fields;
 }
 
@@ -789,7 +791,7 @@ export async function updateProfileFormFields(
   externalType: string,
 ): Promise<FieldDef[]> {
   void externalType; // FvBank/Caliza-specific overrides land in Phase 8.
-  const ctx = await buildContext();
+  const ctx = await buildContext(); // Profile updates usually show all available countries/states for initial setup.
   return getDocumentGroups(user.userType, ctx);
 }
 
@@ -834,7 +836,7 @@ export async function transactionFormFields(
 
   const finalSupportingDocRequired = isSupportingDocumentRequired || isB2B || isUSA;
 
-  const ctx = await buildContext();
+  const ctx = await buildContext(country);
 
   return [
     make("quote_id", "Quote ID"),
@@ -910,6 +912,7 @@ interface SenderFieldsContext {
   type: number | bigint;
   merchantId: bigint | null;
   remitterDepositEnabled: boolean;
+  country?: string;
 }
 
 export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]> {
@@ -919,7 +922,7 @@ export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]
   const hit = senderFieldsCache.get(cacheKey);
   if (hit && hit.expiresAt > Date.now()) return hit.value;
 
-  const formCtx = await buildContext();
+  const formCtx = await buildContext(ctx.country);
 
   const common: FieldDef[] = [
     make("email", "Email", { validation: VALIDATION_PRESETS.email }),

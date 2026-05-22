@@ -6,6 +6,7 @@ import {
 import { prisma } from "../../db/prisma";
 import {
   BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
+  DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED,
   EXTERNAL_TYPE_PROCESSING_UNIT,
 } from "../../helpers/constants";
 import { logger } from "../../helpers/logger";
@@ -13,7 +14,11 @@ import { TelegramNotifier } from "./telegram";
 import { buildPayoutPayload } from "./processingUnitPayload";
 import { call } from "./httpClient";
 import { Secrets } from "../../config/secrets";
-import { mapProcessingUnitWithdrawStatus } from "../processingUnit/statusMap";
+import {
+  mapProcessingUnitWithdrawStatus,
+  mapProcessingUnitDepositStatus,
+} from "../processingUnit/statusMap";
+import { DEPOSIT_SOURCE_OF_FUNDS, DEPOSIT_PURPOSE } from "../../helpers/lookups";
 import { uniqueId } from "../../helpers/uniqueId";
 import crypto from "crypto";
 
@@ -84,7 +89,7 @@ async function postJSON<T>(
       error?: string;
     }>(
       {
-        provider: "processingunit",
+        provider: EXTERNAL_TYPE_PROCESSING_UNIT,
         callFor: ctx.callFor,
         referenceType: ctx.referenceType,
         referenceId: ctx.referenceId,
@@ -130,7 +135,7 @@ async function recordFailedInitiation(
   try {
     await prisma().externalServiceCall.create({
       data: {
-        externalType: "processingunit",
+        externalType: EXTERNAL_TYPE_PROCESSING_UNIT,
         action: `initiation_failed:${action}`,
         method: "POST",
         endpoint: endpoint ?? null,
@@ -149,6 +154,82 @@ async function recordFailedInitiation(
       "Failed to write initiation failure audit log",
     );
   }
+}
+
+function removeEmptyValues(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== null && value !== undefined && value !== "") {
+      if (typeof value === "object" && value.constructor === Object) {
+        const cleanedObj = removeEmptyValues(value);
+        if (Object.keys(cleanedObj).length > 0) {
+          result[key] = cleanedObj;
+        }
+      } else {
+        result[key] = value;
+      }
+    }
+  }
+  return result;
+}
+
+async function prepareDepositPayload(txn: DepositTransaction): Promise<Record<string, any>> {
+  const va = await prisma().virtualAccount.findUnique({
+    where: { id: txn.virtualAccountId },
+  });
+  const user = await prisma().user.findUnique({ where: { id: txn.userId } });
+  if (!va || !user) {
+    throw new Error("Virtual account or user not found for payload preparation");
+  }
+
+  const merchant = user.merchantId
+    ? await prisma().merchant.findUnique({ where: { id: user.merchantId } })
+    : null;
+
+  const adminWallet = txn.adminWalletId
+    ? await prisma().adminWallet.findUnique({ where: { id: txn.adminWalletId } })
+    : null;
+
+  const sourceFunds = DEPOSIT_SOURCE_OF_FUNDS[txn.sourceOfFunds ?? ""] ?? "";
+  const purposes = DEPOSIT_PURPOSE[txn.purposeOfPayment ?? ""] ?? "";
+
+  const depositCurrency = txn.depositCurrency ? txn.depositCurrency.toUpperCase() : null;
+  const depositCurrencyType = depositCurrency
+    ? (["USDC", "USDT"].includes(depositCurrency) ? "CRYPTO" : "FIAT")
+    : null;
+
+  const userName = user.firstName
+    ? `${user.firstName} ${user.lastName ?? ""}`.trim()
+    : user.email;
+
+  const data = {
+    merchant: {
+      name: merchant ? merchant.name : userName,
+      email: merchant ? merchant.email : user.email,
+    },
+    order_id: txn.uniqueId,
+    country: va.country,
+    currency: va.currency,
+    account_number: va.accountNumber,
+    account_holder_name: va.accountHolderName,
+    account_holder_address: va.accountHolderAddress,
+    account_bank_name: va.accountBankName,
+    account_bank_code: va.accountBankCode,
+    account_bank_address: va.accountBankAddress,
+    routing_number: va.routingNumber,
+    amount: txn.totalAmount,
+    type: txn.type,
+    source_of_funds: sourceFunds,
+    purpose_of_payment: purposes,
+    proof: txn.proof ?? null,
+    deposit_currency_type: depositCurrencyType,
+    network_type: adminWallet?.network ?? null,
+    from_wallet_address: txn.fromWalletAddress ?? null,
+    to_wallet_Address: adminWallet?.wallet_address ?? null,
+    transaction_hash: txn.transactionHash ?? null,
+  };
+
+  return removeEmptyValues(data);
 }
 
 function mapStatus(puStatus?: string): number | null {
@@ -241,7 +322,7 @@ export const ProcessingUnit = {
       const existingAudit = await prisma().externalServiceCall.findFirst({
         where: {
           beneficiary_transaction_id: txn.id,
-          externalType: "processingunit",
+          externalType: EXTERNAL_TYPE_PROCESSING_UNIT,
           action: "create",
         },
       });
@@ -281,43 +362,102 @@ export const ProcessingUnit = {
     }
   },
 
-  /**
-   * Mirror of ExternalServices\\ProcessingUnit\\ProcessingUnit::createDeposit.
-   */
   async createDeposit(txn: DepositTransaction): Promise<void> {
     try {
-      const va = await prisma().virtualAccount.findUnique({
-        where: { id: txn.virtualAccountId },
-      });
-      const user = await prisma().user.findUnique({ where: { id: txn.userId } });
-      const adminWallet = txn.adminWalletId
-        ? await prisma().adminWallet.findUnique({ where: { id: txn.adminWalletId } })
-        : null;
+      const transactionPayload = await prepareDepositPayload(txn);
 
-      if (!va || !user) return;
+      logger.info({ txn_id: txn.id.toString() }, "Processing Unit initiated for deposit creation");
+      logger.info({ order_id: txn.uniqueId }, "Calling Processing Unit create deposit");
 
-      const payload = {
-        amount: txn.totalAmount,
-        currency: va.currency,
-        order_id: txn.uniqueId,
-        merchant: {
-          name: user.firstName ?? user.email,
-          email: user.email,
-        },
-        wallet_address: (adminWallet as any)?.address ?? null,
-      };
-
-      await postJSON(
+      const response = await postJSON<any>(
         "api/v1/initiate-deposit",
-        payload,
+        transactionPayload,
         {
           callFor: "create",
           referenceType: "App\\Models\\DepositTransaction",
           referenceId: txn.id,
         },
       );
+
+      if (response.success) {
+        const depositTxnObj = response.data?.deposit_transaction ?? response.data;
+        const status = depositTxnObj?.status ?? null;
+
+        if (status) {
+          const statusMap = mapProcessingUnitDepositStatus(status);
+          const mappedStatus = statusMap.mapped;
+
+          if (txn.status !== mappedStatus) {
+            await prisma().depositTransaction.update({
+              where: { id: txn.id },
+              data: { status: mappedStatus },
+            });
+
+            await prisma().depositTransactionStatusHistory.create({
+              data: {
+                uniqueId: uniqueId(24),
+                depositTransactionId: txn.id,
+                fromStatus: String(txn.status),
+                toStatus: String(mappedStatus),
+                changedBy: "system",
+                changedByType: "system",
+                changedAt: new Date(),
+              },
+            });
+          }
+
+          logger.info(
+            {
+              response,
+              order_id: txn.uniqueId,
+              incoming_status: status,
+              mapped_status: mappedStatus,
+            },
+            "Processing Unit response",
+          );
+        }
+      } else {
+        const failureStatus = DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED;
+        await prisma().depositTransaction.update({
+          where: { id: txn.id },
+          data: { status: failureStatus },
+        });
+
+        await prisma().depositTransactionStatusHistory.create({
+          data: {
+            uniqueId: uniqueId(24),
+            depositTransactionId: txn.id,
+            fromStatus: String(txn.status),
+            toStatus: String(failureStatus),
+            changedBy: "system",
+            changedByType: "system",
+            changedAt: new Date(),
+          },
+        });
+      }
     } catch (err) {
-      logger.error({ err, txnId: txn.uniqueId }, "ProcessingUnit.createDeposit threw");
+      logger.error(
+        { txn_id: txn.id.toString(), error: err instanceof Error ? err.message : String(err) },
+        "Processing Unit deposit initiation failed",
+      );
+
+      const failureStatus = DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED;
+      await prisma().depositTransaction.update({
+        where: { id: txn.id },
+        data: { status: failureStatus },
+      }).catch(() => undefined);
+
+      await prisma().depositTransactionStatusHistory.create({
+        data: {
+          uniqueId: uniqueId(24),
+          depositTransactionId: txn.id,
+          fromStatus: String(txn.status),
+          toStatus: String(failureStatus),
+          changedBy: "system",
+          changedByType: "system",
+          changedAt: new Date(),
+        },
+      }).catch(() => undefined);
     }
   },
 

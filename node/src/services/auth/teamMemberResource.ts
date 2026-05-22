@@ -1,4 +1,4 @@
-import { TeamMember } from "@prisma/client";
+import { TeamMember, User } from "@prisma/client";
 import {
   TEAM_MEMBER_ACTIVE,
   TEAM_MEMBER_DISABLED,
@@ -13,6 +13,7 @@ import {
   TEAM_MEMBER_ROLE_SUPPORT_MEMBER,
 } from "../../helpers/constants";
 import { formatDate } from "../../helpers/lookups";
+import { yesNo } from "../../helpers/userShaper";
 
 /**
  * Mirror of App\\Http\\Resources\\TeamMemberResource. Field set preserved
@@ -31,15 +32,26 @@ export interface TeamMemberDto {
   created_at: string;
 }
 
-export function teamMemberResource(member: TeamMember): TeamMemberDto {
+export function teamMemberResource(member: TeamMember, user?: User): TeamMemberDto {
+  let senderEnabled = "NO";
+  let isMerchant = "NO";
+
+  if (user) {
+    senderEnabled =
+      member.role === TEAM_MEMBER_ROLE_CORPORATE
+        ? "NO"
+        : yesNo(user.enableSender);
+    isMerchant = yesNo(!!user.merchantId);
+  }
+
   return {
     unique_id: member.uniqueId,
     name: member.name,
     email: member.email,
     role: teamMemberRoleLabel(member.role),
     permission: teamMemberPermissionLabel(member.permission),
-    sender_enabled: "NO", // Field not in schema, defaults to expected NO
-    is_merchant: "NO",    // Field not in schema, defaults to expected NO
+    sender_enabled: senderEnabled,
+    is_merchant: isMerchant,
     status: teamMemberStatusLabel(member.status),
     created_at: formatDate(member.createdAt),
   };

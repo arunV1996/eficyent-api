@@ -43,14 +43,14 @@ const SENDER_DOCUMENT_PATH = "user_documents";
  */
 
 async function isRemitterDepositEnabled(
-  user: { merchantId: string | null },
+  user: { merchantId: bigint | string | null },
 ): Promise<boolean> {
   if (!user.merchantId) return false;
-  const merchant = await prisma().merchant.findFirst({
-    where: { uniqueId: user.merchantId },
-  });
+  const where = typeof user.merchantId === "bigint" ? { id: user.merchantId } : { uniqueId: user.merchantId };
+  const merchant = await prisma().merchant.findFirst({ where });
   if (!merchant || merchant.type !== 1 /* MERCHANT_TYPE_PAYOUT */) return false;
-  const setting = await prisma().merchantSetting.findFirst({ where: { merchantId: merchant.id, key: "enable_remitter_deposit"  },
+  const setting = await prisma().merchantSetting.findFirst({
+    where: { merchantId: merchant.id, key: "enable_remitter_deposit" },
   });
   return setting?.value === "1";
 }
@@ -109,8 +109,7 @@ export const senderController = {
 
     const merchant = req.user.merchantId
       ? await prisma().merchant.findFirst({
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-          where: { uniqueId: req.user.merchantId },
+          where: { id: req.user.merchantId },
         })
       : null;
     const fields = await senderFields({
@@ -321,12 +320,12 @@ export const senderController = {
    * XLSX with the dropdowns built from the sender form fields.
    */
   async bulkTemplate(req: Request, res: Response): Promise<Response> {
+    res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
     const type = Number((req.query as { type?: number }).type ?? 1);
     const merchant = req.user.merchantId
       ? await prisma().merchant.findFirst({
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-          where: { uniqueId: req.user.merchantId },
+          where: { id: req.user.merchantId },
         })
       : null;
     const fields = await senderFields({
@@ -357,6 +356,7 @@ export const senderController = {
    * dynamic form fields + SenderValidator and creates one Sender per row.
    */
   async bulkStore(req: Request, res: Response): Promise<Response> {
+    res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
     const fileField = (req.body as { file?: string }).file;
     if (!fileField || !fileField.startsWith("data:")) {
@@ -366,8 +366,7 @@ export const senderController = {
     const type = Number((req.body as { type?: number }).type ?? 1);
     const merchant = req.user.merchantId
       ? await prisma().merchant.findFirst({
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-          where: { uniqueId: req.user.merchantId },
+          where: { id: req.user.merchantId },
         })
       : null;
 // @ts-ignore - Catch-all auto-fix for: Argument of type '{ status: nu...

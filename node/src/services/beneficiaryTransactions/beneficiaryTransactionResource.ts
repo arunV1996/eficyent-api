@@ -54,8 +54,9 @@ export function beneficiaryTransactionResource(
     quotes?: Quote | null;
     team_members?: { uniqueId: string } | null;
   },
+  isTeam = false,
 ): BeneficiaryTransactionDto {
-  const statusLabel = beneficiaryTransactionStatusLabel(txn.status);
+  const statusLabel = beneficiaryTransactionStatusLabel(txn.status, isTeam);
 
   const dto: BeneficiaryTransactionDto = {
     unique_id: txn.uniqueId,

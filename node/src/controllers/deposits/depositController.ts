@@ -321,13 +321,23 @@ export const depositController = {
       userId: req.user.id,
       ...(status !== null ? { status } : {}),
       ...(virtualAccountId !== null ? { virtualAccountId } : {}),
-      ...(q.type ? { type: q.type } : {}),
+      ...(q.type && !["pdf", "excel", "xlsx"].includes(q.type.toLowerCase())
+        ? { type: q.type }
+        : {}),
       ...(q.from_date && q.to_date
         ? {
             createdAt: {
               gte: new Date(`${q.from_date}T00:00:00Z`),
               lte: new Date(`${q.to_date}T23:59:59Z`),
             },
+          }
+        : {}),
+      ...(q.search_key
+        ? {
+            OR: [
+              { uniqueId: { contains: q.search_key } },
+              { externalReferenceId: { contains: q.search_key } },
+            ],
           }
         : {}),
     };
@@ -383,13 +393,17 @@ export const depositController = {
     if (!transaction) throw new ApiException(124);
 
     if (transaction.status === DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED) {
+      const newUniqueId = uniqueId(24);
       const updated = await prisma().depositTransaction.update({
         where: { id: transaction.id },
         data: {
-
+          uniqueId: newUniqueId,
           status: DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
         },
       });
+
+      logger.info({ uniqueId: updated.uniqueId }, "Order id updated for deposit transaction");
+
       void ProcessingUnit.createDeposit(updated).catch((err: unknown) => {
         logger.warn(
           { err, depositId: updated.uniqueId },

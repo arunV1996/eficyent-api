@@ -5,6 +5,8 @@ import { logger } from "../../helpers/logger";
 import {
   BENEFICIARY_TRANSACTION_COMPLETED,
   BENEFICIARY_TRANSACTION_FAILED,
+  BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATED,
+  BENEFICIARY_TRANSACTION_PROCESSING_UNIT_PROCESSING,
   CALLBACK_PAYOUT_REJECTED,
   CALLBACK_PAYOUT_SUCCESS,
   DEPOSIT_TRANSACTION_COMPLETED,
@@ -12,6 +14,7 @@ import {
   DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING,
   EXTERNAL_CALL_FOR_CALLBACK,
   EXTERNAL_TYPE_PROCESSING_UNIT,
+  MORPH_BENEFICIARY_TRANSACTION,
   MORPH_DEPOSIT_TRANSACTION,
 } from "../../helpers/constants";
 import {
@@ -41,8 +44,8 @@ export const processingUnitWebhookController = {
   async invoke(req: Request, res: Response): Promise<Response> {
     const start = Date.now();
     const data = (req.body ?? {}) as Record<string, unknown>;
-    const utr = (data.utr_number as string | undefined) ?? null;
     let beneficiaryTransactionId: bigint | null = null;
+    let depositTransactionId: bigint | null = null;
     let success = true;
     let errorMessage: string | null = null;
 
@@ -61,7 +64,8 @@ export const processingUnitWebhookController = {
         success = result.success;
         errorMessage = result.errorMessage;
       } else if (moduleName === "deposit") {
-        await handleDeposit(data);
+        const result = await handleDeposit(data);
+        depositTransactionId = result.depositTransactionId;
       } else {
         logger.warn({ moduleName }, "Unknown module from Processing Unit");
       }
@@ -79,18 +83,19 @@ export const processingUnitWebhookController = {
             method: "POST",
             endpoint: "processingunit-webhook",
             beneficiary_transaction_id: beneficiaryTransactionId,
-            requestPayload: data as Prisma.InputJsonValue,
-            response_payload: { received: true } as Prisma.InputJsonValue,
-            http_status: 200,
+            deposit_transaction_id: depositTransactionId,
+            requestPayload: {} as Prisma.InputJsonValue,
+            response_payload: data as Prisma.InputJsonValue,
+            http_status: null,
             success,
             response_time_ms: durationMs,
+            external_reference_id: (data.utr_number as string | undefined) ?? undefined,
             errorMessage: success ? null : errorMessage,
           },
         })
         .catch((err) =>
           logger.warn({ err }, "PU webhook audit write failed"),
         );
-      void utr;
     }
 
     return res.status(200).json({ received: true });
@@ -139,13 +144,6 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
     } else {
       finalStatus = BENEFICIARY_TRANSACTION_COMPLETED;
     }
-  } else if (
-    serviceType === "EVP" &&
-    mappedStatus === BENEFICIARY_TRANSACTION_FAILED
-  ) {
-    logger.info({ orderId }, "Skipping rejected transaction for EVP");
-    success = false;
-    errorMessage = "Skipping rejected status for EVP";
   } else {
     finalStatus = mappedStatus;
   }
@@ -154,13 +152,53 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
   }
 
   const updateData: Record<string, unknown> = { status: finalStatus };
-  if (utr) updateData.externalReferenceId = utr;
+  if (utr) {
+    updateData.externalReferenceId = utr;
+  }
+  if (!utr && !txn.externalReferenceId && finalStatus === BENEFICIARY_TRANSACTION_COMPLETED) {
+    updateData.externalReferenceId = txn.txnRefNo;
+  }
   if (serviceType) {
     updateData.externalType = mapProcessingUnitServiceToExternalType(serviceType);
   }
-  if (rail) updateData.rail = rail;
-  if (message) updateData.notes = message;
-  if (serviceMid) updateData.serviceMid = serviceMid.toUpperCase();
+  if (rail) {
+    updateData.rail = rail;
+  }
+  if (message) {
+    updateData.notes = message;
+  }
+  if (finalStatus !== BENEFICIARY_TRANSACTION_FAILED) {
+    updateData.notes = null;
+  }
+  if (serviceMid) {
+    updateData.serviceMid = serviceMid.toUpperCase();
+  }
+
+  // Reverse refund logic if a refund was previously generated and status moves back to initiated/processing
+  const originalLedger = await prisma().ledger.findFirst({
+    where: {
+      transactionType: MORPH_BENEFICIARY_TRANSACTION,
+      transactionId: txn.id,
+    },
+  });
+  if (originalLedger) {
+    const refundLedger = await prisma().ledger.findFirst({
+      where: { refundLedgerId: originalLedger.id },
+    });
+    if (
+      refundLedger &&
+      txn.status === BENEFICIARY_TRANSACTION_FAILED &&
+      [
+        BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATED,
+        BENEFICIARY_TRANSACTION_PROCESSING_UNIT_PROCESSING,
+        BENEFICIARY_TRANSACTION_COMPLETED,
+      ].includes(mappedStatus)
+    ) {
+      logger.info({ orderId }, "Reversing refund for FAILED -> COMPLETED/INITIATED/PROCESSING txn");
+      const { reverseRefund } = await import("../../services/beneficiaryTransactions/refundService");
+      await reverseRefund(txn);
+    }
+  }
 
   const updated = await prisma().beneficiaryTransaction.update({
     where: { id: txn.id },
@@ -218,13 +256,15 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
   return { beneficiaryTransactionId: txn.id, success, errorMessage };
 }
 
-async function handleDeposit(data: Record<string, unknown>): Promise<void> {
+async function handleDeposit(data: Record<string, unknown>): Promise<{
+  depositTransactionId: bigint | null;
+}> {
   const orderId = (data.order_id as string | undefined) ?? null;
   const status = (data.status as string | undefined) ?? null;
 
   if (!orderId || !status) {
     logger.warn({ data }, "Missing order_id or status (deposit)");
-    return;
+    return { depositTransactionId: null };
   }
 
   const txn = await prisma().depositTransaction.findFirst({
@@ -240,7 +280,7 @@ async function handleDeposit(data: Record<string, unknown>): Promise<void> {
   });
   if (!txn) {
     logger.warn({ orderId }, "DepositTransaction not found for order_id");
-    return;
+    return { depositTransactionId: null };
   }
 
   const statusMap = mapProcessingUnitDepositStatus(status);
@@ -274,6 +314,16 @@ async function handleDeposit(data: Record<string, unknown>): Promise<void> {
       },
     });
     if (!existing) {
+      const user = await prisma().user.findUnique({ where: { id: txn.userId } });
+      const va = await prisma().virtualAccount.findUnique({ where: { id: txn.virtualAccountId } });
+      if (!user || !va) {
+        logger.error({ txnId: txn.uniqueId }, "User or VA not found for deposit ledger record");
+        return { depositTransactionId: txn.id };
+      }
+
+      const { computeBankBalance } = await import("../../services/virtualAccounts/balanceService");
+      const currentBalance = await computeBankBalance(user, va);
+
       await prisma().ledger.create({
         data: {
           uniqueId: uniqueId(24),
@@ -282,7 +332,7 @@ async function handleDeposit(data: Record<string, unknown>): Promise<void> {
           walletId: null,
           transactionType: MORPH_DEPOSIT_TRANSACTION,
           transactionId: txn.id,
-          balance: txn.totalAmount,
+          balance: currentBalance,
           externalType: txn.externalType ?? EXTERNAL_TYPE_PROCESSING_UNIT,
           description: `Deposit ${txn.uniqueId}`,
         },
@@ -294,4 +344,6 @@ async function handleDeposit(data: Record<string, unknown>): Promise<void> {
     { orderId, oldStatus, newStatus: mappedStatus },
     "DepositTransaction updated by PU webhook",
   );
+
+  return { depositTransactionId: txn.id };
 }

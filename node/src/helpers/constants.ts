@@ -378,7 +378,7 @@ export const BENEFICIARY_TRANSACTION_STATUS_MAP: Record<string, number> = {
   CANCELLED: BENEFICIARY_TRANSACTION_CANCELLED,
 };
 
-export function beneficiaryTransactionStatusLabel(value: number): string {
+export function beneficiaryTransactionStatusLabel(value: number, isTeam = false): string {
   switch (value) {
     case BENEFICIARY_TRANSACTION_COMPLETED:
       return "COMPLETED";
@@ -391,6 +391,8 @@ export function beneficiaryTransactionStatusLabel(value: number): string {
       return "FAILED";
 
     case BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL:
+      return isTeam ? "WAITING_FOR_APPROVAL" : "PROCESSING";
+
     case BENEFICIARY_TRANSACTION_APPROVED:
     case BENEFICIARY_TRANSACTION_INITIATED:
     case BENEFICIARY_TRANSACTION_PROCESSING:

@@ -433,62 +433,67 @@ export const beneficiaryAccountsController = {
     if (!fileField || !fileField.startsWith("data:")) {
       throw new ApiException(422, "Excel file (multipart 'file') required.", 422);
     }
+
+    // Capture everything we need before the response is sent.
     const buffer = Buffer.from(fileField.split(",")[1] ?? "", "base64");
     const country = String((req.body as { country?: string }).country ?? "");
     const currency = String((req.body as { currency?: string }).currency ?? "");
     const type = Number((req.body as { type?: number }).type ?? 1);
+    const userId = req.user.id;
+    const user = req.user;
 
-    const beneficiary = await beneficiaryFormFields({ country, currency, type });
-    const { flattenFormFields, processExcel } = await import(
-      "../../services/exports/excelImportService"
-    );
-    const fields = flattenFormFields({ beneficiary }, ["beneficiary"]);
-
-    const result = await processExcel(buffer, fields, async (payload, rowNumber) => {
-      const { validateAndNormalize } = await import(
-        "../../services/beneficiaryAccounts/beneficiaryNormalizer"
-      );
-      payload.beneficiary.country = country;
-      payload.beneficiary.currency = currency;
-      const ben = await validateAndNormalize(
-        payload.beneficiary as Record<string, unknown>,
-        req.user!,
-      );
-      return { row: rowNumber, beneficiary: ben };
-    });
-
-    if (result.errors.length > 0) {
-      return sendResponse(res, "Bulk import failed.", 200, {
-        errors: result.errors,
-      });
-    }
-
-    const created: { row: number; beneficiary_id: string }[] = [];
-    await prisma().$transaction(async (tx) => {
-      for (const row of result.validatedRows) {
-        const baseInsert = toBeneficiaryInsert(
-          row.beneficiary.beneficiaryAccount,
-          req.user!.id,
-        );
-        const ben = await tx.beneficiaryAccount.create({
-          data: {
-            ...baseInsert,
-            status: 1,
-          },
-        });
-        const additional = toAdditionalInsert(
-          row.beneficiary.beneficiaryAccountAdditionalDetail,
-        );
-        await tx.beneficiaryAdditionalDetail.create({
-          data: { ...additional, beneficiaryAccountId: ben.id },
-        });
-        created.push({ row: row.row, beneficiary_id: ben.uniqueId });
-      }
-    });
-    return sendResponse(res, "Bulk import accepted.", 200, {
-      success: created,
+    // Respond IMMEDIATELY — all heavy work (Excel parsing, per-row
+    // validation, DB inserts) runs in the background so the gateway
+    // timeout never fires.
+    const response = sendResponse(res, "Bulk import accepted.", 200, {
+      success: [],
       errors: [],
     });
+
+    setImmediate(async () => {
+      try {
+        const { beneficiaryFormFields: bff } = await import("../../helpers/formFields");
+        const { lookupsService: ls } = await import("../../services/lookups/lookupsService");
+        const { flattenFormFields, processExcel } = await import(
+          "../../services/exports/excelImportService"
+        );
+        const { validateAndNormalize } = await import(
+          "../../services/beneficiaryAccounts/beneficiaryNormalizer"
+        );
+
+        const beneficiary = await bff({ country, currency, type });
+        const paymentType = ls.formatPaymentType(user.userType, type);
+        const supportedCountries = await ls.receivingCountries(paymentType, user);
+        const fields = flattenFormFields({ beneficiary }, ["beneficiary"]);
+
+        const result = await processExcel(buffer, fields, async (payload, rowNumber) => {
+          payload.beneficiary.country = country;
+          payload.beneficiary.currency = currency;
+          const ben = await validateAndNormalize(
+            payload.beneficiary as Record<string, unknown>,
+            user,
+            supportedCountries,
+          );
+          return { row: rowNumber, beneficiary: ben };
+        });
+
+        for (const row of result.validatedRows) {
+          const baseInsert = toBeneficiaryInsert(row.beneficiary.beneficiaryAccount, userId);
+          const ben = await prisma().beneficiaryAccount.create({
+            data: { ...baseInsert, status: 1 },
+          });
+          const additional = toAdditionalInsert(row.beneficiary.beneficiaryAccountAdditionalDetail);
+          await prisma().beneficiaryAdditionalDetail.create({
+            data: { ...additional, beneficiaryAccountId: ben.id },
+          });
+        }
+      } catch (err) {
+        const { logger } = await import("../../helpers/logger");
+        logger.error({ err }, "bulkStore background processing failed");
+      }
+    });
+
+    return response;
   },
 };
 

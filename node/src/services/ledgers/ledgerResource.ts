@@ -57,7 +57,7 @@ export function ledgerResource(
   let currency = l.wallet?.currency ?? l.virtualAccount?.currency ?? "";
   let fromCurrency = l.virtualAccount?.currency ?? currency;
   let paidTo: number | string | null = "";
-  let balanceStr = l.balance ? `${parseFloat(l.balance.toString()).toFixed(2)} ${currency}` : "";
+  let balanceStr = "";
   let refundId = "";
 
   // 1. Determine base type and basic info
@@ -66,7 +66,7 @@ export function ledgerResource(
     transId = dt.uniqueId || "";
     clientRef = dt.clientReferenceId || "";
     type = "CREDIT";
-    amount = dt.amount.toString();
+    amount = dt.totalAmount.toString();
     currency = dt.depositCurrency || currency;
     fromCurrency = dt.depositCurrency || fromCurrency;
   } else if (l.transactionType === MORPH_BENEFICIARY_TRANSACTION && tx) {
@@ -75,7 +75,7 @@ export function ledgerResource(
     clientRef = bt.clientReferenceId || "";
     txnRef = bt.txnRefNo || "";
     type = "DEBIT";
-    amount = bt.amount.toString();
+    amount = bt.totalAmount.toString();
     currency = bt.receivingCurrency || currency;
     paidTo = PAID_TO_BENEFICIARY;
   } else if (l.transactionType === MORPH_WALLET_TRANSACTION && tx) {
@@ -110,7 +110,8 @@ export function ledgerResource(
     paidTo = PAID_TO_WALLET;
   }
 
-  // 2. Final assembly
+  // 2. Resolve final balance string
+  balanceStr = l.balance ? `${parseFloat(l.balance.toString()).toFixed(2)} ${currency}` : "";
   return {
     unique_id: l.uniqueId,
     transaction_id: transId,

@@ -17,7 +17,9 @@ import {
   TEAM_MEMBER_PERMISSION_MAKER,
   TEAM_MEMBER_ROLE_CORPORATE,
   TEAM_MEMBER_ROLE_SUPPORT_MEMBER,
+  TRANSACTION_TYPE_DEBIT,
   WALLET_STATUS_ACTIVE,
+  WALLET_TRANSACTION_COMPLETED,
 } from "../../helpers/constants";
 import {
   computeBankBalance,
@@ -50,6 +52,7 @@ export interface PayoutCreatePayload {
 }
 
 interface CreatorContext {
+  id: bigint;
   role: number;
   permission?: number;
   senderId: bigint | null;
@@ -173,6 +176,7 @@ export async function createPayoutTransaction(
         uniqueId: uniqueId(24),
         txnRefNo,
         userId: user.id,
+        teamMemberId: creator?.id ?? null,
         senderId: resolvedSenderId,
         quoteId: quote.id,
         beneficiaryAccountId: beneficiaryAccount.id,
@@ -198,8 +202,8 @@ export async function createPayoutTransaction(
         beneficiaryTransactionId: txn.id,
         fromStatus: null,
         toStatus: String(finalStatus),
-        changedBy: user.id.toString(),
-        changedByType: creator ? "team_member" : "user",
+        changedBy: creator ? creator.id.toString() : user.id.toString(),
+        changedByType: creator ? "team" : "user",
         changedAt: new Date(),
       },
     });
@@ -227,6 +231,25 @@ export async function createPayoutTransaction(
         description: `Payout ${txn.uniqueId}`,
       },
     });
+
+    if (quote.sourceType === MORPH_WALLET) {
+      await tx.walletTransaction.create({
+        data: {
+          uniqueId: uniqueId(24),
+          userId: user.id,
+          walletId: quote.sourceId!,
+          quoteId: quote.id,
+          beneficiaryTransactionId: txn.id,
+          amount: quote.amount,
+          totalAmount: quote.amount.plus(fees),
+          fees: fees,
+          status: WALLET_TRANSACTION_COMPLETED,
+          type: TRANSACTION_TYPE_DEBIT,
+          balanceBefore: checkBalance,
+          balanceAfter: checkBalance.minus(quote.amount.plus(fees)),
+        },
+      });
+    }
 
     // Audit row - PayoutJob is the durable handle the API uses for
     // retries and ops dashboards.
@@ -407,6 +430,7 @@ export async function listWhere(
     wallet_id?: string;
     search_key?: string;
   },
+  isTeam = false,
 ): Promise<Prisma.BeneficiaryTransactionWhereInput> {
   const { BENEFICIARY_TRANSACTION_STATUS_MAP } = await import("../../helpers/constants");
 
@@ -417,7 +441,7 @@ export async function listWhere(
   if (q.status) {
     const { beneficiaryTransactionStatusLabel } = await import("../../helpers/constants");
     const matchingStatuses = Array.from({ length: 18 }, (_, i) => i).filter(
-      (code) => beneficiaryTransactionStatusLabel(code) === q.status,
+      (code) => beneficiaryTransactionStatusLabel(code, isTeam) === q.status,
     );
     where.status = matchingStatuses.length > 0
       ? { in: matchingStatuses }

@@ -11,7 +11,6 @@ import { prisma } from "../../db/prisma";
 import {
   EXTERNAL_TYPE_CALIZA,
   MERCHANT_TYPE_PAYOUT,
-  MORPH_VIRTUAL_ACCOUNT,
   USER_TYPE_INDIVIDUAL,
 } from "../../helpers/constants";
 import { format_processing_unit_fx_rate } from "../../helpers/lookups";
@@ -76,11 +75,32 @@ async function loadRelated(
 
   if (!account || !quote) return null;
 
-  // Resolve source currency from the quote's virtual account
+  // Resolve source currency
   let sourceCurrency = "";
-  if (quote.sourceType === MORPH_VIRTUAL_ACCOUNT && quote.sourceId) {
-    const va = await prisma().virtualAccount.findUnique({ where: { id: quote.sourceId } });
-    sourceCurrency = va?.currency ?? "";
+  const walletTxn = await prisma().walletTransaction.findFirst({
+    where: { beneficiaryTransactionId: txn.id },
+  });
+
+  if (walletTxn) {
+    // If the transaction is present in wallet_transactions table, fetch the wallet currency with the quote id
+    const quoteId = walletTxn.quoteId;
+    if (quoteId) {
+      const q = quoteId === quote.id ? quote : await prisma().quote.findUnique({ where: { id: quoteId } });
+      if (q && q.sourceId) {
+        const wallet = await prisma().wallet.findUnique({ where: { id: q.sourceId } });
+        sourceCurrency = wallet?.currency ?? "";
+      }
+    }
+  } else {
+    // Otherwise, check for the beneficiary transaction and fetch from the virtual accounts table with the quote id
+    const quoteId = txn.quoteId;
+    if (quoteId) {
+      const q = quoteId === quote.id ? quote : await prisma().quote.findUnique({ where: { id: quoteId } });
+      if (q && q.sourceId) {
+        const va = await prisma().virtualAccount.findUnique({ where: { id: q.sourceId } });
+        sourceCurrency = va?.currency ?? "";
+      }
+    }
   }
 
   // Resolve externalReferenceId (mirrors Laravel's merchant/userservice logic)

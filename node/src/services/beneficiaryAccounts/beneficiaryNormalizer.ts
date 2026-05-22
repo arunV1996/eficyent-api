@@ -43,6 +43,7 @@ function coerceType(input: unknown): number {
 export async function validateAndNormalize(
   payload: Record<string, unknown>,
   user: User,
+  cachedSupportedCountries?: any[],
 ): Promise<NormalizedBeneficiaryPayload> {
   const type = coerceType(payload.type);
   const country = String(payload.country ?? "");
@@ -57,7 +58,7 @@ export async function validateAndNormalize(
   const paymentType = lookupsService.formatPaymentType(user.userType, type);
   if (paymentType === C2B) throw new ApiException(195);
 
-  const supported = await lookupsService.receivingCountries(paymentType, user);
+  const supported = cachedSupportedCountries ?? (await lookupsService.receivingCountries(paymentType, user));
   const country_match = supported.find((c) => c.country_code === country);
   if (!country_match) {
     throw new ApiException(422, "Country is not supported for this beneficiary type.", 422);

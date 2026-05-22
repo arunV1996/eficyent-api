@@ -4,6 +4,15 @@ import { NextFunction, Request, RequestHandler, Response } from "express";
 import helmet from "helmet";
 import { env } from "../config/env";
 
+// Augment Express Response so callers can call res.extendTimeout(ms)
+declare global {
+  namespace Express {
+    interface Response {
+      extendTimeout?: (ms: number) => void;
+    }
+  }
+}
+
 /**
  * Security baseline applied globally. Order of application matters:
  *   1. helmet  - response headers (CSP, HSTS, X-Frame-Options, etc.)
@@ -106,7 +115,7 @@ export function bodySizeGuard(): RequestHandler {
  */
 export function requestTimeout(ms: number): RequestHandler {
   return function (_req: Request, res: Response, next: NextFunction): void {
-    const t = setTimeout(() => {
+    let t: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       if (!res.headersSent) {
         res.status(504).json({
           status: false,
@@ -116,8 +125,28 @@ export function requestTimeout(ms: number): RequestHandler {
         });
       }
     }, ms);
-    res.on("finish", () => clearTimeout(t));
-    res.on("close", () => clearTimeout(t));
+
+    const clear = () => {
+      if (t) { clearTimeout(t); t = null; }
+    };
+
+    // Allow individual handlers to bump the deadline for known long operations.
+    res.extendTimeout = (newMs: number) => {
+      clear();
+      t = setTimeout(() => {
+        if (!res.headersSent) {
+          res.status(504).json({
+            status: false,
+            code: 504,
+            message: "Request timeout.",
+            data: null,
+          });
+        }
+      }, newMs);
+    };
+
+    res.on("finish", clear);
+    res.on("close", clear);
     next();
   };
 }
