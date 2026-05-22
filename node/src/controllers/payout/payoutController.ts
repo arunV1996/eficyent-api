@@ -27,6 +27,7 @@ import {
 } from "../../helpers/formFields";
 import { uniqueId } from "../../helpers/uniqueId";
 import { s3Service } from "../../services/storage/s3Service";
+import { extractUploadedFileBuffer } from "../../middleware/fileUpload";
 import { Dispatch } from "../../queues/dispatchers";
 import {
   beneficiaryTransactionCallbackResource,
@@ -745,15 +746,16 @@ export const payoutController = {
     const startTime = Date.now();
     logger.info({ userId: req.user.id.toString() }, "[BulkStore] Starting bulk store process");
 
-    const fileField = (req.body as { file?: string }).file;
-    if (!fileField || !fileField.startsWith("data:")) {
+    // The XLSX arrives as a multipart 'file' field (parsed onto req.files by
+    // the global multer) or as a base64 data: URL on req.body.file.
+    const buffer = extractUploadedFileBuffer(req, "file");
+    if (!buffer || buffer.length === 0) {
       console.log("[BulkStore] Missing or invalid file payload");
       logger.warn({ userId: req.user.id.toString() }, "[BulkStore] Missing or invalid file payload");
       throw new ApiException(422, "Excel file (multipart 'file') required.", 422);
     }
-    console.log("[BulkStore] Base64 buffer parsed successfully");
-    const buffer = Buffer.from(fileField.split(",")[1] ?? "", "base64");
-    logger.info({ bufferSize: buffer.length }, "[BulkStore] Base64 buffer parsed successfully");
+    console.log("[BulkStore] File buffer parsed successfully");
+    logger.info({ bufferSize: buffer.length }, "[BulkStore] File buffer parsed successfully");
 
     const country = String((req.body as { country?: string }).country ?? "");
     const currency = String((req.body as { currency?: string }).currency ?? "");
