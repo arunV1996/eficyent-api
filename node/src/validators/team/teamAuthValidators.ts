@@ -12,6 +12,8 @@ export const TeamLoginSchema = z
   .object({
     email,
     password: z.string().min(1).max(128),
+    device_id: z.string().max(255).optional(),
+    device_type: z.enum(["android", "ios", "web"]).optional(),
   })
   .strict();
 export type TeamLoginInput = z.infer<typeof TeamLoginSchema>;

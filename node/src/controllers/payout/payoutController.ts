@@ -5,7 +5,6 @@ import { ApiException } from "../../helpers/errors";
 import { sendResponse } from "../../helpers/response";
 import { apiSuccess } from "../../helpers/messages";
 import {
-  BENEFICIARY_TRANSACTION_APPROVED,
   BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
   BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
   PAYMENT_PROOF_FIRA,
@@ -286,8 +285,8 @@ export const payoutController = {
     });
   },
 
-  async transactionFormFields(_req: Request, res: Response): Promise<Response> {
-    return sendResponse(res, "", 200, { form_fields: await transactionFormFields() });
+  async transactionFormFields(req: Request, res: Response): Promise<Response> {
+    return sendResponse(res, "", 200, { form_fields: await transactionFormFields(req.user) });
   },
 
   async instantGetFormFields(req: Request, res: Response): Promise<Response> {
@@ -480,6 +479,7 @@ export const payoutController = {
 
   async retryExternalService(req: Request, res: Response): Promise<Response> {
     const params = req.params as unknown as RetryParam;
+    const { generateOrderId } = await import("../../helpers/uniqueId");
     const transaction = await prisma().beneficiaryTransaction.findFirst({
       where: { uniqueId: params.trxn },
     });
@@ -491,36 +491,25 @@ export const payoutController = {
     ];
     if (!retryable.includes(transaction.status)) throw new ApiException(201);
 
+    const user = await prisma().user.findUnique({
+      where: { id: transaction.userId },
+    });
+    if (!user) throw new ApiException(102);
+
     if (transaction.status === BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED) {
-      const user = await prisma().user.findUnique({
-        where: { id: transaction.userId },
-      });
-      if (user) {
-        const { Compliance } = await import("../../services/external/compliance");
-        await Compliance.make(transaction, user);
-      }
+      const { Compliance } = await import("../../services/external/compliance");
+      await Compliance.make(transaction, user);
     } else if (
       transaction.status === BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED
     ) {
-      await prisma().beneficiaryTransaction.update({
+      const updated = await prisma().beneficiaryTransaction.update({
         where: { id: transaction.id },
         data: {
-          orderId: `TXN${Math.floor(Date.now() / 1000).toString().slice(-8)}${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-          status: BENEFICIARY_TRANSACTION_APPROVED,
+          orderId: generateOrderId(),
         },
       });
-      const job = await prisma().payoutJob.findFirst({
-        where: { beneficiaryTransactionId: transaction.id },
-        orderBy: { id: "desc" },
-      });
-      if (job) {
-        await Dispatch.payout({
-          beneficiaryTransactionId: transaction.id.toString(),
-          payoutJobUniqueId: job.uniqueId,
-          userId: transaction.userId.toString(),
-          source: "approval",
-        });
-      }
+      const { ProcessingUnit } = await import("../../services/external/processingUnit");
+      await ProcessingUnit.make(updated, user);
     }
     return sendResponse(res, apiSuccess(118), 118, []);
   },

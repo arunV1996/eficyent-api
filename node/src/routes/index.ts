@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authRoutes } from "./auth.routes";
-import { payoutPublicRoutes, payoutRoutes } from "./payout.routes";
+import { payoutPublicRoutes, payoutRoutes, retryExternalServiceRoute } from "./payout.routes";
 import { settingsRoutes } from "./settings.routes";
 import { staticPagesRoutes } from "./staticPages.routes";
 import {
@@ -80,6 +80,7 @@ export async function apiRouter(): Promise<Router> {
   // Phase 6 - full BeneficiaryTransaction surface
   r.use("/user/beneficiary-transactions", await payoutRoutes());
   r.use("/user", await payoutPublicRoutes());
+  r.use("/public", await retryExternalServiceRoute());
 
   // Phase 7 - TeamMembers / Corporate
   // Public endpoints live at /corporate/* and /team/* (no leading prefix

@@ -5,6 +5,7 @@ import {
   MORPH_VIRTUAL_ACCOUNT,
   TRANSACTION_TYPE_CREDIT,
   TRANSACTION_TYPE_DEBIT,
+  WALLET_TRANSACTION_COMPLETED,
 } from "../../helpers/constants";
 
 const ZERO = new Prisma.Decimal(0);
@@ -96,7 +97,12 @@ export async function getWalletBalance(
 ): Promise<Prisma.Decimal> {
   const [creditAgg, debitAgg] = await Promise.all([
     prisma().walletTransaction.aggregate({
-      where: { userId: user.id, walletId: wallet.id, type: TRANSACTION_TYPE_CREDIT },
+      where: {
+        userId: user.id,
+        walletId: wallet.id,
+        type: TRANSACTION_TYPE_CREDIT,
+        status: WALLET_TRANSACTION_COMPLETED,
+      },
       _sum: { totalAmount: true },
     }),
     prisma().walletTransaction.aggregate({

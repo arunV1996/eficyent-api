@@ -25,11 +25,12 @@ import { logger } from "../../helpers/logger";
  */
 
 /**
- * Mirror of Laravel's removeEmptyValues — strips null, undefined, and empty strings.
+ * Mirror of Laravel's removeEmptyValues — strips null, undefined.
+ * Note: Empty strings ("") ARE ALLOWED to satisfy mandatory API fields.
  */
 function removeEmpty<T extends Record<string, unknown>>(obj: T): T {
   for (const [k, v] of Object.entries(obj)) {
-    if (v === null || v === undefined || v === "") {
+    if (v === null || v === undefined) {
       delete obj[k];
       continue;
     }
@@ -120,6 +121,8 @@ async function remitterFromUser(
   user: User,
   userInformation: UserInformation | null,
 ): Promise<Record<string, unknown>> {
+  const sourceFunds = (userInformation?.sourceOfIncome) || "Other";
+
   // Mirror: if ($user->user_type == USER_TYPE_INDIVIDUAL)
   if (Number(user.userType) === USER_TYPE_INDIVIDUAL) {
     return {
@@ -137,32 +140,26 @@ async function remitterFromUser(
       city: userInformation?.city,
       state: userInformation?.state,
       postal_code: userInformation?.postalCode,
-      id_type: await lookupsService.findValuebyKey(userInformation?.idType, "id_types"),
-      id_number: userInformation?.idNumber,
-      source_of_funds: userInformation?.sourceOfIncome,
+      id_type: (await lookupsService.findValuebyKey(userInformation?.idType, "id_types")) || "Other",
+      id_number: userInformation?.idNumber || "0000",
+      source_of_funds: sourceFunds,
     };
   }
 
   // BUSINESS: Mirror: $sender_documents = UserDocument::where('user_id', $user->id)->first();
   const userDocument = await prisma().userDocument.findFirst({ where: { userId: user.id } });
 
-  logger.info(
-    { userId: user.id.toString(), userDocumentId: userDocument?.id?.toString() ?? null, documentFile: userDocument?.documentFile ?? null, documentType: userDocument?.documentType ?? null },
-    "[PU_DEBUG] remitterFromUser BUSINESS - userDocument fetched"
-  );
-
   const remitter: Record<string, unknown> = {
     // Mirror: $user->type == USER_TYPE_INDIVIDUAL ? 'INDIVIDUAL' : 'BUSINESS'
-    // Note: Laravel uses $user->type (not user_type) here — maps to userType in Node
     type: Number(user.userType) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
     business_name: userInformation?.businessName,
     type_of_business:
-      await lookupsService.findValuebyKey(userInformation?.type_of_business, "business_types") ||
+      (await lookupsService.findValuebyKey(userInformation?.type_of_business, "business_types")) ||
       "Company",
     document_file: userDocument?.documentFile ?? null,
     document_type: userDocument?.documentType
-      ? await lookupsService.findValuebyKey(userDocument.documentType, "document_types")
-      : null,
+      ? (await lookupsService.findValuebyKey(userDocument.documentType, "document_types")) || "Other"
+      : (userDocument?.documentFile ? "Other" : null),
     email: user.email,
     mobile_country_code: user.mobileCountryCode,
     mobile: user.mobile,
@@ -171,9 +168,9 @@ async function remitterFromUser(
     city: userInformation?.city,
     state: userInformation?.state,
     postal_code: userInformation?.postalCode,
-    id_type: await lookupsService.findValuebyKey(userInformation?.idType, "id_types"),
-    id_number: userInformation?.idNumber,
-    source_of_funds: userInformation?.sourceOfIncome,
+    id_type: (await lookupsService.findValuebyKey(userInformation?.idType, "id_types")) || "Other",
+    id_number: userInformation?.idNumber || "0000",
+    source_of_funds: sourceFunds,
     country: userInformation?.country,
   };
 
@@ -201,10 +198,10 @@ async function remitterFromUser(
           mobile_country_code: person.mobile_country_code ?? null,
           mobile: person.mobile ?? null,
           country: person.country ?? null,
-          id_type: !person.id_type
-            ? null
-            : await lookupsService.findValuebyKey(person.id_type, "id_types"),
-          id_number: person.id_number ?? null,
+          id_type: person.id_type
+            ? (await lookupsService.findValuebyKey(person.id_type, "id_types")) || "Other"
+            : "Other",
+          id_number: person.id_number || "0000",
           designation: person.designation_id
             ? await lookupsService.findValuebyKey(person.designation_id, "professions")
             : null,
@@ -213,6 +210,7 @@ async function remitterFromUser(
     }
   }
 
+  logger.info({ userId: user.id.toString(), remitter }, "[PU_DEBUG] remitterFromUser - Final object");
   return remitter;
 }
 
@@ -228,6 +226,8 @@ async function remitterFromSender(
   user: User,
   userInformation: UserInformation | null,
 ): Promise<Record<string, unknown>> {
+  const sourceFunds = sender.sourceOfFunds || "Other";
+
   // Mirror: if ($sender->type == USER_TYPE_INDIVIDUAL)
   if (Number(sender.type) === USER_TYPE_INDIVIDUAL) {
     return {
@@ -246,9 +246,9 @@ async function remitterFromSender(
       city: sender.city ?? userInformation?.city,
       state: sender.state,
       postal_code: sender.postalCode,
-      id_type: await lookupsService.findValuebyKey(sender.idType, "id_types"),
-      id_number: sender.idNumber,
-      source_of_funds: sender.sourceOfFunds,
+      id_type: (await lookupsService.findValuebyKey(sender.idType, "id_types")) || "Other",
+      id_number: sender.idNumber || "0000",
+      source_of_funds: sourceFunds,
     };
   }
 
@@ -259,12 +259,12 @@ async function remitterFromSender(
     type: "BUSINESS",
     business_name: sender.firstName,
     type_of_business:
-      await lookupsService.findValuebyKey(userInformation?.type_of_business, "business_types") ||
+      (await lookupsService.findValuebyKey(userInformation?.type_of_business, "business_types")) ||
       "Company",
     document_file: senderDocument?.documentFile ?? null,
     document_type: senderDocument?.documentType
-      ? await lookupsService.findValuebyKey(senderDocument.documentType, "document_types")
-      : null,
+      ? (await lookupsService.findValuebyKey(senderDocument.documentType, "document_types")) || "Other"
+      : (senderDocument?.documentFile ? "Other" : null),
     email: sender.email,
     mobile_country_code: sender.mobileCountryCode,
     mobile: sender.mobile,
@@ -273,9 +273,9 @@ async function remitterFromSender(
     city: sender.city,
     state: sender.state,
     postal_code: sender.postalCode,
-    id_type: await lookupsService.findValuebyKey(sender.idType, "id_types"),
-    id_number: sender.idNumber,
-    source_of_funds: sender.sourceOfFunds,
+    id_type: (await lookupsService.findValuebyKey(sender.idType, "id_types")) || "Other",
+    id_number: sender.idNumber || "0000",
+    source_of_funds: sourceFunds,
     country: sender.country,
   };
 
@@ -304,9 +304,9 @@ async function remitterFromSender(
           mobile: person.mobile ?? null,
           country: person.country ?? null,
           id_type: person.id_type
-            ? await lookupsService.findValuebyKey(person.id_type, "id_types")
-            : null,
-          id_number: person.id_number ?? null,
+            ? (await lookupsService.findValuebyKey(person.id_type, "id_types")) || "Other"
+            : "Other",
+          id_number: person.id_number || "0000",
           designation: person.designation_id
             ? await lookupsService.findValuebyKey(person.designation_id, "professions")
             : null,
@@ -393,5 +393,7 @@ export async function buildPayoutPayload(
     },
   };
 
-  return removeEmpty(payload as Record<string, unknown>);
+  const finalPayload = removeEmpty(payload as Record<string, unknown>);
+  logger.info({ orderId: txn.orderId, payload: finalPayload }, "[PU_DEBUG] Final Payout Payload");
+  return finalPayload;
 }

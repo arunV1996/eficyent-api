@@ -125,6 +125,9 @@ export const InvoiceMate = {
    */
   async makePayout(txn: BeneficiaryTransaction, user: User): Promise<void> {
     try {
+      const secret = await loadSecret();
+      if (!secret || String(secret.IS_ENABLED) === "false") return;
+
       const sender = txn.senderId
         ? await prisma().sender.findUnique({ where: { id: txn.senderId } })
         : null;
@@ -136,8 +139,7 @@ export const InvoiceMate = {
       if (!account) return;
 
       const merchant = user.merchantId
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-        ? await prisma().merchant.findFirst({ where: { uniqueId: user.merchantId } })
+        ? await prisma().merchant.findUnique({ where: { id: user.merchantId } })
         : null;
 
       const remitter = sender
@@ -148,8 +150,6 @@ export const InvoiceMate = {
           ? account.businessName ?? ""
           : `${account.firstName ?? ""} ${account.lastName ?? ""}`.trim();
 
-      const secret = await loadSecret();
-      if (!secret) return;
       const payload = {
         unique_id: txn.uniqueId,
         user: maskData(merchant?.name ?? user.firstName ?? user.email),
@@ -185,7 +185,7 @@ export const InvoiceMate = {
   ): Promise<void> {
     try {
       const secret = await loadSecret();
-      if (!secret) return;
+      if (!secret || String(secret.IS_ENABLED) === "false") return;
       const payload = {
         unique_id: accountsRecordUniqueId ?? txn.uniqueId,
         user: maskData("Lulu"), // matches Laravel hardcoded literal

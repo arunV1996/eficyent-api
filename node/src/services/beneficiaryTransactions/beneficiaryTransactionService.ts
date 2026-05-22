@@ -430,8 +430,9 @@ export async function listWhere(
     };
   }
   if (q.bank_account_id) {
+    const baseScope = await getVirtualAccountScope(user);
     const va = await prisma().virtualAccount.findFirst({
-      where: { uniqueId: q.bank_account_id, userId: user.id },
+      where: { ...baseScope, uniqueId: q.bank_account_id },
     });
     if (!va) throw new ApiException(120);
     where.quotes = { sourceId: va.id, sourceType: MORPH_VIRTUAL_ACCOUNT };

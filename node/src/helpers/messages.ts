@@ -44,7 +44,7 @@ export const ApiErrorMessages: Record<number, string> = {
   158: "Beneficiary account already exists.",
   179: "Failed to create account validation record.",
   119: "Failed to create quote.",
-  120: "Invalid quote source.",
+  120: "Bank account not found.",
   121: "Quote not found.",
   123: "Failed to create wallet transaction.",
   130: "A sender with this ID number already exists.",

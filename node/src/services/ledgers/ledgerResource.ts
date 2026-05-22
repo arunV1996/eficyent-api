@@ -2,10 +2,17 @@ import {
   BeneficiaryTransaction,
   DepositTransaction,
   Ledger,
+  Quote,
+  Wallet,
+  WalletTransaction,
 } from "@prisma/client";
 import {
   MORPH_BENEFICIARY_TRANSACTION,
   MORPH_DEPOSIT_TRANSACTION,
+  MORPH_WALLET_TRANSACTION,
+  PAID_TO_BENEFICIARY,
+  PAID_TO_WALLET,
+  TRANSACTION_TYPE_CREDIT,
 } from "../../helpers/constants";
 import { formatDate } from "../../helpers/lookups";
 
@@ -20,15 +27,25 @@ export interface LedgerDto {
   client_reference_id: string;
   txn_ref_no: string;
   transaction_type: string;
-  paid_to: number | null;
+  paid_to: number | string | null;
   amount: string;
   balance: string;
   refund_transaction_id: string;
   created_at: string;
 }
 
+export interface LedgerResourceOptions {
+  wallet_id?: string;
+  bank_account_id?: string;
+}
+
 export function ledgerResource(
-  l: Ledger & { transaction?: any },
+  l: Ledger & {
+    transaction?: any;
+    wallet?: Wallet | null;
+    virtualAccount?: any | null;
+  },
+  options: LedgerResourceOptions = {},
 ): LedgerDto {
   const tx = l.transaction;
 
@@ -37,39 +54,72 @@ export function ledgerResource(
   let txnRef = "";
   let type = "DEBIT";
   let amount = "0.00";
-  let currency = "USD";
-  let paidTo: number | null = null;
+  let currency = l.wallet?.currency ?? l.virtualAccount?.currency ?? "";
+  let fromCurrency = l.virtualAccount?.currency ?? currency;
+  let paidTo: number | string | null = "";
+  let balanceStr = l.balance ? `${parseFloat(l.balance.toString()).toFixed(2)} ${currency}` : "";
   let refundId = "";
 
+  // 1. Determine base type and basic info
   if (l.transactionType === MORPH_DEPOSIT_TRANSACTION && tx) {
-    transId = tx.uniqueId || "";
-    clientRef = (tx as DepositTransaction).clientReferenceId || "";
+    const dt = tx as DepositTransaction;
+    transId = dt.uniqueId || "";
+    clientRef = dt.clientReferenceId || "";
     type = "CREDIT";
-    amount = (tx as DepositTransaction).amount.toString();
-    currency = (tx as DepositTransaction).depositCurrency || "USD";
+    amount = dt.amount.toString();
+    currency = dt.depositCurrency || currency;
+    fromCurrency = dt.depositCurrency || fromCurrency;
   } else if (l.transactionType === MORPH_BENEFICIARY_TRANSACTION && tx) {
-    transId = tx.uniqueId || "";
-    clientRef = (tx as BeneficiaryTransaction).clientReferenceId || "";
-    txnRef = (tx as BeneficiaryTransaction).txnRefNo || "";
+    const bt = tx as BeneficiaryTransaction;
+    transId = bt.uniqueId || "";
+    clientRef = bt.clientReferenceId || "";
+    txnRef = bt.txnRefNo || "";
     type = "DEBIT";
-    amount = (tx as BeneficiaryTransaction).amount.toString();
-    currency = (tx as BeneficiaryTransaction).receivingCurrency || "USD";
-    // In legacy, paid_to for beneficiary transactions is often the recipient type (1=Individual, 2=Business).
-    // We try to pull this from the transaction if available.
-    if (tx.recipientType) {
-      paidTo = Number(tx.recipientType);
+    amount = bt.amount.toString();
+    currency = bt.receivingCurrency || currency;
+    paidTo = PAID_TO_BENEFICIARY;
+  } else if (l.transactionType === MORPH_WALLET_TRANSACTION && tx) {
+    const wt = tx as WalletTransaction & { quote?: Quote; wallet?: Wallet };
+    // match legacy: transaction_id in ledger is actually the unique_id
+    transId = wt.uniqueId;
+    clientRef = wt.quote?.uniqueId || "";
+    type = wt.type === TRANSACTION_TYPE_CREDIT ? "CREDIT" : "DEBIT";
+    amount = wt.totalAmount.toString();
+
+    // Context-sensitive Laravel logic
+    if (options.wallet_id || options.bank_account_id) {
+      if (wt.quote?.totalSendingAmount) {
+        amount = wt.quote.totalSendingAmount.toString();
+      }
     }
+    if (options.wallet_id) {
+      amount = wt.totalAmount.toString();
+      fromCurrency = wt.wallet?.currency || "";
+      balanceStr = (wt as any).balanceAfter
+        ? `${parseFloat((wt as any).balanceAfter.toString()).toFixed(2)} ${currency}`
+        : "";
+    }
+    if (options.bank_account_id) {
+      balanceStr = l.balance ? `${parseFloat(l.balance.toString()).toFixed(2)} ${fromCurrency}` : "";
+    }
+
+    // Morph debit check
+    if (l.virtualAccountId && l.walletId && !options.wallet_id) {
+      type = "DEBIT";
+    }
+    paidTo = PAID_TO_WALLET;
   }
 
+  // 2. Final assembly
   return {
     unique_id: l.uniqueId,
     transaction_id: transId,
     client_reference_id: clientRef,
     txn_ref_no: txnRef,
-    transaction_type: type,
-    paid_to: paidTo,
-    amount: `${parseFloat(amount).toFixed(2)} ${currency}`,
-    balance: `${parseFloat(l.balance.toString()).toFixed(2)} ${currency}`,
+    transaction_type: type, // already mapped to label in Node pattern
+    paid_to: type === "DEBIT" ? paidTo : "",
+    amount: amount ? `${parseFloat(amount).toFixed(2)} ${fromCurrency}`.trim() : "",
+    balance: balanceStr,
     refund_transaction_id: refundId,
     created_at: formatDate(l.createdAt),
   };

@@ -30,9 +30,10 @@ export const MERCHANT_TYPE_WHITELABEL = 2;
 export const MERCHANT_TYPE_PAYOUTINTEGRATOR = 3;
 export const MERCHANT_TYPE_PAYINCOLLECTION = 4;
 
-export const BUSINESS_MODEL_MTO = "MTO";
+export const BUSINESS_MODEL_MTO = "mto";
 export const BUSINESS_MODEL_B2B = "B2B";
 export const BUSINESS_MODEL_COLLECTION = "COLLECTION";
+export const BUSINESS_MODEL_DEAL_BASED = "DEAL_BASED";
 
 export const SUPPORTED_USER_INDIVIDUAL = "individual";
 export const SUPPORTED_USER_BUSINESS = "business";
@@ -240,6 +241,10 @@ export const WALLET_STATUS_MAP: Record<string, number> = {
   INACTIVE: WALLET_STATUS_INACTIVE,
 };
 
+export function walletStatusLabel(value: number): string {
+  return value === WALLET_STATUS_ACTIVE ? "ACTIVE" : "INACTIVE";
+}
+
 export function walletTransactionStatusLabel(value: number): string {
   switch (value) {
     case WALLET_TRANSACTION_COMPLETED:
@@ -250,7 +255,7 @@ export function walletTransactionStatusLabel(value: number): string {
       return "FAILED";
     case WALLET_TRANSACTION_PENDING:
     default:
-      return "PROCESSING";
+      return "PENDING";
   }
 }
 
@@ -258,6 +263,9 @@ export function walletTransactionStatusLabel(value: number): string {
 export const SENDER_STATUS_PENDING = 0;
 export const SENDER_STATUS_APPROVED = 1;
 export const SENDER_STATUS_REJECTED = 2;
+
+export const PAID_TO_BENEFICIARY = 1;
+export const PAID_TO_WALLET = 2;
 export const SENDER_STATUS_EXPIRED = 3;
 export const SENDER_STATUS_DISABLED = 4;
 

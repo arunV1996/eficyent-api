@@ -32,3 +32,17 @@ export function generateTransactionRefNumber(scopeId: number | bigint): string {
 export function generateEmailCode(): string {
   return numericNano(6);
 }
+
+const alphabeticAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const alphabeticNano = customAlphabet(alphabeticAlphabet, 4);
+
+/**
+ * Generate an Order ID compatible with Laravel's generateOrderID.
+ * TXN + <last 8 digits of timestamp> + <4 random uppercase chars>.
+ */
+export function generateOrderId(): string {
+  const timestamp = Math.floor(Date.now() / 1000).toString().slice(-8);
+  const random = alphabeticNano();
+  return `TXN${timestamp}${random}`;
+}
+

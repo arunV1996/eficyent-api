@@ -15,7 +15,12 @@ export const WalletListQuerySchema = z
 export type WalletListInput = z.infer<typeof WalletListQuerySchema>;
 
 export const WalletShowSchema = z
-  .object({ wallet_id: z.string().min(1).max(64) })
+  .object({
+    wallet_id: z.string().min(1).max(64).optional(),
+    with_balance: z
+      .union([z.boolean(), z.literal("true"), z.literal("false"), z.literal(1), z.literal(0)])
+      .optional(),
+  })
   .strict();
 export type WalletShowInput = z.infer<typeof WalletShowSchema>;
 

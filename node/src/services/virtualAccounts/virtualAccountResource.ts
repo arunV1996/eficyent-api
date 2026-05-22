@@ -43,7 +43,7 @@ export function virtualAccountResource(
     flag: getFlagUrl(va.country, baseUrl),
     status: virtualAccountStatusLabel(va.status),
     created_at: formatDate(va.createdAt),
-    balance: Number(va.balance ?? 0),
+    balance: Number(parseFloat(va.balance ?? "0").toFixed(2)),
     memo: userMemo,
   };
   if (va.swift) {

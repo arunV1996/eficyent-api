@@ -151,16 +151,22 @@ export async function payoutPublicRoutes(): Promise<Router> {
     validate({ params: RetryJobParamSchema }),
     asyncHandler(payoutController.retryJob),
   );
+  r.get(
+    "/check_external_service_status/:trxn",
+    validate({ params: RetryParamSchema }),
+    asyncHandler(payoutController.checkExternalServiceStatus),
+  );
+  return r;
+}
+
+export async function retryExternalServiceRoute(): Promise<Router> {
+  const r = Router();
+  const limited = await limitedRateLimit();
   r.post(
     "/retry_external_service/:trxn",
     limited,
     validate({ params: RetryParamSchema }),
     asyncHandler(payoutController.retryExternalService),
-  );
-  r.get(
-    "/check_external_service_status/:trxn",
-    validate({ params: RetryParamSchema }),
-    asyncHandler(payoutController.checkExternalServiceStatus),
   );
   return r;
 }

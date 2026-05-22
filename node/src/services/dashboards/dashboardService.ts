@@ -14,6 +14,7 @@ import {
   TEAM_MEMBER_ROLE_CORPORATE,
 } from "../../helpers/constants";
 import { settingGet } from "../settings/settingsService";
+import { getVirtualAccountScope } from "../virtualAccounts/virtualAccountService";
 
 /**
  * Mirror of App\\Repositories\\DashboardRepository.
@@ -55,8 +56,9 @@ async function resolveScope(
   let bankAccountId: bigint | null = null;
   let walletId: bigint | null = null;
   if (filters.bank_account_id) {
+    const baseScope = await getVirtualAccountScope(user);
     const va = await prisma().virtualAccount.findFirst({
-      where: { uniqueId: filters.bank_account_id, userId: user.id },
+      where: { ...baseScope, uniqueId: filters.bank_account_id },
       select: { id: true },
     });
     if (!va) throw new ApiException(120);

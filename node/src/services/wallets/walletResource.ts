@@ -1,28 +1,32 @@
 import { Wallet, WalletTransaction } from "@prisma/client";
-import { walletTransactionStatusLabel } from "../../helpers/constants";
+import { walletStatusLabel, walletTransactionStatusLabel } from "../../helpers/constants";
+import { formatDate } from "../../helpers/lookups";
 
 export interface WalletDto {
   unique_id: string;
   currency: string;
-  balance: string;
-  status: number;
+  balance: number;
+  status: string;
   created_at: string;
+  flag: string | null;
 }
 
 export function walletResource(
-  wallet: Wallet & { balance?: string },
+  wallet: Wallet & { balance?: string; flag?: string | null },
 ): WalletDto {
   return {
     unique_id: wallet.uniqueId,
     currency: wallet.currency,
-    balance: wallet.balance ?? "0",
-    status: wallet.status,
+    balance: Number(parseFloat(wallet.balance ?? "0").toFixed(2)),
+    status: walletStatusLabel(wallet.status),
     created_at: wallet.createdAt ? wallet.createdAt.toISOString() : "",
+    flag: wallet.flag ?? null,
   };
 }
 
 export interface WalletTransactionDto {
   unique_id: string;
+  transaction_id: string;
   amount: string;
   fees: string;
   total_amount: string;
@@ -36,8 +40,10 @@ export interface WalletTransactionDto {
 }
 
 export function walletTransactionResource(t: WalletTransaction): WalletTransactionDto {
+  const trans = t as any;
   return {
     unique_id: t.uniqueId,
+    transaction_id: trans.transactionId || t.uniqueId,
     amount: t.amount.toString(),
     fees: t.fees.toString(),
     total_amount: t.totalAmount.toString(),
@@ -49,6 +55,6 @@ export function walletTransactionResource(t: WalletTransaction): WalletTransacti
     beneficiary_transaction_id: t.beneficiaryTransactionId
       ? t.beneficiaryTransactionId.toString()
       : null,
-    created_at: t.createdAt ? t.createdAt.toISOString() : "",
+    created_at: formatDate(t.createdAt),
   };
 }

@@ -10,6 +10,7 @@ import {
   EXTERNAL_CALL_FOR_CALLBACK,
   EXTERNAL_TYPE_COMPLIANCE,
 } from "../../helpers/constants";
+import { uniqueId } from "../../helpers/uniqueId";
 
 /**
  * Mirror of App\\Http\\Controllers\\Api\\Callbacks\\ComplianceWebhookController.
@@ -23,6 +24,7 @@ import {
  */
 export const complianceWebhookController = {
   async invoke(req: Request, res: Response): Promise<Response> {
+    console.log("Compliance Webhook Received:", JSON.stringify(req.body));
     const start = Date.now();
     const payload = (req.body ?? {}) as Record<string, unknown>;
 
@@ -56,10 +58,8 @@ export const complianceWebhookController = {
         return res.status(200).json({ status: "ignored" });
       }
 
-      // Match on compliance_data.transaction_id (Laravel uses
-      // `compliance_data->transaction_id` JSON path) AND status in
-      // (COMPLIANCE_INITIATED, COMPLIANCE_HOLD).
-      const txn = await prisma().beneficiaryTransaction.findFirst({
+      // 1. Primary Lookup: Match on compliance_data.transaction_id
+      let txn = await prisma().beneficiaryTransaction.findFirst({
         where: {
           status: {
             in: [
@@ -68,16 +68,43 @@ export const complianceWebhookController = {
             ],
           },
           complianceData: {
-            path: ["transaction_id"],
+            path: "$.transaction_id",
             equals: complianceTransactionId,
           } as Prisma.JsonFilter,
         },
       });
 
+      // 2. Secondary Lookup: Fallback to matching on complianceData.id or search by reference
+      if (!txn) {
+        txn = await prisma().beneficiaryTransaction.findFirst({
+          where: {
+            status: {
+              in: [
+                BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED,
+                BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD,
+              ],
+            },
+            complianceData: {
+              path: "$.id",
+              equals: complianceTransactionId,
+            } as Prisma.JsonFilter,
+          },
+        });
+      }
+
+      // 3. Last Resort: Try orderId match if the provider returned our orderId as their transactionId
+      if (!txn) {
+        txn = await prisma().beneficiaryTransaction.findFirst({
+          where: {
+            orderId: complianceTransactionId,
+          },
+        });
+      }
+
       if (!txn) {
         logger.warn(
-          { complianceTransactionId },
-          "Local transaction not found for compliance webhook",
+          { complianceTransactionId, data },
+          "Local transaction not found for compliance webhook (after fallbacks)",
         );
         return res.status(200).json({ status: "not_found" });
       }
@@ -85,21 +112,40 @@ export const complianceWebhookController = {
       beneficiaryTransactionId = txn.id;
       externalReferenceId = complianceTransactionId;
 
+      const oldStatus = txn.status;
       const updates: { status?: number; complianceNotes?: string | null } = {
         complianceNotes: (data.notes as string | undefined) ?? null,
       };
 
       if (event === "transaction.approved" && complianceStatus === "PASSED") {
         updates.status = BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED;
+      } else if (event === "transaction.rejected" || complianceStatus === "FAILED") {
+        updates.status = BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED;
+      }
 
-        const updated = await prisma().beneficiaryTransaction.update({
-          where: { id: txn.id },
-          data: updates,
+      const updated = await prisma().beneficiaryTransaction.update({
+        where: { id: txn.id },
+        data: updates,
+      });
+
+      // Record Status History
+      if (updates.status && updates.status !== oldStatus) {
+        await prisma().beneficiaryTransactionStatusHistory.create({
+          data: {
+            uniqueId: uniqueId(24),
+            beneficiaryTransactionId: txn.id,
+            fromStatus: String(oldStatus),
+            toStatus: String(updates.status),
+            changedBy: "system",
+            changedByType: "system",
+            changedAt: new Date(),
+            meta: { source: "compliance_webhook" } as Prisma.InputJsonValue,
+          },
         });
+      }
 
-        // Defer the ProcessingUnit hand-off so the webhook reply doesn't
-        // wait on outbound HTTP. The Compliance->PU promotion is the
-        // exact Laravel flow at line 96 of the original controller.
+      // Promotion logic: if APPROVED, hand off to ProcessingUnit
+      if (updates.status === BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED) {
         const user = await prisma().user.findUnique({ where: { id: txn.userId } });
         if (user) {
           const { ProcessingUnit } = await import(
@@ -107,24 +153,13 @@ export const complianceWebhookController = {
           );
           void ProcessingUnit.make(updated, user);
         }
-      } else if (event === "transaction.rejected" || complianceStatus === "FAILED") {
-        updates.status = BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED;
-        await prisma().beneficiaryTransaction.update({
-          where: { id: txn.id },
-          data: updates,
-        });
-      } else {
-        await prisma().beneficiaryTransaction.update({
-          where: { id: txn.id },
-          data: { complianceNotes: updates.complianceNotes ?? null },
-        });
       }
 
       responseBody = data;
       success = true;
       logger.info(
-        { txnId: txn.id.toString(), newStatus: updates.status ?? txn.status },
-        "Compliance transaction updated",
+        { txnId: txn.id.toString(), newStatus: updates.status ?? oldStatus },
+        "Compliance transaction updated via webhook",
       );
       return res.status(200).json({ status: "success" });
     } catch (err) {

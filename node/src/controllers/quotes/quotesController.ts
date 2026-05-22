@@ -5,6 +5,7 @@ import { ApiException } from "../../helpers/errors";
 import { sendResponse } from "../../helpers/response";
 import { apiSuccess } from "../../helpers/messages";
 import {
+  BUSINESS_MODEL_DEAL_BASED,
   EXTERNAL_TYPE_MASSIVE,
   MORPH_VIRTUAL_ACCOUNT,
   MORPH_WALLET,
@@ -16,6 +17,7 @@ import {
 import { USER_TYPE_MAP } from "../../helpers/lookups";
 import { uniqueId } from "../../helpers/uniqueId";
 import { getVirtualAccountScope } from "../../services/virtualAccounts/virtualAccountService";
+import { getBusinessModel } from "../../services/merchants/merchantService";
 import { QuoteStoreInput } from "../../validators/quotes/quoteValidators";
 import { quoteResource } from "../../services/quotes/quoteResource";
 import {
@@ -106,7 +108,7 @@ async function buildResponse(
       fx_rate: "1",
       external_fx_rate: "1",
       internal_fx_rate: "1",
-      recipient_country: body.recipient_country,
+      recipient_country: body.recipient_country!,
       receiving_currency: receivingCurrency,
       recipient_type: recipientTypeNumeric,
       quote_type: body.quote_type,
@@ -136,7 +138,7 @@ async function buildResponse(
       external_fx_rate: "1",
       internal_fx_rate: "1",
       receiving_amount: body.amount,
-      recipient_country: body.recipient_country,
+      recipient_country: body.recipient_country!,
       receiving_currency: receivingCurrency,
       recipient_type: recipientTypeNumeric,
       quote_type: body.quote_type,
@@ -187,7 +189,7 @@ async function buildResponse(
         amount: body.amount,
         from_currency: source.row.currency,
         receiving_currency: receivingCurrency,
-        recipient_country: body.recipient_country,
+        recipient_country: body.recipient_country!,
         recipient_type: recipientTypeNumeric,
         quote_type: body.quote_type,
         payment_rail: paymentRail,
@@ -249,7 +251,7 @@ async function buildResponse(
     commission_amount: txCommission.commission_amount,
     merchant_commission_amount: txCommission.merchant_commission_amount,
     external_commission_amount: externalCommission,
-    recipient_country: body.recipient_country,
+    recipient_country: body.recipient_country!,
     receiving_currency: receivingCurrency,
     recipient_type: recipientTypeNumeric,
     quote_type: body.quote_type,
@@ -323,7 +325,38 @@ export const quotesController = (mode: QuoteMode["mode"]) => ({
       ? (await prisma().merchant.findUnique({ where: { id: req.user.merchantId } }))
           ?.id ?? null
       : null;
+
+    if (!body.recipient_country) {
+      const country = await prisma().supportedCountry.findFirst({
+        where: { currency: body.receiving_currency },
+      });
+      if (country) {
+        body.recipient_country = country.countryCode;
+      }
+    }
+
     const recipientType = USER_TYPE_MAP[body.recipient_type] ?? 1;
+
+    // Phase 10: Deal-Based INR Override logic.
+    // For send-money (quote) flows to INR by merchants with a DEAL_BASED model,
+    // we force the source to be the user's INR wallet.
+    if (
+      mode === QUOTE_MODE_QUOTATION &&
+      req.user.merchantId &&
+      body.receiving_currency.toUpperCase() === "INR"
+    ) {
+      const bizModel = await getBusinessModel(req.user.merchantId);
+      if (bizModel.toUpperCase() === BUSINESS_MODEL_DEAL_BASED) {
+        const wallet = await prisma().wallet.findFirst({
+          where: { userId: req.user.id, currency: "INR" },
+        });
+        if (wallet) {
+          body.bank_account_id = undefined;
+          body.wallet_id = wallet.uniqueId;
+        }
+      }
+    }
+
     const source = await resolveSource(body, req.user);
     const response = await buildResponse(
       body,
@@ -335,7 +368,7 @@ export const quotesController = (mode: QuoteMode["mode"]) => ({
     );
     const quote = await persistQuote(req.user, response);
     return sendResponse(res, apiSuccess(107), 107, {
-      quote: quoteResource(quote),
+      quote: quoteResource(quote, source.row.currency),
     });
   },
 });

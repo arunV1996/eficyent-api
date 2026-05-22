@@ -16,12 +16,15 @@ export interface QuoteDto {
   expires_at: string;
 }
 
-export function quoteResource(q: Quote): QuoteDto {
+export function quoteResource(q: Quote, sourceCurrency?: string): QuoteDto {
   const recipientType = q.recipientType === 2 ? "BUSINESS" : "PERSONAL";
-  const sendingCurrency = q.fxRate ? "USD" : q.receivingCurrency ?? "USD"; // Fallback to USD
-  const fxRateString = q.fxRate 
-    ? `1 ${sendingCurrency} = ${q.fxRate} ${q.receivingCurrency}`
-    : `1 ${sendingCurrency} = 1 ${sendingCurrency}`;
+  // Use the actual source account currency if provided; fall back to receivingCurrency
+  // for same-currency flows, or "USD" as last resort. Never hardcode "USD" when we
+  // know the real source currency.
+  const effectiveSourceCurrency = sourceCurrency ?? q.receivingCurrency ?? "USD";
+  const fxRateString = q.fxRate && q.fxRate !== "1"
+    ? `1 ${effectiveSourceCurrency} = ${q.fxRate} ${q.receivingCurrency}`
+    : `1 ${effectiveSourceCurrency} = 1 ${effectiveSourceCurrency}`;
 
   return {
     unique_id: q.uniqueId,

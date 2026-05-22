@@ -12,7 +12,7 @@ import {
   TRANSACTION_TYPE_CREDIT,
   WALLET_STATUS_ACTIVE,
   WALLET_STATUS_MAP,
-  WALLET_TRANSACTION_COMPLETED,
+  WALLET_TRANSACTION_PENDING,
 } from "../../helpers/constants";
 import { uniqueId } from "../../helpers/uniqueId";
 import {
@@ -26,6 +26,7 @@ import {
 import {
   getVirtualAccountScope,
 } from "../../services/virtualAccounts/virtualAccountService";
+import { getFlagUrl } from "../../helpers/lookups";
 import {
   ConvertInput,
   WalletListInput,
@@ -35,6 +36,7 @@ import {
 } from "../../validators/wallets/walletValidators";
 
 const ZERO = new Prisma.Decimal(0);
+const APP_URL = process.env.APP_URL ?? "https://dev-eficyent.rare-able.com";
 
 /**
  * Mirror of Api\\WalletController + UserWalletRepository.
@@ -105,7 +107,12 @@ export const walletController = {
     const withBalance = await Promise.all(
       rows.map(async (w) => {
         const balance = await getWalletBalance(req.user!, w);
-        return { row: w, balance };
+        const country = await prisma().supportedCountry.findFirst({
+          where: { currency: w.currency },
+          select: { countryCode: true },
+        });
+        const flag = country ? getFlagUrl(country.countryCode, APP_URL) : null;
+        return { row: w, balance, flag };
       }),
     );
     let sorted = withBalance.sort((a, b) => b.balance.minus(a.balance).toNumber());
@@ -123,7 +130,7 @@ export const walletController = {
     return sendResponse(res, "", 200, {
       total,
       wallets: page.map((w) =>
-        walletResource({ ...w.row, balance: w.balance.toString() } as never),
+        walletResource({ ...w.row, balance: w.balance.toString(), flag: w.flag } as never),
       ),
     });
   },
@@ -131,13 +138,21 @@ export const walletController = {
   async show(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as WalletShowInput;
+    if (!q.wallet_id) throw new ApiException(167);
+
     const w = await prisma().wallet.findFirst({
       where: { userId: req.user.id, uniqueId: q.wallet_id },
     });
     if (!w) throw new ApiException(167);
     const balance = await getWalletBalance(req.user, w);
+    const country = await prisma().supportedCountry.findFirst({
+      where: { currency: w.currency },
+      select: { countryCode: true },
+    });
+    const flag = country ? getFlagUrl(country.countryCode, APP_URL) : null;
+
     return sendResponse(res, "", 200, {
-      wallet: walletResource({ ...w, balance: balance.toString() } as never),
+      wallet: walletResource({ ...w, balance: balance.toString(), flag } as never),
     });
   },
 
@@ -170,29 +185,37 @@ export const walletController = {
     const balanceBefore = await getWalletBalance(req.user, wallet);
     void ZERO;
 
+    const randPart = Math.floor(Math.random() * 900) + 100;
+    const now = new Date();
+    const datePart = now.getFullYear() +
+      String(now.getMonth() + 1).padStart(2, "0") +
+      String(now.getDate()).padStart(2, "0") +
+      String(now.getHours()).padStart(2, "0") +
+      String(now.getMinutes()).padStart(2, "0") +
+      String(now.getSeconds()).padStart(2, "0");
+    const fxPart = (quote.fxRate || "").replace(/\./g, "");
+    const transactionIdStr = `${randPart}${datePart}${fxPart}`;
+
     const wt = await prisma().$transaction(async (tx) => {
       const created = await tx.walletTransaction.create({
         data: {
           uniqueId: uniqueId(24),
+          transactionId: transactionIdStr,
           userId: req.user!.id,
           walletId: wallet.id,
           quoteId: quote.id,
           amount: quote.receivingAmount,
           totalAmount: quote.receivingAmount,
           fees: quote.commissionAmount,
-          status: WALLET_TRANSACTION_COMPLETED,
+          status: WALLET_TRANSACTION_PENDING,
           type: TRANSACTION_TYPE_CREDIT,
-          balanceBefore,
-          balanceAfter: balanceBefore.plus(quote.receivingAmount),
-        },
+          balanceBefore: null,
+          balanceAfter: null,
+        } as any,
       });
       await tx.quote.update({
         where: { id: quote.id },
         data: { status: QUOTE_SUBMITTED },
-      });
-      await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: { increment: quote.receivingAmount } },
       });
       // Ledger.transaction polymorphic write - mirrors Helper::updateLedger
       // for the WalletTransaction case. Full polymorphic ledger mirroring
@@ -206,7 +229,7 @@ export const walletController = {
           walletId: wallet.id,
           transactionType: "App\\Models\\WalletTransaction",
           transactionId: created.id,
-          balance: balanceBefore.plus(quote.receivingAmount),
+          balance: balanceBefore,
           externalType: quote.externalType,
           description: `Wallet conversion (${quote.uniqueId})`,
         },
@@ -214,7 +237,7 @@ export const walletController = {
       return created;
     });
     return sendResponse(res, apiSuccess(108), 108, {
-      wallet_transaction: walletTransactionResource(wt),
+      wallet_transaction: walletTransactionResource(wt as never),
     });
   },
 

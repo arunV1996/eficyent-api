@@ -114,6 +114,7 @@ export const ledgerController = {
       prisma().ledger.count({ where }),
       prisma().ledger.findMany({
         where,
+        include: { wallet: true, virtualAccount: true } as any,
         orderBy: { createdAt: "desc" },
         skip,
         take,
@@ -123,7 +124,7 @@ export const ledgerController = {
     return sendResponse(res, "", "", {
       total,
       receiving_currency: null,
-      ledgers: enriched.map(ledgerResource),
+      ledgers: enriched.map((l: any) => ledgerResource(l, q)),
     });
   },
 
@@ -132,10 +133,11 @@ export const ledgerController = {
     const q = req.query as unknown as LedgerShowInput;
     const row = await prisma().ledger.findFirst({
       where: { userId: req.user.id, uniqueId: q.ledger_id },
+      include: { wallet: true, virtualAccount: true } as any,
     });
     if (!row) throw new ApiException(149);
-    const enriched = await loadTransaction(row);
-    return sendResponse(res, "", "", { ledger: ledgerResource(enriched) });
+    const enriched = await loadTransaction(row as any);
+    return sendResponse(res, "", "", { ledger: ledgerResource(enriched as any, q as any) });
   },
 
   async export(req: Request, res: Response): Promise<Response> {
@@ -227,6 +229,7 @@ async function loadTransaction(
     case MORPH_WALLET_TRANSACTION: {
       const t = await prisma().walletTransaction.findUnique({
         where: { id: ledger.transactionId },
+        include: { quote: true, wallet: true },
       });
       return Object.assign(ledger, { transaction: t });
     }

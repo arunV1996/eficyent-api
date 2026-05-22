@@ -22,7 +22,7 @@ export const QuoteStoreSchema = z
   .object({
     amount: z.coerce.number().positive().min(100),
     recipient_type: recipientTypeKey,
-    recipient_country: z.string().min(2).max(10),
+    recipient_country: z.string().min(2).max(10).optional(),
     receiving_currency: z.string().regex(/^[A-Za-z]{3}$/),
     bank_account_id: z.string().min(1).max(64).optional(),
     wallet_id: z.string().min(1).max(64).optional(),

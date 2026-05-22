@@ -9,6 +9,7 @@ import {
   BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED,
   BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
 } from "../../helpers/constants";
+import { uniqueId } from "../../helpers/uniqueId";
 
 /**
  * Mirror of App\\Services\\Compliance + ExternalServices\\Compliance\\ComplianceService.
@@ -164,19 +165,85 @@ export const Compliance = {
       // Compliance uses the same payload structure as ProcessingUnit.
       // Build it through the shared helper there to avoid drift.
       const { buildPayoutPayload } = await import("./processingUnitPayload");
-      payload = await buildPayoutPayload(txn, user);
-      if (!payload) {
+      const rawPayload = await buildPayoutPayload(txn, user);
+      if (!rawPayload) {
         const errorMsg = "Compliance.make - cannot build payload (missing related rows)";
         logger.warn({ txnId: txn.uniqueId }, errorMsg);
         await recordFailedInitiation(txn.id, "build_payload", errorMsg, startTime);
         if (updateStatus) {
+          const next = BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED;
           await prisma().beneficiaryTransaction.update({
             where: { id: txn.id },
-            data: { status: BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED },
+            data: { status: next },
+          });
+          await prisma().beneficiaryTransactionStatusHistory.create({
+            data: {
+              uniqueId: uniqueId(24),
+              beneficiaryTransactionId: txn.id,
+              fromStatus: String(txn.status),
+              toStatus: String(next),
+              changedBy: "system",
+              changedByType: "system",
+              changedAt: new Date(),
+            },
           });
         }
         return;
       }
+
+      // Format payload specifically to satisfy Compliance API schema requirements
+      const beneficiaryObj = rawPayload.beneficiary as Record<string, any> | undefined;
+      const remitterObj = rawPayload.remitter as Record<string, any> | undefined;
+
+      // Determine the originator/remitter's full name based on whether it is a Sender or a User (and if it is INDIVIDUAL or BUSINESS)
+      let originatorFullName = "";
+      if (txn.senderId) {
+        const sender = await prisma().sender.findUnique({ where: { id: txn.senderId } });
+        if (sender) {
+          if (Number(sender.type) === 2) { // BUSINESS
+            originatorFullName = sender.firstName ?? "";
+          } else { // INDIVIDUAL
+            originatorFullName = `${sender.firstName || ""} ${sender.lastName || ""}`.trim();
+          }
+        }
+      } else {
+        const userInformation = await prisma().userInformation.findFirst({
+          where: { userId: user.id }
+        });
+        if (Number(user.userType) === 2 && userInformation) { // BUSINESS
+          originatorFullName = userInformation.businessName ?? "";
+        } else { // INDIVIDUAL
+          originatorFullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+        }
+      }
+
+      payload = {
+        ...rawPayload,
+        "isExternalClient": 1,
+        "externalClient": {
+            "id": process.env.EXTERNAL_CLIENT_ID,
+            "name": process.env.EXTERNAL_CLIENT_NAME,
+            "code": process.env.EXTERNAL_CLIENT_CODE
+        },
+        originator: remitterObj ? {
+          ...remitterObj,
+          fullName: originatorFullName || remitterObj.fullName || 
+            (remitterObj.type === "INDIVIDUAL"
+              ? `${remitterObj.first_name || ""} ${remitterObj.last_name || ""}`.trim()
+              : remitterObj.business_name || remitterObj.first_name || "")
+        } : undefined,
+        amount: rawPayload.amount ? Number(rawPayload.amount) : Number(rawPayload.from_amount),
+        from_amount: rawPayload.from_amount ? Number(rawPayload.from_amount) : Number(rawPayload.amount),
+        currency: rawPayload.receiving_currency || rawPayload.from_currency,
+        paymentMethod: rawPayload.rail || "SWIFT",
+        beneficiary: beneficiaryObj ? {
+          ...beneficiaryObj,
+          fullName: beneficiaryObj.fullName || 
+            (beneficiaryObj.type === "INDIVIDUAL" 
+              ? `${beneficiaryObj.first_name || ""} ${beneficiaryObj.last_name || ""}`.trim()
+              : beneficiaryObj.business_name || beneficiaryObj.first_name || "")
+        } : undefined
+      };
 
       let secret: ComplianceSecret;
       try {
@@ -222,9 +289,21 @@ export const Compliance = {
           "Compliance create rejected",
         );
         if (updateStatus) {
+          const next = BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED;
           await prisma().beneficiaryTransaction.update({
             where: { id: txn.id },
-            data: { status: BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED },
+            data: { status: next },
+          });
+          await prisma().beneficiaryTransactionStatusHistory.create({
+            data: {
+              uniqueId: uniqueId(24),
+              beneficiaryTransactionId: txn.id,
+              fromStatus: String(txn.status),
+              toStatus: String(next),
+              changedBy: "system",
+              changedByType: "system",
+              changedAt: new Date(),
+            },
           });
         }
         return;
@@ -233,25 +312,49 @@ export const Compliance = {
       // Mirror Laravel ComplianceService::storeComplianceResponse - we
       // persist the provider response into compliance_data so the inbound
       // webhook can match by `compliance_data.transaction_id`.
+      const next = updateStatus ? BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED : txn.status;
       await prisma().beneficiaryTransaction.update({
         where: { id: txn.id },
         data: {
           complianceData: response.data as Prisma.InputJsonValue,
-          ...(updateStatus
-            ? { status: BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED }
-            : {}),
+          ...(updateStatus ? { status: next } : {}),
         },
       });
+      if (updateStatus && next !== txn.status) {
+        await prisma().beneficiaryTransactionStatusHistory.create({
+          data: {
+            uniqueId: uniqueId(24),
+            beneficiaryTransactionId: txn.id,
+            fromStatus: String(txn.status),
+            toStatus: String(next),
+            changedBy: "system",
+            changedByType: "system",
+            changedAt: new Date(),
+          },
+        });
+      }
       logger.info({ txnId: txn.uniqueId }, "Compliance.make accepted");
     } catch (err) {
       logger.error({ err, txnId: txn.uniqueId }, "Compliance.make threw");
       if (updateStatus) {
+        const next = BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED;
         await prisma()
           .beneficiaryTransaction.update({
             where: { id: txn.id },
-            data: { status: BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED },
+            data: { status: next },
           })
           .catch(() => undefined);
+        await prisma().beneficiaryTransactionStatusHistory.create({
+          data: {
+            uniqueId: uniqueId(24),
+            beneficiaryTransactionId: txn.id,
+            fromStatus: String(txn.status),
+            toStatus: String(next),
+            changedBy: "system",
+            changedByType: "system",
+            changedAt: new Date(),
+          },
+        }).catch(() => undefined);
       }
     }
   },
