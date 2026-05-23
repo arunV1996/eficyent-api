@@ -345,6 +345,12 @@ export async function bootstrapSecrets(): Promise<void> {
       "Loading bundled secret from AWS Secrets Manager",
     );
     const flat = await loadFlatSecret();
+    // Hydrate bundled keys into process.env so code that reads process.env.*
+    // directly (e.g. kms.ts's getAppKey reading APP_KEY) picks up the
+    // bundled value. Mirrors cfg()'s secret > env precedence.
+    for (const [k, v] of Object.entries(flat)) {
+      process.env[k] = v;
+    }
     logger.info(
       { event: "secrets.loaded", keys: Object.keys(flat).length },
       "Secrets bootstrap complete",
