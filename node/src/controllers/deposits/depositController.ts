@@ -1,6 +1,11 @@
 import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../db/prisma";
+import fs from "fs";
+import path from "path";
+import ejs from "ejs";
+import puppeteer from "puppeteer";
+import * as XLSX from "xlsx";
 import { ApiException } from "../../helpers/errors";
 import { sendResponse } from "../../helpers/response";
 import { apiSuccess } from "../../helpers/messages";
@@ -346,36 +351,101 @@ export const depositController = {
       orderBy: { createdAt: "desc" },
     });
 
-    const exportRows = rows.map((r) => ({
-      unique_id: r.uniqueId,
-      amount: r.amount.toString(),
-      total_amount: r.totalAmount.toString(),
-      currency: r.depositCurrency ?? "",
-      status: String(r.status),
-      type: r.type,
-      memo: r.memo ?? "",
-      external_reference_id: r.externalReferenceId ?? "",
-// @ts-expect-error - Auto-fixed: 'r.createdAt' is possibly 'null'.
-      created_at: r.createdAt.toISOString(),
-    }));
-
     let buffer: Buffer;
     let contentType: string;
     let extension: string;
+
     if (fileType === "excel" || fileType === "xlsx") {
-      const { generateExcel } = await import("../../services/exports/excelExport");
-      buffer = await generateExcel(exportRows, { sheetTitle: "Deposits" });
-      contentType =
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      const exportRows = rows.map((r) => {
+        const res = depositTransactionResource(r);
+        return {
+          unique_id: res.unique_id,
+          memo: res.memo,
+          amount: res.amount,
+          fee: res.fee,
+          total_amount: res.total_amount,
+          currency: res.currency,
+          type: res.type,
+          purpose_of_payment: res.purpose_of_payment,
+          source_of_funds: res.source_of_funds,
+          status: res.status,
+          created_at: res.created_at,
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(exportRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Deposits");
+      buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+      contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       extension = "xlsx";
     } else {
-      const { generateBulkTransactionsPdf } = await import(
-        "../../services/exports/pdfReceipt"
-      );
-      buffer = await generateBulkTransactionsPdf(exportRows, "Deposits");
+      const logoPath = path.join(process.cwd(), "public", "logo", "eficyent-logo-dark.png");
+      let logoUrl = "";
+      if (fs.existsSync(logoPath)) {
+        const logoBase64 = fs.readFileSync(logoPath).toString("base64");
+        logoUrl = `data:image/png;base64,${logoBase64}`;
+      }
+
+      const translations: Record<string, string> = {
+        deposits: "Deposits",
+        s_no: "S.No",
+        transaction_id: "Transaction ID",
+        memo: "Memo",
+        amount: "Amount",
+        status: "Status",
+        date: "Date"
+      };
+      const tr = (key: string) => translations[key] || key;
+
+      const depositDetails = rows.map((r) => {
+        const res = depositTransactionResource(r);
+        return {
+          unique_id: res.unique_id,
+          memo: res.memo,
+          amount: res.amount,
+          currency: res.currency,
+          status: res.status,
+          created_at: res.created_at,
+        };
+      });
+
+      const templatePath = path.join(__dirname, "..", "..", "views", "invoice", "depositTransactions.ejs");
+      const templateHtml = await fs.promises.readFile(templatePath, "utf-8");
+      
+      const today = new Date();
+      const formattedDate = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
+
+      const html = ejs.render(templateHtml, {
+        tr,
+        date: formattedDate,
+        logo: logoUrl,
+        deposit_details: depositDetails,
+      });
+
+      const browser = await puppeteer.launch({
+        headless: "new" as any,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      });
+      const page = await browser.newPage();
+      await page.setContent(html);
+      const pdfUint8Array = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        margin: {
+          top: "30px",
+          right: "30px",
+          bottom: "30px",
+          left: "30px",
+        },
+      });
+      buffer = Buffer.from(pdfUint8Array);
+      await browser.close();
+
       contentType = "application/pdf";
       extension = "pdf";
     }
+
     const url = await s3Service.upload(
       { buffer, contentType, extension },
       "exports/deposits",

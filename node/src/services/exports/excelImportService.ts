@@ -128,9 +128,17 @@ export async function processExcel<T>(
       const raw = cells[col];
       if (raw === null || raw === undefined || raw === "") continue;
       const [section, key] = path.split(".", 2) as ["quote" | "beneficiary" | "remitter", string];
-      let value = String(typeof raw === "object" && raw !== null && "text" in raw
-        ? (raw as { text: string }).text
-        : raw).trim();
+      let value = "";
+      if (raw instanceof Date) {
+        const y = raw.getFullYear();
+        const m = String(raw.getMonth() + 1).padStart(2, "0");
+        const d = String(raw.getDate()).padStart(2, "0");
+        value = `${y}-${m}-${d}`;
+      } else {
+        value = String(typeof raw === "object" && raw !== null && "text" in raw
+          ? (raw as { text: string }).text
+          : raw).trim();
+      }
 
       const sectionMap = dropdownMap[section]?.[key];
       if (sectionMap) {
