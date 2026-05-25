@@ -11,12 +11,12 @@ import { getRedis } from "../config/redis";
  *     (login, OTP verify, password reset, retries, exports, cancel, etc.)
  */
 
-async function buildStore(): Promise<RedisStore> {
+async function buildStore(prefix: string): Promise<RedisStore> {
   const redis = await getRedis();
   return new RedisStore({
     sendCommand: (...args: string[]) =>
       redis.call(...(args as [string, ...string[]])) as Promise<RedisReply>,
-    prefix: "rl:",
+    prefix,
   });
 }
 
@@ -40,6 +40,7 @@ const baseOptions = (max: number, windowMs: number): Partial<Options> => ({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req: Request): string => keyFor(req),
+  validate: false,
   handler: (_req, res) =>
     res.status(429).json({
       status: false,
@@ -54,7 +55,7 @@ let limitedLimiter: RequestHandler | null = null;
 
 export async function defaultRateLimit(): Promise<RequestHandler> {
   if (defaultLimiter) return defaultLimiter;
-  const store = await buildStore();
+  const store = await buildStore("rl:default:");
   defaultLimiter = rateLimit({
     ...baseOptions(env().RATE_LIMIT_MAX, env().RATE_LIMIT_WINDOW_MS),
     store,
@@ -64,7 +65,7 @@ export async function defaultRateLimit(): Promise<RequestHandler> {
 
 export async function limitedRateLimit(): Promise<RequestHandler> {
   if (limitedLimiter) return limitedLimiter;
-  const store = await buildStore();
+  const store = await buildStore("rl:limited:");
   limitedLimiter = rateLimit({
     ...baseOptions(env().RATE_LIMIT_LIMITED_MAX, env().RATE_LIMIT_WINDOW_MS),
     store,

@@ -203,7 +203,6 @@ export const profileController = {
         data: {
           tfaSecret: await encryptEnvelope(secret),
           backupCodes: codes,
-          isTfaSetupCompleted: 1,
         },
       });
     }
@@ -221,7 +220,6 @@ export const profileController = {
         data: {
           tfaSecret: await encryptEnvelope(freshSecret),
           backupCodes: freshCodes,
-          isTfaSetupCompleted: 1,
         },
       });
       decrypted = freshSecret;

@@ -47,7 +47,7 @@ export const loginController = {
       : ((await passwordService.verify(dummyHash, body.password)) as boolean) && false;
 
     if (!user || !validPair || !validPair.valid) {
-      throw new ApiException(125, undefined, 401);
+      throw new ApiException(125, undefined, 422);
     }
 
     if (validPair.rehash) {

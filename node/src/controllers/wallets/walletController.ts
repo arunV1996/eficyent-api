@@ -236,8 +236,18 @@ export const walletController = {
       });
       return created;
     });
+
+    const wtWithRelations = {
+      ...wt,
+      wallet,
+      quote: {
+        ...quote,
+        virtual_accounts: va,
+      },
+    };
+
     return sendResponse(res, apiSuccess(108), 108, {
-      wallet_transaction: walletTransactionResource(wt as never),
+      wallet_transaction: walletTransactionResource(wtWithRelations as any),
     });
   },
 
@@ -273,6 +283,14 @@ export const walletController = {
         orderBy: { createdAt: "desc" },
         skip,
         take,
+        include: {
+          wallet: true,
+          quote: {
+            include: {
+              virtual_accounts: true,
+            },
+          },
+        },
       }),
     ]);
     return sendResponse(res, "", 200, {
@@ -286,6 +304,14 @@ export const walletController = {
     const q = req.query as unknown as WalletTransactionShowInput;
     const t = await prisma().walletTransaction.findFirst({
       where: { userId: req.user.id, uniqueId: q.wallet_transaction_id },
+      include: {
+        wallet: true,
+        quote: {
+          include: {
+            virtual_accounts: true,
+          },
+        },
+      },
     });
     if (!t) throw new ApiException(404, undefined, 404);
     return sendResponse(res, "", 200, {
