@@ -14,6 +14,7 @@ export const LedgerListSchema = z
     skip: z.coerce.number().int().min(0).max(100_000).optional(),
     take: z.coerce.number().int().min(1).max(200).optional(),
     type: z.string().max(20).optional(),
+    receiving_currency: z.string().max(10).optional(),
   })
   .strict()
   .refine(
@@ -40,6 +41,7 @@ export type LedgerListInput = {
   skip?: number;
   take?: number;
   type?: string;
+  receiving_currency?: string;
 };
 
 export const LedgerShowSchema = z

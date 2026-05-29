@@ -1,5 +1,5 @@
 import { BeneficiaryAccount, BeneficiaryAdditionalDetail } from "@prisma/client";
-import { formatDate } from "../../helpers/lookups";
+import { formatDate, findValueByKeySync } from "../../helpers/lookups";
 import { BENEFICIARY_ACCOUNT_STATUS_MAP } from "../../helpers/constants";
 
 /**
@@ -13,43 +13,48 @@ export interface BeneficiaryAccountDto {
   country: string;
   currency: string;
   type: string | null;
+  email?: string | null;
+  mobile_country_code?: string | null;
+  mobile?: string | null;
+  payment_rail?: string | null;
+  bank_name?: string | null;
+  routing_number?: string | null;
   account_number: string | null;
   swift_code: string | null;
   iban: string | null;
   bank_country: string | null;
   purpose_of_transaction: string | null;
   status: string;
-  additional_details: {
-    recipient_address: {
-      address_line1: string | null;
-      address_line2?: string | null;
-      city?: string | null;
-      state?: string | null;
-      postal_code?: string | null;
-      country: string | null;
-    } | null;
-    bank_address: {
-      address_line1?: string | null;
-      address_line2?: string | null;
-      city?: string | null;
-      state?: string | null;
-      postal_code?: string | null;
-      country: string | null;
-    } | null;
-  } | Record<string, never>;
+  additional_details: any;
   created_at: string;
   account_name: string | null;
-  // Conditional fields (returned as null if not applicable to the type)
-  email?: string | null;
-  mobile_country_code?: string | null;
-  mobile?: string | null;
-  bank_name?: string | null;
-  account_type?: string | null;
-  intermediary_bank_name?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
   business_name?: string | null;
   business_country?: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
+}
+
+export function filterEmptyValues(val: any): any {
+  if (val === null || val === undefined) return undefined;
+  if (Array.isArray(val)) {
+    const filtered = val.map(v => filterEmptyValues(v)).filter(v => v !== undefined && v !== "");
+    return filtered.length > 0 ? filtered : undefined;
+  }
+  if (typeof val === "object" && !(val instanceof Date)) {
+    const filtered: any = {};
+    let hasKeys = false;
+    for (const k of Object.keys(val)) {
+      const v = filterEmptyValues(val[k]);
+      if (v !== undefined && v !== "") {
+        filtered[k] = v;
+        hasKeys = true;
+      }
+    }
+    return hasKeys ? filtered : undefined;
+  }
+  if (val === "") return undefined;
+  return val;
 }
 
 export function beneficiaryAccountResource(
@@ -68,56 +73,67 @@ export function beneficiaryAccountResource(
 
   const isBusiness = Number(account.type) === 2;
 
-  const dto: BeneficiaryAccountDto = {
-    unique_id: account.uniqueId,
-    country: account.country,
-    currency: account.currency,
+  const data: any = {
+    unique_id: account.uniqueId ?? "",
+    country: account.country ?? "",
+    currency: account.currency ?? "",
     type: isBusiness ? "BUSINESS" : "PERSONAL",
-    account_number: account.accountNumber,
-    swift_code: account.swiftCode,
-    iban: account.iban,
-    bank_country: account.bankCountry,
-    purpose_of_transaction: detail?.purposeOfTransaction ?? null,
+    email: account.email ?? "",
+    mobile_country_code: account.mobileCountryCode ?? "",
+    mobile: account.mobile ?? "",
+    payment_rail: account.paymentRail ?? "",
+    bank_name: account.bankName ?? "",
+    routing_number: account.routingNumber ?? "",
+    account_number: account.accountNumber ?? "",
+    account_type: account.accountType ?? "",
+    swift_code: account.swiftCode ?? "",
+    iban: account.iban ?? "",
+    intermediary_bank_swift_code: account.intermediaryBankSwiftCode ?? "",
+    intermediary_bank_name: account.intermediaryBankName ?? "",
+    intermediary_bank_aba: account.intermediaryBankAba ?? "",
+    intermediary_bank_address: account.intermediaryBankAddress ?? "",
+    intermediary_bank_city: account.intermediaryBankCity ?? "",
+    intermediary_bank_state: account.intermediaryBankState ?? "",
+    intermediary_bank_postal_code: account.intermediaryBankPostalCode ?? "",
+    intermediary_bank_country: account.intermediaryBankCountry ?? "",
+    bank_country: account.bankCountry ?? "",
+    user_source_of_income: detail?.userSourceOfIncome ? findValueByKeySync(detail.userSourceOfIncome) : "",
+    purpose_of_transaction: detail?.purposeOfTransaction ? findValueByKeySync(detail.purposeOfTransaction) : "",
     status: statusLabel,
     additional_details: detail
       ? {
           recipient_address: {
-            address_line1: detail.addressLine1,
-            address_line2: detail.addressLine2,
-            city: detail.city,
-            state: detail.state,
-            postal_code: detail.postalCode,
-            country: detail.country,
+            address_line1: detail.addressLine1 ?? "",
+            address_line2: detail.addressLine2 ?? "",
+            postal_code: detail.postalCode ?? "",
+            city: detail.city ?? "",
+            state: detail.state ?? "",
+            country: detail.country ?? "",
           },
           bank_address: {
-            address_line1: detail.bankAddressLine1,
-            address_line2: detail.bankAddressLine2,
-            city: detail.bankCity,
-            state: detail.bankState,
-            postal_code: detail.bankPostalCode,
-            country: detail.bankCountry,
+            address_line1: detail.bankAddressLine1 ?? "",
+            address_line2: detail.bankAddressLine2 ?? "",
+            postal_code: detail.bankPostalCode ?? "",
+            city: detail.bankCity ?? "",
+            state: detail.bankState ?? "",
+            country: detail.bankCountry ?? "",
           },
         }
-      : {},
+      : null,
     created_at: formatDate(account.createdAt),
-    account_name: account.accountName,
   };
 
-  // Add type-specific fields. 
-  // In legacy, many keys were omitted from the JSON if they didn't apply to the type.
-  if (isBusiness) {
-    dto.email = account.email;
-    dto.mobile_country_code = account.mobileCountryCode;
-    dto.mobile = account.mobile;
-    dto.bank_name = account.bankName;
-    dto.account_type = account.accountType;
-    dto.intermediary_bank_name = account.intermediaryBankName;
-    dto.business_name = account.businessName;
-    dto.business_country = account.businessCountry;
+  if (!isBusiness) {
+    data.first_name = account.firstName ?? "";
+    data.middle_name = account.middleName ?? "";
+    data.last_name = account.lastName ?? "";
+    data.account_name = account.accountName || `${account.firstName ?? ""} ${account.lastName ?? ""}`.trim();
   } else {
-    dto.first_name = account.firstName;
-    dto.last_name = account.lastName;
+    data.business_name = account.businessName ?? "";
+    data.business_country = account.businessCountry ?? "";
+    data.account_name = account.accountName ?? "";
   }
 
-  return dto;
+  // Filter empty values using the same recursive filterEmptyValues helper as Laravel
+  return filterEmptyValues(data) ?? {};
 }

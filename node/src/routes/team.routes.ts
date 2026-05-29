@@ -331,7 +331,7 @@ export async function teamAuthedRoutes(): Promise<Router> {
   r.get(
     "/quotes/exchange-rate",
     limited,
-    validate({ body: QuoteStoreSchema }),
+    validate({ query: QuoteStoreSchema }),
     asyncHandler(quotesController(QUOTE_MODE_RATE).store),
   );
 

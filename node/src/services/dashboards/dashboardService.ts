@@ -85,8 +85,13 @@ async function quoteSourceIds(
   if (scope.bankAccountId && scope.walletId) return [];
   const sourceId = scope.bankAccountId ?? scope.walletId;
   if (!sourceId) return null;
+
+  const sourceType = scope.bankAccountId
+    ? "App\\Models\\VirtualAccount"
+    : "App\\Models\\Wallet";
+
   const quotes = await prisma().quote.findMany({
-    where: { sourceId },
+    where: { sourceId, sourceType },
     select: { id: true },
   });
   return quotes.map((q) => q.id);
@@ -135,9 +140,9 @@ export const dashboardService = {
     const where = buildWhere(user, scope, quoteIds, teamMember);
 
     const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
+    todayEnd.setUTCHours(23, 59, 59, 999);
 
     // Pull all rows then aggregate in TS - the Laravel selectRaw uses
     // multi-status CASE WHENs which Prisma doesn't directly support; we
@@ -160,10 +165,14 @@ export const dashboardService = {
       total_amount: fmt(totals.totalAmount, currency),
       total_success_amount: fmt(totals.successAmount, currency),
       total_failed_amount: fmt(totals.failedAmount, currency),
+      total_pending_amount: fmt(totals.pendingAmount, currency),
+      total_rejected_amount: fmt(totals.rejectedAmount, currency),
       today_transactions: today.totalCount,
-      today_amount: fmt(today.totalAmount, currency),
+      today_amount: fmt(today.amountSum, currency),
       today_success_amount: fmt(today.successAmount, currency),
       today_failed_amount: fmt(today.failedAmount, currency),
+      today_pending_amount: fmt(today.pendingAmount, currency),
+      today_rejected_amount: fmt(today.rejectedAmount, currency),
     };
   },
 
@@ -252,7 +261,8 @@ function aggregate(
       if (
         r.status === BENEFICIARY_TRANSACTION_APPROVED ||
         r.status === BENEFICIARY_TRANSACTION_PROCESSING ||
-        r.status === BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL
+        r.status === BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL ||
+        r.status === BENEFICIARY_TRANSACTION_INITIATED
       ) {
         pendingAmount += total;
       }

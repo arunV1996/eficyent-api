@@ -15,7 +15,6 @@ import {
 import { PayoutJobPayload } from "../../queues/dispatchers";
 import { ProcessingUnit } from "../../services/external/processingUnit";
 import { Compliance } from "../../services/external/compliance";
-import { TelegramNotifier } from "../../services/external/telegram";
 import { InvoiceMate } from "../../services/external/invoiceMate";
 import { settingGet } from "../../services/settings/settingsService";
 
@@ -107,18 +106,7 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
       } else {
         await ProcessingUnit.make(txn, user);
       }
-      // Best-effort Telegram notification + InvoiceMate accounting.
-      void TelegramNotifier.beneficiaryTransactionCreated({
-        id: txn.uniqueId,
-        user: user.firstName ?? user.email,
-        from_amount: txn.totalAmount.toString(),
-        from_currency: txn.receivingCurrency ?? "",
-        to_amount: txn.recipientAmount?.toString() ?? "",
-        to_currency: txn.receivingCurrency ?? "",
-        fx_rate: "",
-        status: String(BENEFICIARY_TRANSACTION_PROCESSING),
-        created_at: txn.createdAt ? txn.createdAt.toISOString() : "",
-      });
+      // Best-effort InvoiceMate accounting.
       void InvoiceMate.makePayout(txn, user);
     }
 

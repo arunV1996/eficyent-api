@@ -198,7 +198,7 @@ interface FormBuildContext {
   document_types: { label: string; value: string }[];
 }
 
-async function buildContext(countryCode?: string): Promise<FormBuildContext> {
+async function buildContext(_countryCode?: string): Promise<FormBuildContext> {
   const [
     countries,
     mcc,
@@ -226,7 +226,7 @@ async function buildContext(countryCode?: string): Promise<FormBuildContext> {
         flag: r.flag,
       })),
     ),
-    lookupsService.states(countryCode).then((rows) =>
+    lookupsService.states().then((rows) =>
       rows.map((r) => ({ label: r.label, value: r.value, parent_value: r.parent_value })),
     ),
     lookupsService.getLookups(LOOKUP_TYPE_PROFESSION),
@@ -622,17 +622,12 @@ export async function beneficiaryFormFields(payload: {
     ctx,
   );
 
-  const purposeOfTransactionField = make("purpose_of_transaction", "Purpose of Transactions", {
-    values: ctx.purposes_of_transactions,
-  });
-
-  let fields = [...base, ...additionalFields, purposeOfTransactionField];
-
   if (supportedCountry.currency === "USD") {
     const intermediary: FieldDef[] = [
       make("intermediary_bank_name", "Intermediary Bank Name", {
         mandatory: false,
         validation: VALIDATION_PRESETS.name,
+        required_if: "code",
       }),
       make("intermediary_bank_swift_code", "Intermediary Bank Swift Code", {
         mandatory: false,
@@ -641,6 +636,7 @@ export async function beneficiaryFormFields(payload: {
       make("intermediary_bank_aba", "Intermediary Bank ABA", {
         mandatory: false,
         validation: VALIDATION_PRESETS.aba,
+        required_if: "code",
       }),
       make("intermediary_bank_address", "Intermediary Bank Address", {
         mandatory: false,
@@ -664,14 +660,36 @@ export async function beneficiaryFormFields(payload: {
         validation: VALIDATION_PRESETS.postal_code,
       }),
     ];
-    fields = [...fields, ...intermediary];
+    additionalFields.push(...intermediary);
   }
 
   // Service bank vs free-form bank name (Laravel-style conditional).
   if (supportedCountry.externalType === EXTERNAL_TYPE_DIGININE) {
     const isRequired = ["NPL", "PAK"].includes(supportedCountry.countryCode);
     const banks = await lookupsService.serviceBanks(payload.country, payload.currency);
-    fields.push(make("service_bank", "Service Bank", { mandatory: isRequired, values: banks }));
+    additionalFields.push(make("service_bank", "Service Bank", { mandatory: isRequired, values: banks }));
+  } else {
+    additionalFields.push(
+      make("bank_name", "Bank Name", {
+        validation: VALIDATION_PRESETS.name,
+      }),
+    );
+  }
+
+  const purposeOfTransactionField = make("purpose_of_transaction", "Purpose of Transactions", {
+    values: ctx.purposes_of_transactions,
+  });
+  additionalFields.push(purposeOfTransactionField);
+
+  let fields = [...base, ...additionalFields];
+
+  if (supportedCountry.currency === "USD") {
+    fields = fields.map((f) => {
+      if (f.field_key === "bank_name") {
+        return { ...f, is_mandatory: true };
+      }
+      return f;
+    });
   }
 
   // beneficiaryFormCache.set(cacheKey, {
@@ -763,21 +781,27 @@ function bankFieldsByCountry(country: string, currency: string, _ctx: FormBuildC
     case "USA":
       return [
         accountTypeField,
-        make("account_number", "Account Number", { mandatory: false }),
+        make("account_number", "Account Number", {
+          mandatory: false,
+          validation: { regex: "/^[A-Za-z0-9]{4,34}$/" },
+        }),
         make("iban", "IBAN", { mandatory: false, validation: VALIDATION_PRESETS.iban }),
         make("code", "SWIFT/BIC", { mandatory: false, validation: VALIDATION_PRESETS.swift }),
         make("routing_number", "Routing Number", {
           mandatory: false,
           validation: VALIDATION_PRESETS.swift,
+          required_if_empty_of: "code",
         }),
+        ...addressFields("bank", _ctx),
       ];
     default:
       return [
         accountTypeField,
         make("account_number", "Account Number / IBAN", {
-          validation: { regex: "^[A-Za-z0-9]{4,34}$" },
+          validation: { regex: "/^[A-Za-z0-9]{4,34}$/" },
         }),
         make("code", "SWIFT/BIC/Routing Number", { validation: VALIDATION_PRESETS.swift }),
+        ...addressFields("bank", _ctx),
       ];
   }
 }

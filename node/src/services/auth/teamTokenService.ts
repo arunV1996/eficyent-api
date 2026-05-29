@@ -7,7 +7,11 @@ import {
   safeEqual,
   sha256Hex,
 } from "../../helpers/crypto";
-import { TOKENABLE_TEAM_MEMBER } from "../../helpers/constants";
+import {
+  TOKENABLE_TEAM_MEMBER,
+  TEAM_MEMBER_INACTIVE,
+  TEAM_MEMBER_DISABLED,
+} from "../../helpers/constants";
 import { sessionService } from "./sessionService";
 
 /**
@@ -83,7 +87,12 @@ export const teamTokenService = {
       where: { id: row.tokenableId },
     });
     if (!member || member.deletedAt) return null;
-    if (member.status === 0 /* INACTIVE */) return null;
+    if (
+      member.status === TEAM_MEMBER_INACTIVE ||
+      member.status === TEAM_MEMBER_DISABLED
+    ) {
+      return null;
+    }
 
     void prisma()
       .personalAccessToken.update({

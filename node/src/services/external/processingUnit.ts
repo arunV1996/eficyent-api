@@ -8,6 +8,12 @@ import {
   BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
   DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED,
   EXTERNAL_TYPE_PROCESSING_UNIT,
+  CALLBACK_DEPOSIT_SUCCESS,
+  CALLBACK_DEPOSIT_FAILED,
+  DEPOSIT_TRANSACTION_COMPLETED,
+  DEPOSIT_TRANSACTION_FAILED,
+  DEPOSIT_TRANSACTION_REJECTED,
+  BENEFICIARY_TRANSACTION_COMPLETED,
 } from "../../helpers/constants";
 import { logger } from "../../helpers/logger";
 import { TelegramNotifier } from "./telegram";
@@ -20,6 +26,8 @@ import {
 } from "../processingUnit/statusMap";
 import { DEPOSIT_SOURCE_OF_FUNDS, DEPOSIT_PURPOSE } from "../../helpers/lookups";
 import { uniqueId } from "../../helpers/uniqueId";
+import { Dispatch } from "../../queues/dispatchers";
+import { depositTransactionCallbackPayload } from "../../services/callbacks/payloadBuilders";
 import crypto from "crypto";
 
 /**
@@ -283,6 +291,11 @@ export const ProcessingUnit = {
               changedAt: new Date(),
             },
           });
+          if (next === BENEFICIARY_TRANSACTION_COMPLETED) {
+            void TelegramNotifier.notifyBeneficiaryTransaction(txn.id).catch((err) =>
+              logger.warn({ err, txnId: txn.uniqueId }, "Telegram notification failed for completed payout in make"),
+            );
+          }
         }
         logger.info(
           { txnId: txn.uniqueId, status: response.data?.status, mapped: next },
@@ -388,7 +401,7 @@ export const ProcessingUnit = {
           const mappedStatus = statusMap.mapped;
 
           if (txn.status !== mappedStatus) {
-            await prisma().depositTransaction.update({
+            const updated = await prisma().depositTransaction.update({
               where: { id: txn.id },
               data: { status: mappedStatus },
             });
@@ -404,6 +417,48 @@ export const ProcessingUnit = {
                 changedAt: new Date(),
               },
             });
+
+            if (mappedStatus === DEPOSIT_TRANSACTION_COMPLETED) {
+              await Dispatch.callback({
+                userId: txn.userId.toString(),
+                eventType: CALLBACK_DEPOSIT_SUCCESS,
+                payload: depositTransactionCallbackPayload(updated) as unknown as Record<
+                  string,
+                  unknown
+                >,
+                depositTransactionUniqueId: txn.uniqueId,
+              }).catch(() => undefined);
+              const user = await prisma().user.findUnique({ where: { id: txn.userId } });
+              const va = await prisma().virtualAccount.findUnique({ where: { id: txn.virtualAccountId } });
+              if (user && va) {
+                void TelegramNotifier.depositReceived({
+                  id: updated.uniqueId,
+                  user: user.firstName ?? user.email,
+                  amount: updated.totalAmount.toString(),
+                  currency: va.currency,
+                  status: "COMPLETED",
+                  created_at: (updated.createdAt || new Date()).toISOString(),
+                }).catch((err) =>
+                  logger.warn({ err, txnId: txn.uniqueId }, "Telegram notification failed for completed deposit in createDeposit"),
+                );
+              }
+            } else if (
+              [
+                DEPOSIT_TRANSACTION_FAILED,
+                DEPOSIT_TRANSACTION_REJECTED,
+                DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED,
+              ].includes(mappedStatus)
+            ) {
+              await Dispatch.callback({
+                userId: txn.userId.toString(),
+                eventType: CALLBACK_DEPOSIT_FAILED,
+                payload: depositTransactionCallbackPayload(updated) as unknown as Record<
+                  string,
+                  unknown
+                >,
+                depositTransactionUniqueId: txn.uniqueId,
+              }).catch(() => undefined);
+            }
           }
 
           logger.info(
@@ -418,7 +473,7 @@ export const ProcessingUnit = {
         }
       } else {
         const failureStatus = DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED;
-        await prisma().depositTransaction.update({
+        const updated = await prisma().depositTransaction.update({
           where: { id: txn.id },
           data: { status: failureStatus },
         });
@@ -434,6 +489,16 @@ export const ProcessingUnit = {
             changedAt: new Date(),
           },
         });
+
+        await Dispatch.callback({
+          userId: txn.userId.toString(),
+          eventType: CALLBACK_DEPOSIT_FAILED,
+          payload: depositTransactionCallbackPayload(updated) as unknown as Record<
+            string,
+            unknown
+          >,
+          depositTransactionUniqueId: txn.uniqueId,
+        }).catch(() => undefined);
       }
     } catch (err) {
       logger.error(
@@ -442,7 +507,7 @@ export const ProcessingUnit = {
       );
 
       const failureStatus = DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED;
-      await prisma().depositTransaction.update({
+      const updated = await prisma().depositTransaction.update({
         where: { id: txn.id },
         data: { status: failureStatus },
       }).catch(() => undefined);
@@ -458,6 +523,18 @@ export const ProcessingUnit = {
           changedAt: new Date(),
         },
       }).catch(() => undefined);
+
+      if (updated) {
+        await Dispatch.callback({
+          userId: txn.userId.toString(),
+          eventType: CALLBACK_DEPOSIT_FAILED,
+          payload: depositTransactionCallbackPayload(updated) as unknown as Record<
+            string,
+            unknown
+          >,
+          depositTransactionUniqueId: txn.uniqueId,
+        }).catch(() => undefined);
+      }
     }
   },
 

@@ -98,7 +98,18 @@ async function findOneByAnyId(
           : { id: -1n },
       ],
     },
-    include: { beneficiaryAccount: true, quotes: true, senders: true, team_members: true },
+    include: {
+      beneficiaryAccount: {
+        include: { additionalDetails: true },
+      },
+      quotes: true,
+      senders: {
+        include: { documents: true },
+      },
+      team_members: true,
+      users: true,
+      proofs: true,
+    },
   });
 }
 
@@ -157,12 +168,25 @@ export const payoutController = {
         orderBy: { createdAt: "desc" },
         skip,
         take,
-        include: { beneficiaryAccount: true, quotes: true, senders: true, team_members: true },
+        include: {
+          beneficiaryAccount: {
+            include: { additionalDetails: true },
+          },
+          quotes: true,
+          senders: {
+            include: { documents: true },
+          },
+          team_members: true,
+          users: true,
+          proofs: true,
+        },
       }),
     ]);
     return sendResponse(res, "", "", {
       total,
-      beneficiary_transactions: rows.map((r) => beneficiaryTransactionResource(r, !!req.teamMember)),
+      beneficiary_transactions: await Promise.all(
+        rows.map((r) => beneficiaryTransactionResource(r, !!req.teamMember))
+      ),
     });
   },
 
@@ -177,7 +201,7 @@ export const payoutController = {
 
     const txn = await createPayoutTransaction(body, req.user, req.teamMember);
     return sendResponse(res, apiSuccess(108), "", {
-      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
+      beneficiary_transaction: await beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -187,7 +211,7 @@ export const payoutController = {
     const txn = await findOneByAnyId(req.user.id, q);
     if (!txn) throw new ApiException(124);
     return sendResponse(res, "Transaction fetched successfully.", "", {
-      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
+      beneficiary_transaction: await beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -216,8 +240,8 @@ export const payoutController = {
       }
     }
 
-    return sendResponse(res, "Transaction fetched.", 200, {
-      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
+    return sendResponse(res, "Transaction fetched successfully.", "", {
+      beneficiary_transaction: await beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -425,7 +449,7 @@ export const payoutController = {
       req.teamMember,
     );
     return sendResponse(res, apiSuccess(108), 108, {
-      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
+      beneficiary_transaction: await beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 

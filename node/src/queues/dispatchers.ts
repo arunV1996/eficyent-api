@@ -23,6 +23,7 @@ export interface CallbackJobPayload {
   eventType: string;
   payload: Record<string, unknown>;
   beneficiaryTransactionUniqueId?: string;
+  depositTransactionUniqueId?: string;
 }
 
 export interface FxRatesJobPayload {

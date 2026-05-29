@@ -150,3 +150,41 @@ export function requestTimeout(ms: number): RequestHandler {
     next();
   };
 }
+
+/**
+ * Recursively trim leading and trailing spaces from all string values in request payloads
+ * (req.body, req.query, and req.params), excluding password fields.
+ */
+export function trimPayloadMiddleware(): RequestHandler {
+  const trimStrings = (obj: any): any => {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj === "string") return obj.trim();
+    if (Array.isArray(obj)) {
+      return obj.map(trimStrings);
+    }
+    if (typeof obj === "object") {
+      if (Buffer.isBuffer(obj)) return obj;
+      for (const key of Object.keys(obj)) {
+        if (key.toLowerCase().includes("password")) {
+          continue;
+        }
+        obj[key] = trimStrings(obj[key]);
+      }
+    }
+    return obj;
+  };
+
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (req.body) {
+      req.body = trimStrings(req.body);
+    }
+    if (req.query) {
+      req.query = trimStrings(req.query);
+    }
+    if (req.params) {
+      req.params = trimStrings(req.params);
+    }
+    next();
+  };
+}
+

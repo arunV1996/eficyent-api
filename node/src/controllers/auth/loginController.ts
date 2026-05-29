@@ -6,8 +6,9 @@ import { apiSuccess } from "../../helpers/messages";
 import { userRepository } from "../../repositories/userRepository";
 import { tokenService } from "../../services/auth/tokenService";
 import { passwordService } from "../../services/auth/passwordService";
-import { totpService } from "../../services/auth/totpService";
+import { totpService, checkBackupCode } from "../../services/auth/totpService";
 import { prisma } from "../../db/prisma";
+import { decryptEnvelope, encryptEnvelope } from "../../config/kms";
 import { LoginInput, TfaLoginInput } from "../../validators/auth/authValidators";
 import { yesNo, roleLabel } from "../../helpers/userShaper";
 import { USER_TYPE_BUSINESS } from "../../helpers/constants";
@@ -109,7 +110,28 @@ export const loginController = {
     if (!user) throw new ApiException(102);
     if (!user.isTfaEnabled) throw new ApiException(140);
 
-    const ok = await totpService.verify(user.tfaSecret ?? "", body.verification_code);
+    let ok = await totpService.verify(user.tfaSecret ?? "", body.verification_code);
+    if (!ok && user.backupCodes) {
+      let plaintextCodes = user.backupCodes;
+      if (!/^\d{6}(,\d{6})*$/.test(plaintextCodes)) {
+        try {
+          plaintextCodes = await decryptEnvelope(plaintextCodes);
+        } catch (e) {
+          // fallback
+        }
+      }
+      const backupCheck = checkBackupCode(plaintextCodes, body.verification_code);
+      if (backupCheck.ok) {
+        ok = true;
+        const encryptedRemaining = backupCheck.remaining
+          ? await encryptEnvelope(backupCheck.remaining)
+          : null;
+        await prisma().user.update({
+          where: { id: user.id },
+          data: { backupCodes: encryptedRemaining },
+        });
+      }
+    }
     if (!ok) throw new ApiException(139);
 
     const issued = await tokenService.issue(user, ["authentication"], null);

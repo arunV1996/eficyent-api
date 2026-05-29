@@ -18,6 +18,7 @@ import {
   BENEFICIARY_TRANSACTION_PROCESSING_UNIT_PROCESSING,
   BENEFICIARY_TRANSACTION_REJECTED,
   BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
+  depositTransactionStatusLabel,
 } from "../../helpers/constants";
 
 /**
@@ -83,5 +84,39 @@ export function beneficiaryTransactionCallbackPayload(
     total_amount: txn.totalAmount?.toString() ?? "",
     status: beneficiaryTransactionStatusLabel(txn.status) ?? "",
     remarks: txn.notes ?? "",
+  };
+}
+
+export function depositTransactionCallbackPayload(
+  txn: any,
+): {
+  unique_id: string;
+  memo: string;
+  amount: string;
+  fee: string;
+  total_amount: string;
+  currency: string;
+  type: string;
+  purpose_of_payment: string;
+  source_of_funds: string;
+  status: string;
+  created_at: string;
+} {
+  const currency = (txn.depositCurrency || "USD").toUpperCase();
+  const typeLabel = txn.type
+    ? txn.type.charAt(0).toUpperCase() + txn.type.slice(1).toLowerCase()
+    : "Topup";
+  return {
+    unique_id: txn.uniqueId,
+    memo: txn.memo || "",
+    amount: typeof txn.amount === "number" ? txn.amount.toFixed(2) : Number(txn.amount || 0).toFixed(2),
+    fee: `${typeof txn.totalCommissionAmount === "number" ? txn.totalCommissionAmount.toFixed(2) : Number(txn.totalCommissionAmount || 0).toFixed(2)} ${currency}`,
+    total_amount: typeof txn.totalAmount === "number" ? txn.totalAmount.toFixed(2) : Number(txn.totalAmount || 0).toFixed(2),
+    currency: currency,
+    type: typeLabel,
+    purpose_of_payment: txn.purposeOfPayment || "",
+    source_of_funds: txn.sourceOfFunds || "",
+    status: depositTransactionStatusLabel(txn.status),
+    created_at: txn.createdAt instanceof Date ? txn.createdAt.toISOString() : new Date(txn.createdAt || "").toISOString(),
   };
 }

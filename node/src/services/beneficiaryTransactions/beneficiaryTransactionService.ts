@@ -286,9 +286,23 @@ export async function createPayoutTransaction(
     });
   }
 
+  const { TelegramNotifier } = await import("../external/telegram");
+  void TelegramNotifier.notifyBeneficiaryTransaction(created.txn.id);
+
   return prisma().beneficiaryTransaction.findUniqueOrThrow({
     where: { id: created.txn.id },
-    include: { beneficiaryAccount: true, quotes: true },
+    include: {
+      beneficiaryAccount: {
+        include: { additionalDetails: true },
+      },
+      quotes: true,
+      senders: {
+        include: { documents: true },
+      },
+      team_members: true,
+      users: true,
+      proofs: true,
+    },
   });
 }
 
@@ -402,6 +416,8 @@ export async function updateTransactionStatus(
           });
         }
       }
+      const { TelegramNotifier } = await import("../external/telegram");
+      void TelegramNotifier.notifyBeneficiaryTransaction(updated.id);
       success.push({ unique_id: updated.uniqueId });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

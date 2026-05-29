@@ -5,9 +5,11 @@ import { logger } from "./helpers/logger";
 import { closeQueues } from "./queues/queues";
 import { registerCrons } from "./queues/cron";
 import { startWorkers, stopWorkers } from "./workers";
+import { preloadLookups } from "./helpers/lookups";
 
 async function main(): Promise<void> {
   await bootstrapSecrets();
+  await preloadLookups();
   await registerCrons();
   await startWorkers();
 

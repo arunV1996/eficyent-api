@@ -91,6 +91,7 @@ async function buildResponse(
   source: ResolvedSource,
   userId: bigint,
   merchantId: bigint | null,
+  merchantType: number | null,
   quoteMode: QuoteMode["mode"],
   recipientTypeNumeric: number,
 ): Promise<Record<string, unknown>> {
@@ -128,7 +129,7 @@ async function buildResponse(
         receivingCurrency: receivingCurrency,
         paymentRail,
       },
-      { userId, merchantId },
+      { userId, merchantId, merchantType },
     );
     return {
       amount: body.amount,
@@ -184,21 +185,51 @@ async function buildResponse(
   } else {
     // Normal flow: Hit the external provider (Massive).
     const driver = QuoteFactory.resolve(EXTERNAL_TYPE_MASSIVE);
-    const rawDriverResp = await driver.create(
-      {
-        amount: body.amount,
-        from_currency: source.row.currency,
-        receiving_currency: receivingCurrency,
-        recipient_country: body.recipient_country!,
-        recipient_type: recipientTypeNumeric,
-        quote_type: body.quote_type,
-        payment_rail: paymentRail,
-        source_id: source.row.id,
-        virtual_account_id: source.row.id,
-      },
-      { id: userId },
-    );
-    driverResp = applyAedOverrideToQuote(rawDriverResp, source.row.currency);
+    try {
+      const rawDriverResp = await driver.create(
+        {
+          amount: body.amount,
+          from_currency: source.row.currency,
+          receiving_currency: receivingCurrency,
+          recipient_country: body.recipient_country!,
+          recipient_type: recipientTypeNumeric,
+          quote_type: body.quote_type,
+          payment_rail: paymentRail,
+          source_id: source.row.id,
+          virtual_account_id: source.row.id,
+        },
+        { id: userId },
+      );
+      driverResp = applyAedOverrideToQuote(rawDriverResp, source.row.currency);
+    } catch (err) {
+      // Fallback: If external API fails, search fees table for fixed override (User -> Merchant -> Null owner)
+      const fallbackRate = await getFixedRate(
+        userId,
+        merchantId,
+        source.row.currency,
+        receivingCurrency,
+      );
+      if (fallbackRate !== null) {
+        const amt =
+          body.quote_type === QUOTE_TYPE_REVERSE
+            ? body.amount * fallbackRate
+            : body.amount;
+        const recv =
+          body.quote_type === QUOTE_TYPE_REVERSE
+            ? body.amount
+            : body.amount / fallbackRate;
+
+        driverResp = {
+          amount: amt,
+          receiving_amount: recv,
+          fx_rate: fallbackRate,
+          external_fx_rate: fallbackRate,
+          quote_type: body.quote_type,
+        };
+      } else {
+        throw err;
+      }
+    }
   }
 
   const fx = await calcFxCommissions(
@@ -211,7 +242,7 @@ async function buildResponse(
       sourceCurrency: source.row.currency,
       paymentRail,
     },
-    { userId, merchantId },
+    { userId, merchantId, merchantType },
   );
 
   let totalSending = fx.amount;
@@ -225,7 +256,7 @@ async function buildResponse(
         receivingCurrency: receivingCurrency,
         paymentRail,
       },
-      { userId, merchantId },
+      { userId, merchantId, merchantType },
     );
     // External commission = (external rate - internal rate) * amount.
     externalCommission =
@@ -321,10 +352,11 @@ export const quotesController = (mode: QuoteMode["mode"]) => ({
   async store(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const body = (req.method === "GET" ? req.query : req.body) as unknown as QuoteStoreInput;
-    const merchantId = req.user.merchantId
-      ? (await prisma().merchant.findUnique({ where: { id: req.user.merchantId } }))
-          ?.id ?? null
+    const merchant = req.user.merchantId
+      ? await prisma().merchant.findUnique({ where: { id: req.user.merchantId } })
       : null;
+    const merchantId = merchant?.id ?? null;
+    const merchantType = merchant?.type ?? null;
 
     if (!body.recipient_country) {
       const country = await prisma().supportedCountry.findFirst({
@@ -342,13 +374,13 @@ export const quotesController = (mode: QuoteMode["mode"]) => ({
     // we force the source to be the user's INR wallet.
     if (
       mode === QUOTE_MODE_QUOTATION &&
-      req.user.merchantId &&
-      body.receiving_currency.toUpperCase() === "INR"
+      req.user.merchantId 
+      // body.receiving_currency.toUpperCase() === "INR"
     ) {
       const bizModel = await getBusinessModel(req.user.merchantId);
       if (bizModel.toUpperCase() === BUSINESS_MODEL_DEAL_BASED) {
         const wallet = await prisma().wallet.findFirst({
-          where: { userId: req.user.id, currency: "INR" },
+          where: { userId: req.user.id, currency: body.receiving_currency.toUpperCase() },
         });
         if (wallet) {
           body.bank_account_id = undefined;
@@ -363,6 +395,7 @@ export const quotesController = (mode: QuoteMode["mode"]) => ({
       source,
       req.user.id,
       merchantId,
+      merchantType,
       mode,
       recipientType,
     );

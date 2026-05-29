@@ -296,7 +296,7 @@ export const beneficiaryAccountsController = {
           ? [PAYMENT_RAIL_SWIFT]
           : [baseInsert.paymentRail ?? null];
 
-      let last: Awaited<ReturnType<typeof tx.beneficiaryAccount.findFirstOrThrow>> | null = null;
+      const createdItems: { ben: any; additional: any }[] = [];
       for (const rail of rails) {
         const ben = await tx.beneficiaryAccount.create({
           data: {
@@ -308,19 +308,45 @@ export const beneficiaryAccountsController = {
         const additional = toAdditionalInsert(
           normalized.beneficiaryAccountAdditionalDetail,
         );
-        await tx.beneficiaryAdditionalDetail.create({
+        const addRow = await tx.beneficiaryAdditionalDetail.create({
           data: { ...additional, beneficiaryAccountId: ben.id },
         });
-        last = ben;
+        createdItems.push({ ben, additional: addRow });
       }
-      if (!last) throw new ApiException(117);
-      return last;
+      if (createdItems.length === 0) throw new ApiException(117);
+      return createdItems;
     });
 
+    const lastItem = created[created.length - 1]!;
     const refreshed = await prisma().beneficiaryAccount.findUnique({
-      where: { id: created.id },
+      where: { id: lastItem.ben.id },
       include: { additionalDetails: true },
     });
+
+    // Check if the user service is "ec" (Caliza)
+    const { EXTERNAL_TYPE_CALIZA } = await import("../../helpers/constants");
+    const userService = await prisma().userService.findFirst({
+      where: {
+        userId: req.user.id,
+        serviceType: EXTERNAL_TYPE_CALIZA,
+        isActive: 1,
+      },
+    });
+
+    if (userService) {
+      for (const item of created) {
+        setImmediate(async () => {
+          try {
+            const { Caliza } = await import("../../services/external/caliza");
+            await Caliza.createBeneficiary(item.ben, item.additional, req.user!.uniqueId);
+          } catch (err) {
+            const { logger } = await import("../../helpers/logger");
+            logger.error({ err }, "Caliza createBeneficiary background call failed");
+          }
+        });
+      }
+    }
+
     return sendResponse(res, "", 200, {
 // @ts-ignore - Catch-all auto-fix for: Argument of type '{ additional...
       beneficiary_account: beneficiaryAccountResource(refreshed!),
@@ -479,15 +505,34 @@ export const beneficiaryAccountsController = {
           return { row: rowNumber, beneficiary: ben };
         });
 
+        const { EXTERNAL_TYPE_CALIZA } = await import("../../helpers/constants");
+        const userService = await prisma().userService.findFirst({
+          where: {
+            userId: user.id,
+            serviceType: EXTERNAL_TYPE_CALIZA,
+            isActive: 1,
+          },
+        });
+
         for (const row of result.validatedRows) {
           const baseInsert = toBeneficiaryInsert(row.beneficiary.beneficiaryAccount, userId);
           const ben = await prisma().beneficiaryAccount.create({
             data: { ...baseInsert, status: 1 },
           });
           const additional = toAdditionalInsert(row.beneficiary.beneficiaryAccountAdditionalDetail);
-          await prisma().beneficiaryAdditionalDetail.create({
+          const addRow = await prisma().beneficiaryAdditionalDetail.create({
             data: { ...additional, beneficiaryAccountId: ben.id },
           });
+
+          if (userService) {
+            try {
+              const { Caliza } = await import("../../services/external/caliza");
+              await Caliza.createBeneficiary(ben, addRow, user.uniqueId);
+            } catch (err) {
+              const { logger } = await import("../../helpers/logger");
+              logger.error({ err }, "Caliza bulk createBeneficiary failed");
+            }
+          }
         }
       } catch (err) {
         const { logger } = await import("../../helpers/logger");

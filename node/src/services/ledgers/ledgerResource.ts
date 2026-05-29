@@ -111,7 +111,8 @@ export function ledgerResource(
   }
 
   // 2. Resolve final balance string
-  balanceStr = l.balance ? `${parseFloat(l.balance.toString()).toFixed(2)} ${currency}` : "";
+  const balanceCurrency = options.bank_account_id ? fromCurrency : currency;
+  balanceStr = l.balance ? `${parseFloat(l.balance.toString()).toFixed(2)} ${balanceCurrency}` : "";
   return {
     unique_id: l.uniqueId,
     transaction_id: transId,

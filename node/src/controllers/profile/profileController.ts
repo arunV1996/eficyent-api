@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "../../db/prisma";
 import { ApiException } from "../../helpers/errors";
 import { passwordService } from "../../services/auth/passwordService";
-import { totpService } from "../../services/auth/totpService";
+import { totpService, checkBackupCode } from "../../services/auth/totpService";
 import { qrService } from "../../services/auth/qrService";
 import { encryptEnvelope, decryptEnvelope } from "../../config/kms";
 import { tokenService } from "../../services/auth/tokenService";
@@ -233,21 +233,16 @@ export const profileController = {
       issuerLabel,
     );
 
-    const qrSvg = await qrService.generateSvg(otpauthUrl);
-    const fullQrSvg = `<?xml version="1.0" encoding="UTF-8"?>\n${qrSvg}\n`;
+    const qrDataUrl = await qrService.generateSvg(otpauthUrl);
 
     // Construct a QR PNG URL using issuer label + unique ID (mirrors Laravel storage path)
-    const appUrl =
-      (await settingGet<string>("app_url", "")) ||
-      process.env["APP_URL"] ||
-      "";
-    const qrPngUrl = `${appUrl.replace(/\/$/, "")}/storage/qr_codes/${user.uniqueId}.png`;
+    
 
     return emptyEnvelope(res, "", {
-      qr_code: fullQrSvg,
+      qr_code: qrDataUrl,
       tfa_secret: decrypted,
       qr_code_url: otpauthUrl,
-      qr_code_png: qrPngUrl,
+      qr_code_png: qrDataUrl, // Fallback to data URI if frontend relies on image rendering
     });
   },
 
@@ -258,10 +253,31 @@ export const profileController = {
     const ok = await passwordService.verify(req.user.password, body.password);
     if (!ok) throw new ApiException(125);
     if (!req.user.tfaSecret) throw new ApiException(138);
-    const tfaOk = await totpService.verify(
+    let tfaOk = await totpService.verify(
       req.user.tfaSecret,
       body.verification_code,
     );
+    if (!tfaOk && req.user.backupCodes) {
+      let plaintextCodes = req.user.backupCodes;
+      if (!/^\d{6}(,\d{6})*$/.test(plaintextCodes)) {
+        try {
+          plaintextCodes = await decryptEnvelope(plaintextCodes);
+        } catch (e) {
+          // fallback
+        }
+      }
+      const backupCheck = checkBackupCode(plaintextCodes, body.verification_code);
+      if (backupCheck.ok) {
+        tfaOk = true;
+        const encryptedRemaining = backupCheck.remaining
+          ? await encryptEnvelope(backupCheck.remaining)
+          : null;
+        await prisma().user.update({
+          where: { id: req.user.id },
+          data: { backupCodes: encryptedRemaining },
+        });
+      }
+    }
     if (!tfaOk) throw new ApiException(139);
 
     const isCurrentlyEnabled = !!req.user.isTfaEnabled;
@@ -281,7 +297,15 @@ export const profileController = {
 
     const data: Record<string, unknown> = {};
     if (becomingEnabled && updated.backupCodes) {
-      data["backup_codes"] = updated.backupCodes.split(",");
+      let plaintextCodes = updated.backupCodes;
+      if (!/^\d{6}(,\d{6})*$/.test(plaintextCodes)) {
+        try {
+          plaintextCodes = await decryptEnvelope(plaintextCodes);
+        } catch (e) {
+          // fallback
+        }
+      }
+      data["backup_codes"] = plaintextCodes.split(",");
     }
 
     return emptyEnvelope(res, message, data);
@@ -296,9 +320,10 @@ export const profileController = {
     if (!req.user.isTfaSetupCompleted) throw new ApiException(138);
 
     const codes = generateBackupCodes();
+    const encryptedCodes = await encryptEnvelope(codes);
     await prisma().user.update({
       where: { id: req.user.id },
-      data: { backupCodes: codes },
+      data: { backupCodes: encryptedCodes },
     });
     return emptyEnvelope(res, "Backup codes regenerated successfully.", {
       backup_codes: codes.split(","),
