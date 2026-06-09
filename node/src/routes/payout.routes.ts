@@ -6,7 +6,6 @@ import {
   validateMerchant,
 } from "../middleware/access";
 import { idempotency } from "../middleware/idempotency";
-import { limitedRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validateRequest";
 import { payoutController } from "../controllers/payout/payoutController";
 import {
@@ -35,7 +34,6 @@ import {
  */
 export async function payoutRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
   r.use(
     asyncHandler(authSanctum),
     asyncHandler(validateMerchant),
@@ -77,18 +75,16 @@ export async function payoutRoutes(): Promise<Router> {
   );
   r.post(
     "/cancel",
-    limited,
     idempotency(),
     validate({ body: PayoutCancelSchema }),
     asyncHandler(payoutController.cancel),
   );
   r.get(
     "/export",
-    limited,
     validate({ query: PayoutShowSchema }),
     payoutController.export,
   );
-  r.get("/download", limited, payoutController.downloadList);
+  r.get("/download", payoutController.downloadList);
 
   r.get(
     "/get-form-fields",
@@ -124,13 +120,11 @@ export async function payoutRoutes(): Promise<Router> {
 
   r.post(
     "/request-proof",
-    limited,
     validate({ body: TransactionProofRequestSchema }),
     asyncHandler(payoutController.requestProof),
   );
   r.get(
     "/get-proof",
-    limited,
     validate({ query: TransactionProofGetSchema }),
     asyncHandler(payoutController.getProof),
   );
@@ -144,10 +138,8 @@ export async function payoutRoutes(): Promise<Router> {
  */
 export async function payoutPublicRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
   r.post(
     "/retry-job/:jobId",
-    limited,
     validate({ params: RetryJobParamSchema }),
     asyncHandler(payoutController.retryJob),
   );
@@ -161,10 +153,8 @@ export async function payoutPublicRoutes(): Promise<Router> {
 
 export async function retryExternalServiceRoute(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
   r.post(
     "/retry_external_service/:trxn",
-    limited,
     validate({ params: RetryParamSchema }),
     asyncHandler(payoutController.retryExternalService),
   );

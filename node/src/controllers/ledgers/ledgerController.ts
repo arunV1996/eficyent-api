@@ -12,6 +12,7 @@ import {
   MORPH_DEPOSIT_TRANSACTION,
   MORPH_WALLET_TRANSACTION,
   TAKE_COUNT,
+  TEAM_MEMBER_ROLE_CORPORATE,
   TRANSACTION_TYPE_CREDIT,
   TRANSACTION_TYPE_DEBIT,
 } from "../../helpers/constants";
@@ -173,6 +174,44 @@ export const ledgerController = {
           transactionId: { in: allowedTxns.wtIds },
         },
       ];
+    }
+
+    if (req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE) {
+      const [depIds, benIds] = await Promise.all([
+        prisma().depositTransaction.findMany({
+          where: { userId: req.user.id, teamMemberId: req.teamMember.id },
+          select: { id: true },
+        }),
+        prisma().beneficiaryTransaction.findMany({
+          where: { userId: req.user.id, teamMemberId: req.teamMember.id },
+          select: { id: true },
+        }),
+      ]);
+      const depIdList = depIds.map((r) => r.id);
+      const benIdList = benIds.map((r) => r.id);
+
+      const corporateWhere: Prisma.LedgerWhereInput = {
+        OR: [
+          {
+            transactionType: MORPH_DEPOSIT_TRANSACTION,
+            transactionId: { in: depIdList },
+          },
+          {
+            transactionType: MORPH_BENEFICIARY_TRANSACTION,
+            transactionId: { in: benIdList },
+          },
+        ],
+      };
+
+      if (where.AND) {
+        if (Array.isArray(where.AND)) {
+          where.AND.push(corporateWhere);
+        } else {
+          where.AND = [where.AND as any, corporateWhere];
+        }
+      } else {
+        where.AND = [corporateWhere];
+      }
     }
 
     const skip = q.skip ?? 0;
@@ -338,6 +377,44 @@ export const ledgerController = {
       ];
     }
 
+    if (req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE) {
+      const [depIds, benIds] = await Promise.all([
+        prisma().depositTransaction.findMany({
+          where: { userId: req.user.id, teamMemberId: req.teamMember.id },
+          select: { id: true },
+        }),
+        prisma().beneficiaryTransaction.findMany({
+          where: { userId: req.user.id, teamMemberId: req.teamMember.id },
+          select: { id: true },
+        }),
+      ]);
+      const depIdList = depIds.map((r) => r.id);
+      const benIdList = benIds.map((r) => r.id);
+
+      const corporateWhere: Prisma.LedgerWhereInput = {
+        OR: [
+          {
+            transactionType: MORPH_DEPOSIT_TRANSACTION,
+            transactionId: { in: depIdList },
+          },
+          {
+            transactionType: MORPH_BENEFICIARY_TRANSACTION,
+            transactionId: { in: benIdList },
+          },
+        ],
+      };
+
+      if (where.AND) {
+        if (Array.isArray(where.AND)) {
+          where.AND.push(corporateWhere);
+        } else {
+          where.AND = [where.AND as any, corporateWhere];
+        }
+      } else {
+        where.AND = [corporateWhere];
+      }
+    }
+
     const rows = await prisma().ledger.findMany({
       where,
       include: { wallet: true, virtualAccount: true } as any,
@@ -437,11 +514,24 @@ export const ledgerController = {
       const formattedDate = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
 
       let logoUrl = "";
-      try {
-        const logoPath = path.join(__dirname, "..", "..", "..", "public", "logo", "eficyent-logo-dark.png");
-        const logoBuffer = await fs.promises.readFile(logoPath);
-        logoUrl = `data:image/png;base64,${logoBuffer.toString("base64")}`;
-      } catch (err) {
+      const logoPaths = [
+        path.join(__dirname, "..", "..", "..", "public", "logo", "eficyent-logo-dark.png"),
+        path.join(__dirname, "..", "..", "public", "logo", "eficyent-logo-dark.png"),
+        path.join(process.cwd(), "public", "logo", "eficyent-logo-dark.png"),
+        path.join(process.cwd(), "dist", "public", "logo", "eficyent-logo-dark.png"),
+      ];
+      for (const p of logoPaths) {
+        if (fs.existsSync(p)) {
+          try {
+            const logoBase64 = fs.readFileSync(p).toString("base64");
+            logoUrl = `data:image/png;base64,${logoBase64}`;
+            break;
+          } catch (e) {
+            // ignore and try next path
+          }
+        }
+      }
+      if (!logoUrl) {
         logoUrl = `${process.env.APP_URL || `http://localhost:${process.env.PORT || 1730}`}/logo/eficyent-logo-dark.png`;
       }
 
@@ -482,37 +572,49 @@ export const ledgerController = {
       { buffer, contentType, extension },
       "exports/ledgers",
     );
-    return sendResponse(res, "", 200, { url });
+    const signedUrl = await s3Service.temporaryUrl(url);
+    return sendResponse(res, "", 200, { url: signedUrl });
   },
 };
 
 async function loadTransaction(
   ledger: Awaited<ReturnType<ReturnType<typeof prisma>["ledger"]["findFirst"]>>,
-): Promise<NonNullable<typeof ledger> & { transaction?: unknown }> {
+): Promise<NonNullable<typeof ledger> & { transaction?: unknown; refundLedger?: unknown }> {
   if (!ledger) throw new ApiException(149);
-  if (!ledger.transactionType || !ledger.transactionId) return ledger;
+  let refundLedgerEnriched: any = null;
+  if (ledger.refundLedgerId) {
+    const rl = await prisma().ledger.findUnique({
+      where: { id: ledger.refundLedgerId },
+    });
+    if (rl) {
+      refundLedgerEnriched = await loadTransaction(rl as any);
+    }
+  }
+  const enrichedLedger = Object.assign(ledger, { refundLedger: refundLedgerEnriched });
+
+  if (!ledger.transactionType || !ledger.transactionId) return enrichedLedger;
   switch (ledger.transactionType) {
     case MORPH_DEPOSIT_TRANSACTION: {
       const t = await prisma().depositTransaction.findUnique({
         where: { id: ledger.transactionId },
       });
-      return Object.assign(ledger, { transaction: t });
+      return Object.assign(enrichedLedger, { transaction: t });
     }
     case MORPH_BENEFICIARY_TRANSACTION: {
       const t = await prisma().beneficiaryTransaction.findUnique({
         where: { id: ledger.transactionId },
         include: { beneficiaryAccount: true },
       });
-      return Object.assign(ledger, { transaction: t });
+      return Object.assign(enrichedLedger, { transaction: t });
     }
     case MORPH_WALLET_TRANSACTION: {
       const t = await prisma().walletTransaction.findUnique({
         where: { id: ledger.transactionId },
         include: { quote: true, wallet: true },
       });
-      return Object.assign(ledger, { transaction: t });
+      return Object.assign(enrichedLedger, { transaction: t });
     }
     default:
-      return ledger;
+      return enrichedLedger;
   }
 }

@@ -8,13 +8,13 @@ import { StaticPageShowInput } from "../../validators/staticPages/staticPagesVal
 /**
  * Mirror of StaticPageController. Returns active static pages.
  * Field set / order matches Laravel's StaticPageResource:
- *   { unique_id, title, description, type, footer_section, status }
+ *   { unique_id, title, content, type, footer_section, status }
  */
 
 interface StaticPageDto {
   unique_id: string;
   title: string;
-  description: string;
+  content: string;
   type: string;
   footer_section: number;
   status: number;
@@ -31,7 +31,7 @@ function shape(row: {
   return {
     unique_id: row.uniqueId,
     title: row.title,
-    description: row.description,
+    content: row.description,
     type: row.type,
     footer_section: row.footerSection,
     status: row.status,

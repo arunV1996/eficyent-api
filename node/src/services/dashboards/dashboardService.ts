@@ -11,6 +11,7 @@ import {
   BENEFICIARY_TRANSACTION_PROCESSING,
   BENEFICIARY_TRANSACTION_REJECTED,
   BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
+  QUOTE_SUBMITTED,
   TEAM_MEMBER_ROLE_CORPORATE,
 } from "../../helpers/constants";
 import { settingGet } from "../settings/settingsService";
@@ -91,7 +92,7 @@ async function quoteSourceIds(
     : "App\\Models\\Wallet";
 
   const quotes = await prisma().quote.findMany({
-    where: { sourceId, sourceType },
+    where: { sourceId, sourceType, status: QUOTE_SUBMITTED },
     select: { id: true },
   });
   return quotes.map((q) => q.id);

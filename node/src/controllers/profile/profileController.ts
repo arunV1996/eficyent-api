@@ -66,7 +66,7 @@ export const profileController = {
     ]);
     const businessModel = await getBusinessModel(merchant?.id ?? req.user.merchantId);
     return emptyEnvelope(res, "", {
-      user: shapeFullUser(req.user, info, docs, !!merchant, businessModel),
+      user: await shapeFullUser(req.user, info, docs, !!merchant, businessModel),
     });
   },
 
@@ -396,7 +396,7 @@ export const profileController = {
         is_editable: true,
         is_repeatable: false,
         category: "Proof of Address",
-        children: isBusiness ? [expiryDateChild] : [backFileChild, expiryDateChild],
+        children: [backFileChild, expiryDateChild],
         validation: [],
         values_supported: [],
       },
@@ -408,7 +408,7 @@ export const profileController = {
         is_editable: true,
         is_repeatable: false,
         category: isBusiness ? "Proof of Ownership" : "ID Document",
-        children: isBusiness ? [expiryDateChild] : [backFileChild, expiryDateChild],
+        children: [backFileChild, expiryDateChild],
         validation: [],
         values_supported: [],
       },
@@ -420,7 +420,7 @@ export const profileController = {
         is_editable: true,
         is_repeatable: false,
         category: "Source of Funds",
-        children: isBusiness ? [expiryDateChild] : [backFileChild, expiryDateChild],
+        children: [backFileChild, expiryDateChild],
         validation: [],
         values_supported: [],
       },
@@ -590,7 +590,7 @@ export const profileController = {
 
     const businessModel = await getBusinessModel(merchant?.id ?? refreshed.merchantId);
     return emptyEnvelope(res, "Profile updated successfully.", {
-      user: shapeFullUser(refreshed, info, docs, !!merchant, businessModel),
+      user: await shapeFullUser(refreshed, info, docs, !!merchant, businessModel),
     });
   },
 };

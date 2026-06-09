@@ -30,9 +30,14 @@ export interface TeamMemberDto {
   is_merchant: string;
   status: string;
   created_at: string;
+  sender_id?: string | null;
 }
 
-export function teamMemberResource(member: TeamMember, user?: User): TeamMemberDto {
+export function teamMemberResource(
+  member: TeamMember,
+  user?: User,
+  senderUniqueId?: string | null,
+): TeamMemberDto {
   let senderEnabled = "NO";
   let isMerchant = "NO";
 
@@ -54,6 +59,7 @@ export function teamMemberResource(member: TeamMember, user?: User): TeamMemberD
     is_merchant: isMerchant,
     status: teamMemberStatusLabel(member.status),
     created_at: formatDate(member.createdAt),
+    ...(member.role === TEAM_MEMBER_ROLE_CORPORATE ? { sender_id: senderUniqueId ?? null } : {}),
   };
 }
 

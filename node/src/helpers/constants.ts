@@ -99,9 +99,9 @@ export const LOOKUP_TYPE_PAYMENT_METHOD = "payment_methods";
 export const LOOKUP_BUSINESS_VERIFICATION_TYPES = "business_verification_types";
 export const LOOKUP_TYPE_ADDRESS_TYPES = "address_types";
 export const LOOKUP_TYPE_PROOF_OF_ADDRESS = "proof_of_address";
-export const LOOKUP_TYPE_ID_TYPE = "id_type";
+export const LOOKUP_TYPE_ID_TYPE = "id_types";
 export const LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS = "purposes_of_transactions";
-export const LOOKUP_TYPE_EEC_PAYMENT_PURPOSE = "eec_payment_purposes";
+export const LOOKUP_TYPE_EEC_PAYMENT_PURPOSE = "eec_payment_purpose";
 export const LOOKUP_TYPE_DOCUMENT_TYPES = "document_types";
 
 export const PAYMENT_RAIL_WIRE = "wire";
@@ -321,12 +321,12 @@ export function depositTransactionStatusLabel(value: number): string {
     case DEPOSIT_TRANSACTION_PENDING:
     case DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED:
     case DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING:
+    case DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED:
       return "PROCESSING";
     case DEPOSIT_TRANSACTION_COMPLETED:
       return "COMPLETED";
     case DEPOSIT_TRANSACTION_FAILED:
     case DEPOSIT_TRANSACTION_REJECTED:
-    case DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED:
       return "FAILED";
     default:
       return "PROCESSING";
@@ -376,9 +376,10 @@ export const BENEFICIARY_TRANSACTION_STATUS_MAP: Record<string, number> = {
   EXPIRED: BENEFICIARY_TRANSACTION_EXPIRED,
   REJECTED: BENEFICIARY_TRANSACTION_REJECTED,
   CANCELLED: BENEFICIARY_TRANSACTION_CANCELLED,
+  CORPORATE_INITIATED: BENEFICIARY_TRANSACTION_CORPORATE_INITIATED,
 };
 
-export function beneficiaryTransactionStatusLabel(value: number, isTeam = false): string {
+export function beneficiaryTransactionStatusLabel(value: number, _isTeam = false): string {
   switch (value) {
     case BENEFICIARY_TRANSACTION_COMPLETED:
       return "COMPLETED";
@@ -391,7 +392,7 @@ export function beneficiaryTransactionStatusLabel(value: number, isTeam = false)
       return "FAILED";
 
     case BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL:
-      return isTeam ? "WAITING_FOR_APPROVAL" : "PROCESSING";
+      return "WAITING_FOR_APPROVAL";
 
     case BENEFICIARY_TRANSACTION_APPROVED:
     case BENEFICIARY_TRANSACTION_INITIATED:

@@ -72,8 +72,9 @@ function groupAccountsByExternalType(
 async function attachBalance(
   user: User,
   account: VirtualAccount & { balance?: string },
+  teamMember: any = null,
 ): Promise<void> {
-  const bal = await computeBankBalance(user, account);
+  const bal = await computeBankBalance(user, account, teamMember);
   account.balance = bal.toString();
 }
 
@@ -125,7 +126,7 @@ export const virtualAccountsController = {
       q.with_balance === "1" as any
     ) {
       for (const acc of grouped) {
-        await attachBalance(req.user, acc);
+        await attachBalance(req.user, acc, req.teamMember);
       }
     }
 
@@ -229,7 +230,7 @@ export const virtualAccountsController = {
     });
     if (!va) throw new ApiException(116);
     const acc: VirtualAccount & { balance?: string } = { ...va };
-    await attachBalance(req.user, acc);
+    await attachBalance(req.user, acc, req.teamMember);
     const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";
     return sendResponse(res, "", 200, { account: virtualAccountResource(acc, req.user.memo ?? "", appUrl) });
   },
@@ -258,7 +259,7 @@ export const virtualAccountsController = {
       q.with_balance === 1 as any ||
       q.with_balance === "1" as any
     ) {
-      await attachBalance(req.user, account);
+      await attachBalance(req.user, account, req.teamMember);
     }
     const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";
     return sendResponse(res, "", 200, {
@@ -272,10 +273,16 @@ export const virtualAccountsController = {
     const accounts = await prisma().virtualAccount.findMany({
       where: baseScope,
     });
+    // Mirror of Laravel Api\VirtualAccountController::balances — the Laravel
+    // TeamMembers controller has NO /balances endpoint; the only balances
+    // endpoint is on the user-facing API which calls bankBalance($user, $va)
+    // with no team_member argument (full unscoped balance). Passing teamMember
+    // here was incorrectly scoping the balance to the corporate member's tagged
+    // deposits only, making their payouts appear invisible in the total balance.
     const balances = await Promise.all(
       accounts.map(async (a) => ({
         currency: a.currency,
-        balance: (await computeBankBalance(req.user!, a)).toString(),
+        balance: (await computeBankBalance(req.user!, a, null)).toString(),
       })),
     );
     return sendResponse(res, "", 200, { balances });

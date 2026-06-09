@@ -162,8 +162,15 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
       finalStatus = BENEFICIARY_TRANSACTION_COMPLETED;
     }
   } else {
-    finalStatus = mappedStatus;
+    if (serviceType === "EVP" && mappedStatus === BENEFICIARY_TRANSACTION_FAILED) {
+      logger.info({ orderId }, "Skipping rejected transaction for EVP");
+      success = false;
+      errorMessage = "Skipping rejected status for EVP";
+    } else {
+      finalStatus = mappedStatus;
+    }
   }
+
   if (finalStatus === null || finalStatus === oldStatus) {
     finalStatus = oldStatus;
   }
@@ -171,9 +178,6 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
   const updateData: Record<string, unknown> = { status: finalStatus };
   if (utr) {
     updateData.externalReferenceId = utr;
-  }
-  if (!utr && !txn.externalReferenceId && finalStatus === BENEFICIARY_TRANSACTION_COMPLETED) {
-    updateData.externalReferenceId = txn.txnRefNo;
   }
   if (serviceType) {
     updateData.externalType = mapProcessingUnitServiceToExternalType(serviceType);
@@ -294,6 +298,7 @@ async function handleDeposit(data: Record<string, unknown>): Promise<{
         in: [
           DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
           DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING,
+          DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED,
         ],
       },
     },

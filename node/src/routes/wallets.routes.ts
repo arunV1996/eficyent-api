@@ -6,7 +6,6 @@ import {
   validateMerchant,
 } from "../middleware/access";
 import { idempotency } from "../middleware/idempotency";
-import { limitedRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validateRequest";
 import { walletController } from "../controllers/wallets/walletController";
 import {
@@ -26,7 +25,6 @@ import {
  */
 export async function walletsRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
   r.use(
     asyncHandler(authSanctum),
     asyncHandler(validateMerchant),
@@ -46,7 +44,6 @@ export async function walletsRoutes(): Promise<Router> {
   );
   r.post(
     "/convert",
-    limited,
     idempotency(),
     validate({ body: ConvertSchema }),
     asyncHandler(walletController.convert),

@@ -273,7 +273,6 @@ function addressFields(prefix: string, ctx: FormBuildContext): FieldDef[] {
     }),
     make(`${prefix}_address_line_2`, `${category} Line 2`, {
       mandatory: false,
-      editable: false,
       validation: VALIDATION_PRESETS.address,
       category,
     }),
@@ -302,7 +301,6 @@ function baseIndividualFields(ctx: FormBuildContext): FieldDef[] {
     make("first_name", "First Name", { validation: VALIDATION_PRESETS.name }),
     make("middle_name", "Middle Name", {
       mandatory: false,
-      editable: false,
       validation: VALIDATION_PRESETS.name,
     }),
     make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
@@ -310,7 +308,7 @@ function baseIndividualFields(ctx: FormBuildContext): FieldDef[] {
     make("mobile_country_code", "Mobile Country Code", {
       values: ctx.mobile_country_codes,
     }),
-    make("mobile", "Mobile", { editable: false, validation: VALIDATION_PRESETS.mobile }),
+    make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
     ...addressFields("receiver", ctx),
   ];
 }
@@ -321,14 +319,13 @@ function baseBusinessFields(ctx: FormBuildContext): FieldDef[] {
       validation: VALIDATION_PRESETS.business_name,
     }),
     make("business_country", "Business Country", {
-      editable: false,
       values: ctx.countries,
     }),
     make("email", "Email", { validation: VALIDATION_PRESETS.email }),
     make("mobile_country_code", "Mobile Country Code", {
       values: ctx.mobile_country_codes,
     }),
-    make("mobile", "Mobile", { editable: false, validation: VALIDATION_PRESETS.mobile }),
+    make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
     ...addressFields("receiver", ctx),
   ];
 }
@@ -593,6 +590,7 @@ export async function beneficiaryFormFields(payload: {
   country: string;
   currency: string;
   type: number | bigint;
+  merchantId?: bigint | null;
 }): Promise<FieldDef[]> {
   // const cacheKey = `${payload.country}:${payload.currency}:${payload.type}`;
   // const hit = beneficiaryFormCache.get(cacheKey);
@@ -692,6 +690,29 @@ export async function beneficiaryFormFields(payload: {
     });
   }
 
+  if (payload.merchantId) {
+    const setting = await prisma().merchantSetting.findFirst({
+      where: {
+        merchantId: payload.merchantId,
+        key: "beneficiary_fields",
+        status: 1,
+      },
+    });
+    if (setting && setting.value) {
+      try {
+        const customMandatoryFields: string[] = JSON.parse(setting.value);
+        if (Array.isArray(customMandatoryFields)) {
+          fields = fields.map((f) => {
+            const isMandatory = f.is_mandatory && !customMandatoryFields.includes(f.field_key);
+            return { ...f, is_mandatory: isMandatory };
+          });
+        }
+      } catch (e) {
+        // ignore parsing errors
+      }
+    }
+  }
+
   // beneficiaryFormCache.set(cacheKey, {
   //   value: fields,
   //   expiresAt: Date.now() + BENEFICIARY_FORM_TTL_MS,
@@ -789,7 +810,7 @@ function bankFieldsByCountry(country: string, currency: string, _ctx: FormBuildC
         make("code", "SWIFT/BIC", { mandatory: false, validation: VALIDATION_PRESETS.swift }),
         make("routing_number", "Routing Number", {
           mandatory: false,
-          validation: VALIDATION_PRESETS.swift,
+          validation: VALIDATION_PRESETS.routing,
           required_if_empty_of: "code",
         }),
         ...addressFields("bank", _ctx),
@@ -953,7 +974,7 @@ export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]
     make("mobile_country_code", "Mobile Country Code", {
       values: formCtx.mobile_country_codes,
     }),
-    make("mobile", "Mobile", { editable: false, validation: VALIDATION_PRESETS.mobile }),
+    make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
     make("address_1", "Address", { validation: VALIDATION_PRESETS.address }),
     make("country", "Country", { values: formCtx.countries }),
     make("nationality", "Nationality", { values: formCtx.countries }),
@@ -1004,7 +1025,7 @@ export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]
       children: [
         make("first_name", "First Name", { validation: VALIDATION_PRESETS.name }),
         make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
-        make("id_type", "ID Type"),
+        make("id_type", "ID Type", { values: formCtx.id_types }),
         make("id_number", "ID Number", {
           validation: VALIDATION_PRESETS.id_number,
         }),
@@ -1018,7 +1039,6 @@ export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]
         }),
         make("mobile", "Mobile", {
           mandatory: false,
-          editable: false,
           validation: VALIDATION_PRESETS.mobile,
         }),
         make("address_1", "Address Line 1", {
@@ -1052,6 +1072,36 @@ export async function senderFields(ctx: SenderFieldsContext): Promise<FieldDef[]
     ];
 
     fields = [...business, ...common, ...documents, owners];
+  }
+
+  if (ctx.merchantId) {
+    const setting = await prisma().merchantSetting.findFirst({
+      where: {
+        merchantId: ctx.merchantId,
+        key: "remitter_fields",
+        status: 1,
+      },
+    });
+    if (setting && setting.value) {
+      try {
+        const customNonMandatoryFields: string[] = JSON.parse(setting.value);
+        if (Array.isArray(customNonMandatoryFields)) {
+          const mapFields = (list: FieldDef[]): FieldDef[] => {
+            return list.map((f) => {
+              const isMandatory = f.is_mandatory && !customNonMandatoryFields.includes(f.field_key);
+              const mapped: FieldDef = { ...f, is_mandatory: isMandatory };
+              if (f.children && f.children.length > 0) {
+                mapped.children = mapFields(f.children);
+              }
+              return mapped;
+            });
+          };
+          fields = mapFields(fields);
+        }
+      } catch (e) {
+        // ignore parsing errors
+      }
+    }
   }
 
   senderFieldsCache.set(cacheKey, {

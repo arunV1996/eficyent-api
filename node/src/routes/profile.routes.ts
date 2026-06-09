@@ -2,7 +2,6 @@ import { Router } from "express";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { authSanctum, emailShouldBeVerified } from "../middleware/auth";
 import { validateMerchant } from "../middleware/access";
-import { limitedRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validateRequest";
 import { profileController } from "../controllers/profile/profileController";
 import {
@@ -20,7 +19,6 @@ import {
  */
 export async function profileRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
 
   // get-credentials is special: requires email_should_be_verified but NOT
   // ValidateMerchant in the Laravel routes file.
@@ -28,7 +26,6 @@ export async function profileRoutes(): Promise<Router> {
     "/get-credentials",
     asyncHandler(authSanctum),
     emailShouldBeVerified,
-    limited,
     asyncHandler(profileController.getCredentials),
   );
 

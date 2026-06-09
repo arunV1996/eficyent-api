@@ -361,6 +361,24 @@ export async function buildPayoutPayload(
     rail: (account.paymentRail ?? "").toUpperCase(),
   };
 
+  let beneficiaryMobileCountryCode = account.mobileCountryCode || user.mobileCountryCode;
+  let beneficiaryMobile = account.mobile || user.mobile;
+
+  if (account.currency === "INR") {
+    beneficiaryMobileCountryCode = account.mobileCountryCode || "91";
+    beneficiaryMobile = account.mobile || user.mobile;
+
+    if (beneficiaryMobile) {
+      beneficiaryMobile = beneficiaryMobile.replace(/\D/g, "");
+      if (beneficiaryMobile.length > 10) {
+        beneficiaryMobile = beneficiaryMobile.substring(0, 10);
+      }
+      if (beneficiaryMobile.length < 10) {
+        beneficiaryMobile = beneficiaryMobile.padEnd(10, "0");
+      }
+    }
+  }
+
   const beneficiary = {
     type: Number(account.type) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
     first_name: account.firstName,
@@ -383,8 +401,8 @@ export async function buildPayoutPayload(
     ifsc_code: account.swiftCode,
     iso_code: account.swiftCode,
     email: account.email ?? user.email,
-    mobile_country_code: account.mobileCountryCode ?? user.mobileCountryCode,
-    mobile: account.mobile ?? user.mobile,
+    mobile_country_code: beneficiaryMobileCountryCode,
+    mobile: beneficiaryMobile,
   };
 
   const remitter = sender

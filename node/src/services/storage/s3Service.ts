@@ -62,7 +62,7 @@ export const s3Service = {
   },
 
   async uploadBase64(dataUrl: string, path = ""): Promise<string> {
-    const m = /^data:(.*?);base64,(.+)$/.exec(dataUrl);
+    const m = /^data:(.*?);base64,([\s\S]+)$/.exec(dataUrl);
     if (!m) throw new Error("Invalid data URL");
     const contentType = m[1] ?? "application/octet-stream";
     const buffer = Buffer.from(m[2] ?? "", "base64");

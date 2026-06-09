@@ -179,7 +179,7 @@ export const walletController = {
       where: { ...baseScope, id: quote.sourceId },
     });
     if (!va) throw new ApiException(120);
-    const checkBalance = await computeBankBalance(req.user, va);
+    const checkBalance = await computeBankBalance(req.user, va, req.teamMember);
     if (quote.amount.gt(checkBalance)) throw new ApiException(154);
 
     const balanceBefore = await getWalletBalance(req.user, wallet);
@@ -254,11 +254,34 @@ export const walletController = {
   async transactions(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as WalletTransactionsInput;
+
+    let statusFilter: any = undefined;
+    if (q.status !== undefined) {
+      if (typeof q.status === "number") {
+        statusFilter = q.status;
+      } else if (typeof q.status === "string" && !isNaN(Number(q.status)) && q.status.trim() !== "") {
+        statusFilter = Number(q.status);
+      } else {
+        const s = String(q.status).toUpperCase();
+        if (s === "PENDING") {
+          statusFilter = 0;
+        } else if (s === "COMPLETED") {
+          statusFilter = 1;
+        } else if (s === "FAILED") {
+          statusFilter = { in: [2, 3, 4] };
+        } else if (s === "REJECTED") {
+          statusFilter = 3;
+        } else if (s === "CANCELLED") {
+          statusFilter = 4;
+        }
+      }
+    }
+
     const where: Prisma.WalletTransactionWhereInput = {
       userId: req.user.id,
       beneficiaryTransactionId: null,
       ...(q.transaction_type !== undefined ? { type: q.transaction_type } : {}),
-      ...(q.status !== undefined ? { status: q.status } : {}),
+      ...(statusFilter !== undefined ? { status: statusFilter } : {}),
       ...(q.search_key ? { uniqueId: { contains: q.search_key } } : {}),
     };
     if (q.wallet_id) {

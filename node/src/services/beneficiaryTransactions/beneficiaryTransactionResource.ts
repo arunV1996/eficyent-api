@@ -63,8 +63,8 @@ function remitterStatusLabel(status: number): string {
 
 function transactionProofStatusLabel(status: number): string {
   switch (status) {
-    case 1: return "PENDING";
-    case 2: return "APPROVED";
+    case 1: return "REQUESTED";
+    case 2: return "PROVIDED";
     case 3: return "REJECTED";
     default: return "";
   }
@@ -282,7 +282,21 @@ export async function beneficiaryTransactionResource(
   }
 
   // Use the recursive filterEmptyValues helper to clean empty properties
-  return filterEmptyValues(dto) ?? {};
+  const filtered = filterEmptyValues(dto) ?? {};
+
+  // Ensure remarks, supporting_document, and purpose_of_payment are explicitly
+  // present as empty strings in the response if they are empty or omitted.
+  if (filtered.remarks === undefined) {
+    filtered.remarks = "";
+  }
+  if (filtered.supporting_document === undefined) {
+    filtered.supporting_document = "";
+  }
+  if (filtered.purpose_of_payment === undefined) {
+    filtered.purpose_of_payment = "";
+  }
+
+  return filtered;
 }
 
 /**
@@ -309,7 +323,7 @@ export function beneficiaryTransactionCallbackResource(
 export interface TransactionProofDto {
   unique_id: string;
   document_type: string;
-  status: number;
+  status: string;
   remitter_proof: string | null;
   file_url: string | null;
   requested_at: string | null;
@@ -328,7 +342,7 @@ export function transactionProofResource(p: {
   return {
     unique_id: p.uniqueId,
     document_type: p.documentType,
-    status: p.status,
+    status: transactionProofStatusLabel(p.status),
     remitter_proof: p.remitterProof,
     file_url: p.fileUrl,
     requested_at: p.requestedAt ? p.requestedAt.toISOString() : null,

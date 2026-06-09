@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { idempotency } from "../middleware/idempotency";
-import { limitedRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validateRequest";
 import {
   authTeam,
@@ -124,12 +123,10 @@ import {
 
 export async function teamPublicRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
 
   // /corporate/login
   r.post(
     "/corporate/login",
-    limited,
     validate({ body: TeamLoginSchema }),
     asyncHandler(teamLoginController.corporateLogin),
   );
@@ -137,7 +134,6 @@ export async function teamPublicRoutes(): Promise<Router> {
   // /team/login
   r.post(
     "/team/login",
-    limited,
     validate({ body: TeamLoginSchema }),
     asyncHandler(teamLoginController.login),
   );
@@ -169,23 +165,24 @@ export async function teamPublicRoutes(): Promise<Router> {
     validate({ query: DepositLookupQuerySchema }),
     lookupsController.depositLookups,
   );
+  r.get(
+    "/team/lookups/deposit_wallets",
+    asyncHandler(lookupsController.depositWallets),
+  );
 
   // /team/forgot-password/*
   r.post(
     "/team/forgot-password/send-reset-link",
-    limited,
     validate({ body: TeamForgotPasswordSchema }),
     asyncHandler(teamForgotPasswordController.sendResetLink),
   );
   r.post(
     "/team/forgot-password/verify-code",
-    limited,
     validate({ body: TeamVerifyCodeSchema }),
     asyncHandler(teamForgotPasswordController.verifyCode),
   );
   r.post(
     "/team/forgot-password/reset-password",
-    limited,
     validate({ body: TeamResetPasswordSchema }),
     asyncHandler(teamForgotPasswordController.resetPassword),
   );
@@ -195,7 +192,6 @@ export async function teamPublicRoutes(): Promise<Router> {
 
 export async function teamAuthedRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
 
   // /team/get-credentials sits in front of the password-reset gate (the
   // Laravel route puts it inside `auth:team` + `passwordReset` group).
@@ -203,7 +199,6 @@ export async function teamAuthedRoutes(): Promise<Router> {
     "/get-credentials",
     asyncHandler(authTeam),
     teamPasswordResetGate,
-    limited,
     asyncHandler(teamProfileController.getCredentials),
   );
 
@@ -258,7 +253,6 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.post(
     "/deposits/store",
-    limited,
     idempotency(),
     validate({ body: DepositCreateSchema }),
     asyncHandler(depositController.store),
@@ -268,7 +262,7 @@ export async function teamAuthedRoutes(): Promise<Router> {
     validate({ query: DepositShowSchema }),
     asyncHandler(depositController.show),
   );
-  r.get("/deposits/export", limited, depositController.export);
+  r.get("/deposits/export", depositController.export);
 
   // ----- Beneficiary accounts -----
   r.get(
@@ -324,13 +318,11 @@ export async function teamAuthedRoutes(): Promise<Router> {
   // ----- Quotes -----
   r.post(
     "/quotes/store",
-    limited,
     validate({ body: QuoteStoreSchema }),
     asyncHandler(quotesController(QUOTE_MODE_QUOTATION).store),
   );
   r.get(
     "/quotes/exchange-rate",
-    limited,
     validate({ query: QuoteStoreSchema }),
     asyncHandler(quotesController(QUOTE_MODE_RATE).store),
   );
@@ -343,7 +335,6 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.post(
     "/beneficiary-transactions/store",
-    limited,
     makerAccess,
     idempotency(),
     validate({ body: PayoutStoreSchema }),
@@ -356,13 +347,11 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.get(
     "/beneficiary-transactions/check_transaction_status",
-    limited,
     validate({ query: PayoutShowSchema }),
     asyncHandler(payoutController.checkTransactionStatus),
   );
   r.post(
     "/beneficiary-transactions/update-status",
-    limited,
     checkerAccess,
     idempotency(),
     validate({ body: PayoutUpdateStatusSchema }),
@@ -370,14 +359,12 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.post(
     "/beneficiary-transactions/cancel",
-    limited,
     idempotency(),
     validate({ body: PayoutCancelSchema }),
     asyncHandler(payoutController.cancel),
   );
   r.get(
     "/beneficiary-transactions/export",
-    limited,
     validate({ query: PayoutShowSchema }),
     payoutController.export,
   );
@@ -394,7 +381,6 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.get(
     "/beneficiary-transactions/download",
-    limited,
     payoutController.downloadList,
   );
   r.get(
@@ -403,7 +389,6 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.post(
     "/beneficiary-transactions/bulk/store",
-    limited,
     asyncHandler(payoutController.bulkStore),
   );
   r.get(
@@ -412,13 +397,11 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.post(
     "/beneficiary-transactions/request-proof",
-    limited,
     validate({ body: TransactionProofRequestSchema }),
     asyncHandler(payoutController.requestProof),
   );
   r.get(
     "/beneficiary-transactions/get-proof",
-    limited,
     validate({ query: TransactionProofGetSchema }),
     asyncHandler(payoutController.getProof),
   );
@@ -474,7 +457,6 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.get(
     "/ledgers/export",
-    limited,
     validate({ query: LedgerListSchema }),
     ledgerController.export,
   );
@@ -488,7 +470,6 @@ export async function teamAuthedRoutes(): Promise<Router> {
   r.get("/lookups/get-rates", asyncHandler(lookupsController.getRates));
   r.post(
     "/lookups/refresh-rates",
-    limited,
     validate({ body: RefreshRateBodySchema }),
     asyncHandler(lookupsController.refreshRates),
   );
@@ -526,7 +507,6 @@ export async function teamAuthedRoutes(): Promise<Router> {
   );
   r.post(
     "/wallets/convert",
-    limited,
     ownerAccess,
     idempotency(),
     validate({ body: ConvertSchema }),

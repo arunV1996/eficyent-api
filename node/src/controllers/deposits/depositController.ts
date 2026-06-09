@@ -14,6 +14,7 @@ import {
   DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
   DEPOSIT_TYPE_TOPUP,
   TAKE_COUNT,
+  TEAM_MEMBER_ROLE_CORPORATE,
 } from "../../helpers/constants";
 import { uniqueId } from "../../helpers/uniqueId";
 import { s3Service } from "../../services/storage/s3Service";
@@ -123,6 +124,9 @@ export const depositController = {
               { externalReferenceId: { contains: q.search_key } },
             ],
           }
+        : {}),
+      ...(req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE
+        ? { teamMemberId: req.teamMember.id }
         : {}),
     };
     const skip = q.skip ?? 0;
@@ -242,6 +246,7 @@ export const depositController = {
         data: {
           uniqueId: uniqueId(24),
           userId: req.user!.id,
+          teamMemberId: req.teamMember?.id ?? null,
           virtualAccountId: va.id,
           adminWalletId,
           amount: new Prisma.Decimal(String(body.amount)),
@@ -272,8 +277,8 @@ export const depositController = {
           depositTransactionId: dep.id,
           fromStatus: null,
           toStatus: String(DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED),
-          changedBy: req.user!.id.toString(),
-          changedByType: "user",
+          changedBy: req.teamMember ? req.teamMember.id.toString() : req.user!.id.toString(),
+          changedByType: req.teamMember ? "team" : "user",
           changedAt: new Date(),
         },
       });
@@ -358,6 +363,9 @@ export const depositController = {
             ],
           }
         : {}),
+      ...(req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE
+        ? { teamMemberId: req.teamMember.id }
+        : {}),
     };
     const rows = await prisma().depositTransaction.findMany({
       where,
@@ -393,11 +401,26 @@ export const depositController = {
       contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       extension = "xlsx";
     } else {
-      const logoPath = path.join(process.cwd(), "public", "logo", "eficyent-logo-dark.png");
       let logoUrl = "";
-      if (fs.existsSync(logoPath)) {
-        const logoBase64 = fs.readFileSync(logoPath).toString("base64");
-        logoUrl = `data:image/png;base64,${logoBase64}`;
+      const logoPaths = [
+        path.join(__dirname, "..", "..", "..", "public", "logo", "eficyent-logo-dark.png"),
+        path.join(__dirname, "..", "..", "public", "logo", "eficyent-logo-dark.png"),
+        path.join(process.cwd(), "public", "logo", "eficyent-logo-dark.png"),
+        path.join(process.cwd(), "dist", "public", "logo", "eficyent-logo-dark.png"),
+      ];
+      for (const p of logoPaths) {
+        if (fs.existsSync(p)) {
+          try {
+            const logoBase64 = fs.readFileSync(p).toString("base64");
+            logoUrl = `data:image/png;base64,${logoBase64}`;
+            break;
+          } catch (e) {
+            // ignore and try next path
+          }
+        }
+      }
+      if (!logoUrl) {
+        logoUrl = `${process.env.APP_URL || `http://localhost:${process.env.PORT || 1730}`}/logo/eficyent-logo-dark.png`;
       }
 
       const translations: Record<string, string> = {
@@ -463,7 +486,8 @@ export const depositController = {
       { buffer, contentType, extension },
       "exports/deposits",
     );
-    return emptyEnvelope(res, "", { url });
+    const signedUrl = await s3Service.temporaryUrl(url);
+    return emptyEnvelope(res, "", { url: signedUrl });
   },
 
   async retryDeposit(req: Request, res: Response): Promise<Response> {

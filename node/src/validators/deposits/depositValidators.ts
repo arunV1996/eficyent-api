@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  DEPOSIT_CURRENCY_TYPES,
   DEPOSIT_TYPE_MAP,
 } from "../../helpers/constants";
 import {
@@ -8,7 +7,7 @@ import {
   DEPOSIT_SOURCE_OF_FUNDS,
 } from "../../helpers/lookups";
 
-const depositCurrency = z.enum(DEPOSIT_CURRENCY_TYPES);
+const depositCurrency = z.string();
 const depositTypeKey = z.enum(Object.keys(DEPOSIT_TYPE_MAP) as [string, ...string[]]);
 const sourceOfFunds = z.enum(
   Object.keys(DEPOSIT_SOURCE_OF_FUNDS) as [string, ...string[]],

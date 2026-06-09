@@ -5,7 +5,6 @@ import {
   onboardingShouldBeCompleted,
   validateMerchant,
 } from "../middleware/access";
-import { limitedRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validateRequest";
 import { ledgerController } from "../controllers/ledgers/ledgerController";
 import {
@@ -15,7 +14,6 @@ import {
 
 export async function ledgersRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
   r.use(
     asyncHandler(authSanctum),
     asyncHandler(validateMerchant),
@@ -34,7 +32,6 @@ export async function ledgersRoutes(): Promise<Router> {
   );
   r.get(
     "/export",
-    limited,
     validate({ query: LedgerListSchema }),
     ledgerController.export,
   );

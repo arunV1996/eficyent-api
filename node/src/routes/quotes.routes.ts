@@ -5,7 +5,6 @@ import {
   onboardingShouldBeCompleted,
   validateMerchant,
 } from "../middleware/access";
-import { limitedRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validateRequest";
 import { quotesController } from "../controllers/quotes/quotesController";
 import { QuoteStoreSchema } from "../validators/quotes/quoteValidators";
@@ -25,7 +24,6 @@ import {
  */
 export async function quotesRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
   r.use(
     asyncHandler(authSanctum),
     asyncHandler(validateMerchant),
@@ -40,7 +38,6 @@ export async function quotesRoutes(): Promise<Router> {
   );
   r.get(
     "/exchange-rate",
-    limited,
     validate({ query: QuoteStoreSchema }),
     asyncHandler(quotesController(QUOTE_MODE_RATE).store),
   );

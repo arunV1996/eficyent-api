@@ -16,7 +16,6 @@ import {
   requestTimeout,
   trimPayloadMiddleware,
 } from "./middleware/security";
-import { defaultRateLimit } from "./middleware/rateLimit";
 import { errorHandler, notFound } from "./middleware/error";
 import { requestId } from "./middleware/requestId";
 import { apiRouter } from "./routes";
@@ -75,9 +74,12 @@ async function main(): Promise<void> {
   app.use(trimPayloadMiddleware());
   app.use(compressionMiddleware());
   app.use(requestTimeout(30_000));
-  app.use(await defaultRateLimit());
-  app.use(express.static(path.join(__dirname, "..", "public")));
-  app.use("/api", express.static(path.join(__dirname, "..", "public")));
+  const isProduction = __dirname.includes("dist");
+  const publicPath = isProduction
+    ? path.join(__dirname, "public")
+    : path.join(__dirname, "..", "public");
+  app.use(express.static(publicPath));
+  app.use("/api", express.static(publicPath));
 
   app.use("/api", await apiRouter());
 

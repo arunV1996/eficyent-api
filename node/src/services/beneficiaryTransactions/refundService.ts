@@ -1,4 +1,5 @@
 import { BeneficiaryTransaction, Prisma } from "@prisma/client";
+import { computeBankBalance } from "../virtualAccounts/balanceService";
 import { prisma } from "../../db/prisma";
 import {
   DEPOSIT_TRANSACTION_COMPLETED,
@@ -122,6 +123,7 @@ export async function createRefund(
         data: {
           uniqueId: uniqueId(24),
           userId: txn.userId,
+          teamMemberId: txn.teamMemberId,
           virtualAccountId: va.id,
           amount: txn.totalAmount,
           totalAmount: txn.totalAmount,
@@ -129,6 +131,23 @@ export async function createRefund(
           type: DEPOSIT_TYPE_REFUND,
         },
       });
+
+      let teamMemberContext: { role: number; id: bigint } | null = null;
+      if (txn.teamMemberId) {
+        const tm = await tx.teamMember.findUnique({
+          where: { id: txn.teamMemberId },
+        });
+        if (tm) {
+          teamMemberContext = { role: tm.role, id: tm.id };
+        }
+      }
+
+      const freshBalance = await computeBankBalance(
+        { id: txn.userId } as any,
+        va,
+        teamMemberContext,
+      );
+
       await tx.ledger.create({
         data: {
           uniqueId: uniqueId(24),
@@ -137,7 +156,7 @@ export async function createRefund(
           walletId: null,
           transactionType: MORPH_DEPOSIT_TRANSACTION,
           transactionId: refundDeposit.id,
-          balance: new Prisma.Decimal(0),
+          balance: freshBalance,
           externalType: txn.externalType ?? null,
           description: `Refund for ${txn.uniqueId}`,
           refundLedgerId: originalLedger.id,

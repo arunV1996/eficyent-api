@@ -84,12 +84,14 @@ export const teamMemberCrudController = {
     const body = req.body as TeamMemberCreateInput;
 
     let senderId: bigint | null = null;
+    let senderUniqueId: string | null = null;
     if (body.role === TEAM_MEMBER_ROLE_CORPORATE && body.remitter_id) {
       const sender = await prisma().sender.findFirst({
         where: { uniqueId: body.remitter_id, userId: req.user.id, deletedAt: null },
       });
       if (!sender) throw new ApiException(132);
       senderId = sender.id;
+      senderUniqueId = sender.uniqueId;
     }
 
     const existing = await prisma().teamMember.findFirst({
@@ -121,7 +123,7 @@ export const teamMemberCrudController = {
       message: "Team member created successfully.",
       code: "",
       data: {
-        team_member: teamMemberResource(member, req.user),
+        team_member: teamMemberResource(member, req.user, senderUniqueId),
       },
     });
   },
@@ -133,12 +135,22 @@ export const teamMemberCrudController = {
       where: { userId: req.user.id, uniqueId: q.team_member_id, deletedAt: null },
     });
     if (!member) throw new ApiException(159);
+
+    let senderUniqueId: string | null = null;
+    if (member.senderId) {
+      const sender = await prisma().sender.findFirst({
+        where: { id: member.senderId },
+        select: { uniqueId: true },
+      });
+      senderUniqueId = sender?.uniqueId ?? null;
+    }
+
     return res.status(200).json({
       success: true,
       message: "Team member fetched successfully.",
       code: "",
       data: {
-        team_member: teamMemberResource(member, req.user),
+        team_member: teamMemberResource(member, req.user, senderUniqueId),
       },
     });
   },
@@ -175,12 +187,22 @@ export const teamMemberCrudController = {
         status: body.status,
       },
     });
+
+    let senderUniqueId: string | null = null;
+    if (updated.senderId) {
+      const sender = await prisma().sender.findFirst({
+        where: { id: updated.senderId },
+        select: { uniqueId: true },
+      });
+      senderUniqueId = sender?.uniqueId ?? null;
+    }
+
     return res.status(200).json({
       success: true,
       message: "Team member updated successfully.",
       code: "",
       data: {
-        team_member: teamMemberResource(updated, req.user),
+        team_member: teamMemberResource(updated, req.user, senderUniqueId),
       },
     });
   },

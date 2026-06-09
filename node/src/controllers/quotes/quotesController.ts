@@ -58,9 +58,9 @@ interface SourceWallet {
   row: Wallet;
 }
 
-type ResolvedSource = SourceVirtualAccount | SourceWallet;
+export type ResolvedSource = SourceVirtualAccount | SourceWallet;
 
-async function resolveSource(
+export async function resolveSource(
   body: QuoteStoreInput,
   user: User,
 ): Promise<ResolvedSource> {
@@ -86,7 +86,7 @@ interface QuoteMode {
   mode: typeof QUOTE_MODE_RATE | typeof QUOTE_MODE_QUOTATION;
 }
 
-async function buildResponse(
+export async function buildResponse(
   body: QuoteStoreInput,
   source: ResolvedSource,
   userId: bigint,
@@ -103,21 +103,35 @@ async function buildResponse(
   if (source.kind === "wallet") {
     if (source.row.currency !== receivingCurrency) throw new ApiException(172);
     if (source.row.status !== WALLET_STATUS_ACTIVE) throw new ApiException(169);
+    const tx = await calcTransactionCommissions(
+      {
+        amount: body.amount,
+        receivingCurrency: receivingCurrency,
+        sourceCurrency: source.row.currency,
+        paymentRail,
+        sourceType: "wallet",
+      },
+      { userId, merchantId, merchantType },
+    );
     return {
       amount: body.amount,
-      total_sending_amount: body.amount,
+      total_sending_amount:
+        body.amount + tx.commission_amount + tx.merchant_commission_amount,
       fx_rate: "1",
       external_fx_rate: "1",
       internal_fx_rate: "1",
+      receiving_amount: body.amount,
       recipient_country: body.recipient_country!,
       receiving_currency: receivingCurrency,
       recipient_type: recipientTypeNumeric,
       quote_type: body.quote_type,
-      receiving_amount: body.amount,
       payment_rail: paymentRail,
       source_type: MORPH_WALLET,
       source_id: source.row.id,
       external_type: EXTERNAL_TYPE_MASSIVE,
+      commission_amount: tx.commission_amount,
+      merchant_commission_amount: tx.merchant_commission_amount,
+      external_commission_amount: 0,
     };
   }
 
@@ -127,7 +141,9 @@ async function buildResponse(
       {
         amount: body.amount,
         receivingCurrency: receivingCurrency,
+        sourceCurrency: source.row.currency,
         paymentRail,
+        sourceType: "virtual_account",
       },
       { userId, merchantId, merchantType },
     );
@@ -168,12 +184,12 @@ async function buildResponse(
     // Short-circuit: use the fixed rate from database.
     const amt =
       body.quote_type === QUOTE_TYPE_REVERSE
-        ? body.amount * fixedRate
+        ? body.amount / fixedRate
         : body.amount;
     const recv =
       body.quote_type === QUOTE_TYPE_REVERSE
         ? body.amount
-        : body.amount / fixedRate;
+        : body.amount * fixedRate;
 
     driverResp = {
       amount: amt,
@@ -212,12 +228,12 @@ async function buildResponse(
       if (fallbackRate !== null) {
         const amt =
           body.quote_type === QUOTE_TYPE_REVERSE
-            ? body.amount * fallbackRate
+            ? body.amount / fallbackRate
             : body.amount;
         const recv =
           body.quote_type === QUOTE_TYPE_REVERSE
             ? body.amount
-            : body.amount / fallbackRate;
+            : body.amount * fallbackRate;
 
         driverResp = {
           amount: amt,
@@ -227,7 +243,7 @@ async function buildResponse(
           quote_type: body.quote_type,
         };
       } else {
-        throw err;
+        throw new ApiException(189, "FX rate not available from quote provider.", 422);
       }
     }
   }
@@ -252,18 +268,15 @@ async function buildResponse(
   if (quoteMode === QUOTE_MODE_QUOTATION) {
     txCommission = await calcTransactionCommissions(
       {
-        amount: driverResp.amount,
+        amount: fx.amount,
         receivingCurrency: receivingCurrency,
+        sourceCurrency: source.row.currency,
         paymentRail,
+        sourceType: "virtual_account",
       },
       { userId, merchantId, merchantType },
     );
-    // External commission = (external rate - internal rate) * amount.
-    externalCommission =
-      (driverResp.fx_rate - fx.internal_fx_rate) *
-      (body.quote_type === QUOTE_TYPE_REVERSE
-        ? driverResp.receiving_amount / driverResp.fx_rate
-        : driverResp.amount);
+    externalCommission = driverResp.external_commission_amount ?? 0;
     totalSending =
       fx.amount +
       externalCommission +
@@ -297,7 +310,7 @@ async function buildResponse(
   };
 }
 
-async function persistQuote(
+export async function persistQuote(
   user: { id: bigint },
   response: Record<string, unknown>,
 ): Promise<Quote> {
@@ -369,18 +382,17 @@ export const quotesController = (mode: QuoteMode["mode"]) => ({
 
     const recipientType = USER_TYPE_MAP[body.recipient_type] ?? 1;
 
-    // Phase 10: Deal-Based INR Override logic.
-    // For send-money (quote) flows to INR by merchants with a DEAL_BASED model,
-    // we force the source to be the user's INR wallet.
-    if (
-      mode === QUOTE_MODE_QUOTATION &&
-      req.user.merchantId 
-      // body.receiving_currency.toUpperCase() === "INR"
-    ) {
+    // Phase 10: Deal-Based Wallet Override logic.
+    // If the merchant uses the DEAL_BASED model, and they have a wallet for the requested
+    // receiving currency, we force the source to be that wallet (making it a same-currency transfer).
+    if (mode === QUOTE_MODE_QUOTATION && req.user.merchantId) {
       const bizModel = await getBusinessModel(req.user.merchantId);
       if (bizModel.toUpperCase() === BUSINESS_MODEL_DEAL_BASED) {
         const wallet = await prisma().wallet.findFirst({
-          where: { userId: req.user.id, currency: body.receiving_currency.toUpperCase() },
+          where: {
+            userId: req.user.id,
+            currency: body.receiving_currency.toUpperCase(),
+          },
         });
         if (wallet) {
           body.bank_account_id = undefined;

@@ -4,10 +4,11 @@ import { prisma } from "../../db/prisma";
 import { logger } from "../../helpers/logger";
 import {
   BENEFICIARY_TRANSACTION_APPROVED,
-  BENEFICIARY_TRANSACTION_FAILED,
   BENEFICIARY_TRANSACTION_INITIATED,
   BENEFICIARY_TRANSACTION_PROCESSING,
   BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
+  BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
+  BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
   PAYOUT_JOB_STATUS_COMPLETED,
   PAYOUT_JOB_STATUS_FAILED,
   PAYOUT_JOB_STATUS_PROCESSING,
@@ -132,12 +133,34 @@ export async function processPayout(job: Job<PayoutJobPayload>): Promise<void> {
       })
       .catch(() => undefined);
     if (beneficiaryTransactionId) {
+      let failureStatus = BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED;
+      try {
+        const compliancePanel = await settingGet<string>("compliance_panel", "0");
+        if (compliancePanel === "1" || compliancePanel === "ENABLED") {
+          failureStatus = BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED;
+        }
+      } catch (settingsErr) {
+        reqLogger.error({ err: settingsErr }, "Failed to read compliance_panel setting for fallback status");
+      }
+
       await prisma()
         .beneficiaryTransaction.update({
           where: { id: BigInt(beneficiaryTransactionId) },
-          data: { status: BENEFICIARY_TRANSACTION_FAILED },
+          data: { status: failureStatus },
         })
         .catch(() => undefined);
+
+      await prisma().beneficiaryTransactionStatusHistory.create({
+        data: {
+          uniqueId: cryptoRandomId(),
+          beneficiaryTransactionId: BigInt(beneficiaryTransactionId),
+          fromStatus: String(BENEFICIARY_TRANSACTION_PROCESSING),
+          toStatus: String(failureStatus),
+          changedBy: "system",
+          changedByType: "system",
+          changedAt: new Date(),
+        },
+      }).catch(() => undefined);
     }
     throw err;
   }

@@ -42,23 +42,29 @@ export async function processFxRates(job: Job<FxRatesJobPayload>): Promise<void>
             ? convertUsdRateToAed(response.fx_rate, currency)
             : response.fx_rate;
 
-        await prisma().fxRate.upsert({
+        const existing = await prisma().fxRate.findFirst({
           where: {
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-            fx_rate_pair: {
-              fromCurrency,
-              toCurrency: currency,
-              provider: EXTERNAL_TYPE_MASSIVE,
-            },
-          },
-          create: {
             fromCurrency,
             toCurrency: currency,
             provider: EXTERNAL_TYPE_MASSIVE,
-            rate: String(finalRate),
           },
-          update: { rate: String(finalRate) },
         });
+
+        if (existing) {
+          await prisma().fxRate.update({
+            where: { id: existing.id },
+            data: { rate: String(finalRate) },
+          });
+        } else {
+          await prisma().fxRate.create({
+            data: {
+              fromCurrency,
+              toCurrency: currency,
+              provider: EXTERNAL_TYPE_MASSIVE,
+              rate: String(finalRate),
+            },
+          });
+        }
       } catch (err) {
         logger.error(
           { err, fromCurrency, toCurrency: currency },

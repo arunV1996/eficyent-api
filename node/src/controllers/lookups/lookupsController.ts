@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { sendResponse } from "../../helpers/response";
 import { ApiException } from "../../helpers/errors";
-import { lookupsService } from "../../services/lookups/lookupsService";
+import { lookupsService, relativeTime } from "../../services/lookups/lookupsService";
 import {
   DEPOSIT_PURPOSE,
   DEPOSIT_SOURCE_OF_FUNDS,
@@ -161,31 +161,40 @@ export const lookupsController = {
     }
 
     const fxRate = String(finalRate);
-    const cached = await prisma().fxRate.upsert({
+    const existing = await prisma().fxRate.findFirst({
       where: {
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-        fx_rate_pair: {
-          fromCurrency: finalFromCurrency,
-          toCurrency: validated.to_currency,
-          provider: "em",
-        },
-      },
-      create: {
         fromCurrency: finalFromCurrency,
         toCurrency: validated.to_currency,
         provider: "em",
-        rate: fxRate,
       },
-      update: { rate: fxRate },
     });
+
+    let cached;
+    if (existing) {
+      cached = await prisma().fxRate.update({
+        where: { id: existing.id },
+        data: { rate: fxRate },
+      });
+    } else {
+      cached = await prisma().fxRate.create({
+        data: {
+          fromCurrency: finalFromCurrency,
+          toCurrency: validated.to_currency,
+          provider: "em",
+          rate: fxRate,
+        },
+      });
+    }
 
     return sendResponse(res, "", 200, {
       rate: {
         from_currency: cached.fromCurrency,
         to_currency: cached.toCurrency,
         fx_rate: Number(cached.rate).toFixed(4),
-// @ts-expect-error - Auto-fixed: 'cached.updatedAt' is possibly 'null'.
-        last_updated: cached.updatedAt.toISOString(),
+        last_updated: relativeTime(
+          cached.updatedAt || new Date(),
+          req.user.timezone ?? "Asia/Kolkata",
+        ),
       },
     });
   },

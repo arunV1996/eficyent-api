@@ -16,7 +16,7 @@ import { processingUnitWebhookController } from "../controllers/webhooks/process
  *   POST /diginine-webhook
  *   POST /ef-webhook                   (FvBank, signature-verified)
  *   POST /compliance/webhook-callback
- *   POST /ec-webhook
+ *   POST /processingunit-webhook
  *
  * No `/api/user` prefix - these endpoints are unauthenticated and
  * receive provider traffic directly (signature verification handles
@@ -37,7 +37,7 @@ export function webhookRoutes(): Router {
     asyncHandler(complianceWebhookController.invoke),
   );
   r.post(
-    "/ec-webhook",
+    "/processingunit-webhook",
     asyncHandler(processingUnitWebhookController.invoke),
   );
 

@@ -6,7 +6,6 @@ import {
   onboardingShouldBeCompleted,
   validateMerchant,
 } from "../middleware/access";
-import { limitedRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validateRequest";
 import { subuserController } from "../controllers/subuser/subuserController";
 import {
@@ -25,10 +24,8 @@ import {
 
 export async function subuserPublicRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
   r.post(
     "/accept-invite",
-    limited,
     validate({ body: AcceptInviteSchema }),
     asyncHandler(subuserController.acceptInvite),
   );

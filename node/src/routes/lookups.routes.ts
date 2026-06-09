@@ -2,7 +2,6 @@ import { Router } from "express";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { authSanctum, emailShouldBeVerified } from "../middleware/auth";
 import { onboardingShouldBeCompleted, validateMerchant } from "../middleware/access";
-import { limitedRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validateRequest";
 import { lookupsController } from "../controllers/lookups/lookupsController";
 import {
@@ -48,7 +47,6 @@ export async function publicLookupsRoutes(): Promise<Router> {
 
 export async function authedLookupsRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
 
   r.get(
     "/receiving_countries",
@@ -75,7 +73,6 @@ export async function authedLookupsRoutes(): Promise<Router> {
     emailShouldBeVerified,
     asyncHandler(validateMerchant),
     onboardingShouldBeCompleted,
-    limited,
     validate({ body: RefreshRateBodySchema }),
     asyncHandler(lookupsController.refreshRates),
   );
