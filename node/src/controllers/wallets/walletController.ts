@@ -160,8 +160,9 @@ export const walletController = {
     if (!req.user) throw new ApiException(102);
     const body = req.body as ConvertInput;
 
+    // Mirror Laravel: Quote::where('unique_id', ...)->first() — no userId scoping.
     const quote = await prisma().quote.findFirst({
-      where: { uniqueId: body.quote_id, userId: req.user.id },
+      where: { uniqueId: body.quote_id },
     });
     if (!quote) throw new ApiException(121);
     if (!quote.receivingCurrency) throw new ApiException(121);
@@ -182,7 +183,6 @@ export const walletController = {
     const checkBalance = await computeBankBalance(req.user, va, req.teamMember);
     if (quote.amount.gt(checkBalance)) throw new ApiException(154);
 
-    const balanceBefore = await getWalletBalance(req.user, wallet);
     void ZERO;
 
     const randPart = Math.floor(Math.random() * 900) + 100;
@@ -197,6 +197,11 @@ export const walletController = {
     const transactionIdStr = `${randPart}${datePart}${fxPart}`;
 
     const wt = await prisma().$transaction(async (tx) => {
+      // Pessimistic lock on the VirtualAccount (source) and Wallet (destination)
+      // to serialize concurrent conversions and prevent race conditions.
+      await tx.$queryRaw`SELECT id FROM virtual_accounts WHERE id = ${va.id} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM wallets WHERE id = ${wallet.id} FOR UPDATE`;
+
       const created = await tx.walletTransaction.create({
         data: {
           uniqueId: uniqueId(24),
@@ -217,10 +222,12 @@ export const walletController = {
         where: { id: quote.id },
         data: { status: QUOTE_SUBMITTED },
       });
-      // Ledger.transaction polymorphic write - mirrors Helper::updateLedger
-      // for the WalletTransaction case. Full polymorphic ledger mirroring
-      // BeneficiaryTransaction + DepositTransaction lands in Phase 5; here
-      // we record the wallet credit so the audit chain stays continuous.
+
+      // Mirror Laravel's Helper::updateLedger timing — balance is computed
+      // AFTER the wallet transaction row is inserted so the new CREDIT is
+      // included in the aggregate (getWalletBalance = SUM(CREDIT) - SUM(DEBIT)).
+      const balanceAfterCreate = await getWalletBalance(req.user!, wallet);
+
       await tx.ledger.create({
         data: {
           uniqueId: uniqueId(24),
@@ -229,7 +236,7 @@ export const walletController = {
           walletId: wallet.id,
           transactionType: "App\\Models\\WalletTransaction",
           transactionId: created.id,
-          balance: balanceBefore,
+          balance: balanceAfterCreate,
           externalType: quote.externalType,
           description: `Wallet conversion (${quote.uniqueId})`,
         },

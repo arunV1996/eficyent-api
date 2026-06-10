@@ -81,18 +81,41 @@ export const profileController = {
 
     const privateKey = await decryptEnvelope(user.privateKey as string);
 
+    const dataPayload: Record<string, any> = {
+      user: {
+        unique_id: user.uniqueId,
+        api_key: user.apiKey,
+        salt_key: user.saltKey ? await decryptEnvelope(user.saltKey) : null,
+        private_key: privateKey,
+      },
+    };
+
+    if (user.merchantId) {
+      let merchant = await prisma().merchant.findUnique({
+        where: { id: user.merchantId },
+      });
+
+      if (merchant) {
+        if (!merchant.apiKey || !merchant.saltKey || !merchant.privateKey) {
+          merchant = await credentialService.generateAndStore(merchant.id, "merchant");
+        }
+        
+        const merchantPrivateKey = await decryptEnvelope(merchant?.privateKey as string);
+        
+        dataPayload.merchant = {
+          unique_id: merchant?.uniqueId || null,
+          api_key: merchant?.apiKey || null,
+          salt_key: merchant?.saltKey ? await decryptEnvelope(merchant?.saltKey) : null,
+          private_key: merchantPrivateKey,
+        };
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: "",
       code: "",
-      data: {
-        user: {
-          unique_id: user.uniqueId,
-          api_key: user.apiKey,
-          salt_key: user.saltKey ? await decryptEnvelope(user.saltKey) : null,
-          private_key: privateKey,
-        },
-      },
+      data: dataPayload,
     });
   },
 

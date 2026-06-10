@@ -126,23 +126,24 @@ export async function createPayoutTransaction(
     throw new ApiException(180);
   }
 
-  // Resolve quote source (VirtualAccount or Wallet) and check balance.
+  // Source validation happens here, but balance computation and locking 
+  // is deferred until inside the transaction to prevent race conditions.
   if (!quote.sourceType || !quote.sourceId) throw new ApiException(120);
-  let checkBalance = ZERO;
+  let va: any = null;
+  let wallet: any = null;
+
   if (quote.sourceType === MORPH_VIRTUAL_ACCOUNT) {
     const baseScope = await getVirtualAccountScope(user);
-    const va = await prisma().virtualAccount.findFirst({
+    va = await prisma().virtualAccount.findFirst({
       where: { ...baseScope, id: quote.sourceId },
     });
     if (!va) throw new ApiException(120);
-    checkBalance = await computeBankBalance(user, va, creator ? { role: creator.role, id: creator.id } : null);
   } else if (quote.sourceType === MORPH_WALLET) {
-    const wallet = await prisma().wallet.findFirst({
+    wallet = await prisma().wallet.findFirst({
       where: { id: quote.sourceId, userId: user.id },
     });
     if (!wallet) throw new ApiException(120);
     if (wallet.status !== WALLET_STATUS_ACTIVE) throw new ApiException(169);
-    checkBalance = await getWalletBalance(user, wallet);
   } else {
     throw new ApiException(120);
   }
@@ -164,14 +165,7 @@ export async function createPayoutTransaction(
     resolvedSenderId = sender.id;
   }
 
-  // Balance gate: mirror of Laravel's guard —
-  //   if (!Helper::is_remitter_deposit_enabled($user)) { throw_if($check_balance < $quote->amount) }
-  // When remitter-deposit is enabled for the merchant, the balance gate is
-  // intentionally skipped (the remitter's own deposit covers the amount).
-  const remitterDepositEnabled = await isRemitterDepositEnabled(user.merchantId ?? null);
-  if (!remitterDepositEnabled && checkBalance.lt(quote.amount)) {
-    throw new ApiException(154);
-  }
+  // Balance gate check logic moved inside the transaction block below
 
   const fees = quote.commissionAmount
     .plus(quote.externalCommissionAmount)
@@ -192,7 +186,23 @@ export async function createPayoutTransaction(
     );
   }
 
+  const remitterDepositEnabled = await isRemitterDepositEnabled(user.merchantId ?? null);
+
   const created = await prisma().$transaction(async (tx) => {
+    // 1. Pessimistic Lock & Balance Check
+    let txCheckBalance = ZERO;
+    
+    if (quote.sourceType === MORPH_VIRTUAL_ACCOUNT) {
+      await tx.$queryRaw`SELECT id FROM virtual_accounts WHERE id = ${va.id} FOR UPDATE`;
+      txCheckBalance = await computeBankBalance(user, va, creator ? { role: creator.role, id: creator.id } : null);
+    } else if (quote.sourceType === MORPH_WALLET) {
+      await tx.$queryRaw`SELECT id FROM wallets WHERE id = ${wallet.id} FOR UPDATE`;
+      txCheckBalance = await getWalletBalance(user, wallet);
+    }
+
+    if (!remitterDepositEnabled && txCheckBalance.lt(quote.amount)) {
+      throw new ApiException(154);
+    }
     const txn = await tx.beneficiaryTransaction.create({
       data: {
         uniqueId: uniqueId(24),
@@ -248,7 +258,7 @@ export async function createPayoutTransaction(
         walletId: quote.sourceType === MORPH_WALLET ? quote.sourceId : null,
         transactionType: MORPH_BENEFICIARY_TRANSACTION,
         transactionId: txn.id,
-        balance: checkBalance.minus(quote.amount.plus(fees)),
+        balance: txCheckBalance.minus(quote.amount.plus(fees)),
         externalType: quote.externalType,
         description: `Payout ${txn.uniqueId}`,
       },
@@ -269,8 +279,8 @@ export async function createPayoutTransaction(
           fees: fees,
           status: WALLET_TRANSACTION_COMPLETED,
           type: TRANSACTION_TYPE_DEBIT,
-          balanceBefore: checkBalance,
-          balanceAfter: checkBalance.minus(quote.amount.plus(fees)),
+          balanceBefore: txCheckBalance,
+          balanceAfter: txCheckBalance.minus(quote.amount.plus(fees)),
         },
       });
     }

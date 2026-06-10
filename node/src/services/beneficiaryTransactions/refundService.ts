@@ -59,6 +59,9 @@ export async function createRefund(
       });
       if (!wallet) return;
 
+      // Pessimistic lock on the Wallet row to serialize concurrent credits/debits
+      await tx.$queryRaw`SELECT id FROM wallets WHERE id = ${wallet.id} FOR UPDATE`;
+
       // Sum existing wallet credits/debits for balance_before/after.
       const [creditAgg, debitAgg] = await Promise.all([
         tx.walletTransaction.aggregate({
@@ -119,6 +122,10 @@ export async function createRefund(
         where: { id: quote.sourceId! },
       });
       if (!va) return;
+
+      // Pessimistic lock on the VirtualAccount row to serialize concurrent credits/debits
+      await tx.$queryRaw`SELECT id FROM virtual_accounts WHERE id = ${va.id} FOR UPDATE`;
+
       const refundDeposit = await tx.depositTransaction.create({
         data: {
           uniqueId: uniqueId(24),
@@ -142,11 +149,13 @@ export async function createRefund(
         }
       }
 
-      const freshBalance = await computeBankBalance(
+      const oldBalance = await computeBankBalance(
         { id: txn.userId } as any,
         va,
         teamMemberContext,
       );
+
+      const freshBalance = oldBalance.plus(txn.totalAmount);
 
       await tx.ledger.create({
         data: {
