@@ -11,6 +11,7 @@ import {
   PAYMENT_RAIL_SWIFT,
   PAYMENT_RAIL_WIRE,
   TAKE_COUNT,
+  TEAM_MEMBER_ROLE_CORPORATE,
 } from "../../helpers/constants";
 import { USER_TYPE_MAP } from "../../helpers/lookups";
 import { uniqueId } from "../../helpers/uniqueId";
@@ -51,6 +52,7 @@ import {
 interface BeneficiaryAccountInsert {
   uniqueId: string;
   userId: bigint;
+  team_member_id?: bigint | null;
   type: number | null;
   country: string;
   currency: string;
@@ -86,6 +88,7 @@ interface BeneficiaryAccountInsert {
 function toBeneficiaryInsert(
   payload: NormalizedBeneficiaryPayload["beneficiaryAccount"],
   userId: bigint,
+  teamMemberId: bigint | null = null,
 ): BeneficiaryAccountInsert {
   const v = payload as Record<string, unknown>;
   const str = (k: string): string | null => {
@@ -95,6 +98,7 @@ function toBeneficiaryInsert(
   return {
     uniqueId: uniqueId(24),
     userId,
+    team_member_id: teamMemberId,
     type: typeof v.type === "number" ? v.type : null,
     country: String(v.country ?? "US"),
     currency: String(v.currency ?? "USD"),
@@ -176,6 +180,9 @@ export const beneficiaryAccountsController = {
       ...(status !== null ? { status } : {}),
       ...(q.recipient_country ? { country: q.recipient_country } : {}),
       ...(q.recipient_currency ? { currency: q.recipient_currency } : {}),
+      ...(req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE
+        ? { team_member_id: req.teamMember.id }
+        : {}),
       ...(q.search_key
         ? {
             OR: [
@@ -221,6 +228,7 @@ export const beneficiaryAccountsController = {
       country: validated.country,
       currency: validated.currency,
       type: validated.type,
+      merchantId: req.user.merchantId,
     });
     return sendResponse(res, "", 200, { form_fields: fields });
   },
@@ -279,6 +287,7 @@ export const beneficiaryAccountsController = {
       const baseInsert = toBeneficiaryInsert(
         normalized.beneficiaryAccount,
         req.user!.id,
+        req.teamMember?.id ?? null,
       );
       // USA + USD with no SWIFT -> create both ACH and WIRE rails
       const isUsdUsaWithoutSwift =
@@ -296,7 +305,7 @@ export const beneficiaryAccountsController = {
           ? [PAYMENT_RAIL_SWIFT]
           : [baseInsert.paymentRail ?? null];
 
-      let last: Awaited<ReturnType<typeof tx.beneficiaryAccount.findFirstOrThrow>> | null = null;
+      const createdItems: { ben: any; additional: any }[] = [];
       for (const rail of rails) {
         const ben = await tx.beneficiaryAccount.create({
           data: {
@@ -308,19 +317,45 @@ export const beneficiaryAccountsController = {
         const additional = toAdditionalInsert(
           normalized.beneficiaryAccountAdditionalDetail,
         );
-        await tx.beneficiaryAdditionalDetail.create({
+        const addRow = await tx.beneficiaryAdditionalDetail.create({
           data: { ...additional, beneficiaryAccountId: ben.id },
         });
-        last = ben;
+        createdItems.push({ ben, additional: addRow });
       }
-      if (!last) throw new ApiException(117);
-      return last;
+      if (createdItems.length === 0) throw new ApiException(117);
+      return createdItems;
     });
 
+    const lastItem = created[created.length - 1]!;
     const refreshed = await prisma().beneficiaryAccount.findUnique({
-      where: { id: created.id },
+      where: { id: lastItem.ben.id },
       include: { additionalDetails: true },
     });
+
+    // Check if the user service is "ec" (Caliza)
+    const { EXTERNAL_TYPE_CALIZA } = await import("../../helpers/constants");
+    const userService = await prisma().userService.findFirst({
+      where: {
+        userId: req.user.id,
+        serviceType: EXTERNAL_TYPE_CALIZA,
+        isActive: 1,
+      },
+    });
+
+    if (userService) {
+      for (const item of created) {
+        setImmediate(async () => {
+          try {
+            const { Caliza } = await import("../../services/external/caliza");
+            await Caliza.createBeneficiary(item.ben, item.additional, req.user!.uniqueId);
+          } catch (err) {
+            const { logger } = await import("../../helpers/logger");
+            logger.error({ err }, "Caliza createBeneficiary background call failed");
+          }
+        });
+      }
+    }
+
     return sendResponse(res, "", 200, {
 // @ts-ignore - Catch-all auto-fix for: Argument of type '{ additional...
       beneficiary_account: beneficiaryAccountResource(refreshed!),
@@ -420,7 +455,8 @@ export const beneficiaryAccountsController = {
       },
       "exports/beneficiary-templates",
     );
-    return sendResponse(res, "Template ready.", 200, { url });
+    const signedUrl = await s3Service.temporaryUrl(url);
+    return sendResponse(res, "Template ready.", 200, { url: signedUrl });
   },
 
   /**
@@ -429,73 +465,126 @@ export const beneficiaryAccountsController = {
    * creates one BeneficiaryAccount per row.
    */
   async bulkStore(req: Request, res: Response): Promise<Response> {
+    res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
     const buffer = extractUploadedFileBuffer(req, "file");
     if (!buffer || buffer.length === 0) {
       throw new ApiException(422, "Excel file (multipart 'file') required.", 422);
     }
 
-    // Capture everything we need before the response is sent.
     const country = String((req.body as { country?: string }).country ?? "");
     const currency = String((req.body as { currency?: string }).currency ?? "");
     const type = Number((req.body as { type?: number }).type ?? 1);
     const userId = req.user.id;
     const user = req.user;
 
-    // Respond IMMEDIATELY — all heavy work (Excel parsing, per-row
-    // validation, DB inserts) runs in the background so the gateway
-    // timeout never fires.
-    const response = sendResponse(res, "Bulk import accepted.", 200, {
-      success: [],
-      errors: [],
-    });
+    try {
+      const { beneficiaryFormFields: bff } = await import("../../helpers/formFields");
+      const { lookupsService: ls } = await import("../../services/lookups/lookupsService");
+      const { flattenFormFields, processExcel } = await import(
+        "../../services/exports/excelImportService"
+      );
+      const { validateAndNormalize, createBeneficiaryValidationCache } = await import(
+        "../../services/beneficiaryAccounts/beneficiaryNormalizer"
+      );
+      const { logger } = await import("../../helpers/logger");
 
-    setImmediate(async () => {
-      try {
-        const { beneficiaryFormFields: bff } = await import("../../helpers/formFields");
-        const { lookupsService: ls } = await import("../../services/lookups/lookupsService");
-        const { flattenFormFields, processExcel } = await import(
-          "../../services/exports/excelImportService"
+      const beneficiary = await bff({ country, currency, type });
+      const paymentType = ls.formatPaymentType(user.userType, type);
+      const supportedCountries = await ls.receivingCountries(paymentType, user);
+      const fields = flattenFormFields({ beneficiary }, ["beneficiary"]);
+      const beneficiaryCache = createBeneficiaryValidationCache();
+      const seenAccounts = new Set<string>();
+
+      const result = await processExcel(buffer, fields, async (payload, rowNumber) => {
+        payload.beneficiary.country = country;
+        payload.beneficiary.currency = currency;
+        const ben = await validateAndNormalize(
+          payload.beneficiary as Record<string, unknown>,
+          user,
+          supportedCountries,
+          beneficiaryCache,
         );
-        const { validateAndNormalize, createBeneficiaryValidationCache } = await import(
-          "../../services/beneficiaryAccounts/beneficiaryNormalizer"
+
+        const accountNumber = ben.beneficiaryAccount.account_number as string | undefined;
+        const cur = String(ben.beneficiaryAccount.currency ?? "");
+        if (accountNumber) {
+          const cacheKey = `${accountNumber}|${cur}`;
+          if (seenAccounts.has(cacheKey)) {
+            throw new Error(`Duplicate account number "${accountNumber}" for currency "${cur}" found in spreadsheet.`);
+          }
+          seenAccounts.add(cacheKey);
+
+          const exists = await prisma().beneficiaryAccount.findFirst({
+            where: {
+              userId: user.id,
+              accountNumber,
+              currency: cur,
+              deletedAt: null,
+            },
+          });
+          if (exists) {
+            throw new Error(`Beneficiary with account number "${accountNumber}" for currency "${cur}" already exists.`);
+          }
+        }
+
+        return { row: rowNumber, beneficiary: ben };
+      });
+
+      if (result.errors.length > 0) {
+        logger.warn({ errorCount: result.errors.length }, "[BulkStore] Beneficiary bulk import failed validation");
+        return sendResponse(res, "Bulk import failed.", 200, {
+          success: [],
+          errors: result.errors,
+        });
+      }
+
+      const { EXTERNAL_TYPE_CALIZA } = await import("../../helpers/constants");
+      const userService = await prisma().userService.findFirst({
+        where: {
+          userId: user.id,
+          serviceType: EXTERNAL_TYPE_CALIZA,
+          isActive: 1,
+        },
+      });
+
+      const created: { row: number; unique_id: string }[] = [];
+
+      for (const row of result.validatedRows) {
+        const baseInsert = toBeneficiaryInsert(
+          row.beneficiary.beneficiaryAccount,
+          userId,
+          req.teamMember?.id ?? null,
         );
-
-        const beneficiary = await bff({ country, currency, type });
-        const paymentType = ls.formatPaymentType(user.userType, type);
-        const supportedCountries = await ls.receivingCountries(paymentType, user);
-        const fields = flattenFormFields({ beneficiary }, ["beneficiary"]);
-        const beneficiaryCache = createBeneficiaryValidationCache();
-
-        const result = await processExcel(buffer, fields, async (payload, rowNumber) => {
-          payload.beneficiary.country = country;
-          payload.beneficiary.currency = currency;
-          const ben = await validateAndNormalize(
-            payload.beneficiary as Record<string, unknown>,
-            user,
-            supportedCountries,
-            beneficiaryCache,
-          );
-          return { row: rowNumber, beneficiary: ben };
+        const ben = await prisma().beneficiaryAccount.create({
+          data: { ...baseInsert, status: 1 },
+        });
+        const additional = toAdditionalInsert(row.beneficiary.beneficiaryAccountAdditionalDetail);
+        const addRow = await prisma().beneficiaryAdditionalDetail.create({
+          data: { ...additional, beneficiaryAccountId: ben.id },
         });
 
-        for (const row of result.validatedRows) {
-          const baseInsert = toBeneficiaryInsert(row.beneficiary.beneficiaryAccount, userId);
-          const ben = await prisma().beneficiaryAccount.create({
-            data: { ...baseInsert, status: 1 },
-          });
-          const additional = toAdditionalInsert(row.beneficiary.beneficiaryAccountAdditionalDetail);
-          await prisma().beneficiaryAdditionalDetail.create({
-            data: { ...additional, beneficiaryAccountId: ben.id },
-          });
+        if (userService) {
+          try {
+            const { Caliza } = await import("../../services/external/caliza");
+            await Caliza.createBeneficiary(ben, addRow, user.uniqueId);
+          } catch (err) {
+            logger.error({ err }, "Caliza bulk createBeneficiary failed");
+          }
         }
-      } catch (err) {
-        const { logger } = await import("../../helpers/logger");
-        logger.error({ err }, "bulkStore background processing failed");
-      }
-    });
 
-    return response;
+        created.push({ row: row.row, unique_id: ben.uniqueId });
+      }
+
+      return sendResponse(res, "Bulk import accepted.", 200, {
+        success: created,
+        errors: [],
+      });
+    } catch (err) {
+      const { logger } = await import("../../helpers/logger");
+      logger.error({ err }, "bulkStore processing failed");
+      throw err;
+    }
   },
 };
 

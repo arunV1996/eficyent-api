@@ -90,7 +90,7 @@ export async function apiRouter(): Promise<Router> {
 
   // Phase 9 - inbound webhooks. Flat paths mirror Laravel's
   // /caliza-webhook, /diginine-webhook, /ef-webhook,
-  // /compliance/webhook-callback, /processingunit-webhook.
+  // /compliance/webhook-callback, /ec-webhook.
   r.use("/", webhookRoutes());
 
   // Phase 10 - dashboards (user-side + team-side already mounted under

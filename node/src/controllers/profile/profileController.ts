@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "../../db/prisma";
 import { ApiException } from "../../helpers/errors";
 import { passwordService } from "../../services/auth/passwordService";
-import { totpService } from "../../services/auth/totpService";
+import { totpService, checkBackupCode } from "../../services/auth/totpService";
 import { qrService } from "../../services/auth/qrService";
 import { encryptEnvelope, decryptEnvelope } from "../../config/kms";
 import { tokenService } from "../../services/auth/tokenService";
@@ -66,7 +66,7 @@ export const profileController = {
     ]);
     const businessModel = await getBusinessModel(merchant?.id ?? req.user.merchantId);
     return emptyEnvelope(res, "", {
-      user: shapeFullUser(req.user, info, docs, !!merchant, businessModel),
+      user: await shapeFullUser(req.user, info, docs, !!merchant, businessModel),
     });
   },
 
@@ -81,18 +81,41 @@ export const profileController = {
 
     const privateKey = await decryptEnvelope(user.privateKey as string);
 
+    const dataPayload: Record<string, any> = {
+      user: {
+        unique_id: user.uniqueId,
+        api_key: user.apiKey,
+        salt_key: user.saltKey ? await decryptEnvelope(user.saltKey) : null,
+        private_key: privateKey,
+      },
+    };
+
+    if (user.merchantId) {
+      let merchant = await prisma().merchant.findUnique({
+        where: { id: user.merchantId },
+      });
+
+      if (merchant) {
+        if (!merchant.apiKey || !merchant.saltKey || !merchant.privateKey) {
+          merchant = await credentialService.generateAndStore(merchant.id, "merchant");
+        }
+        
+        const merchantPrivateKey = await decryptEnvelope(merchant?.privateKey as string);
+        
+        dataPayload.merchant = {
+          unique_id: merchant?.uniqueId || null,
+          api_key: merchant?.apiKey || null,
+          salt_key: merchant?.saltKey ? await decryptEnvelope(merchant?.saltKey) : null,
+          private_key: merchantPrivateKey,
+        };
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: "",
       code: "",
-      data: {
-        user: {
-          unique_id: user.uniqueId,
-          api_key: user.apiKey,
-          salt_key: user.saltKey ? await decryptEnvelope(user.saltKey) : null,
-          private_key: privateKey,
-        },
-      },
+      data: dataPayload,
     });
   },
 
@@ -203,7 +226,6 @@ export const profileController = {
         data: {
           tfaSecret: await encryptEnvelope(secret),
           backupCodes: codes,
-          isTfaSetupCompleted: 1,
         },
       });
     }
@@ -221,7 +243,6 @@ export const profileController = {
         data: {
           tfaSecret: await encryptEnvelope(freshSecret),
           backupCodes: freshCodes,
-          isTfaSetupCompleted: 1,
         },
       });
       decrypted = freshSecret;
@@ -235,21 +256,16 @@ export const profileController = {
       issuerLabel,
     );
 
-    const qrSvg = await qrService.generateSvg(otpauthUrl);
-    const fullQrSvg = `<?xml version="1.0" encoding="UTF-8"?>\n${qrSvg}\n`;
+    const qrDataUrl = await qrService.generateSvg(otpauthUrl);
 
     // Construct a QR PNG URL using issuer label + unique ID (mirrors Laravel storage path)
-    const appUrl =
-      (await settingGet<string>("app_url", "")) ||
-      process.env["APP_URL"] ||
-      "";
-    const qrPngUrl = `${appUrl.replace(/\/$/, "")}/storage/qr_codes/${user.uniqueId}.png`;
+    
 
     return emptyEnvelope(res, "", {
-      qr_code: fullQrSvg,
+      qr_code: qrDataUrl,
       tfa_secret: decrypted,
       qr_code_url: otpauthUrl,
-      qr_code_png: qrPngUrl,
+      qr_code_png: qrDataUrl, // Fallback to data URI if frontend relies on image rendering
     });
   },
 
@@ -260,10 +276,31 @@ export const profileController = {
     const ok = await passwordService.verify(req.user.password, body.password);
     if (!ok) throw new ApiException(125);
     if (!req.user.tfaSecret) throw new ApiException(138);
-    const tfaOk = await totpService.verify(
+    let tfaOk = await totpService.verify(
       req.user.tfaSecret,
       body.verification_code,
     );
+    if (!tfaOk && req.user.backupCodes) {
+      let plaintextCodes = req.user.backupCodes;
+      if (!/^\d{6}(,\d{6})*$/.test(plaintextCodes)) {
+        try {
+          plaintextCodes = await decryptEnvelope(plaintextCodes);
+        } catch (e) {
+          // fallback
+        }
+      }
+      const backupCheck = checkBackupCode(plaintextCodes, body.verification_code);
+      if (backupCheck.ok) {
+        tfaOk = true;
+        const encryptedRemaining = backupCheck.remaining
+          ? await encryptEnvelope(backupCheck.remaining)
+          : null;
+        await prisma().user.update({
+          where: { id: req.user.id },
+          data: { backupCodes: encryptedRemaining },
+        });
+      }
+    }
     if (!tfaOk) throw new ApiException(139);
 
     const isCurrentlyEnabled = !!req.user.isTfaEnabled;
@@ -283,7 +320,15 @@ export const profileController = {
 
     const data: Record<string, unknown> = {};
     if (becomingEnabled && updated.backupCodes) {
-      data["backup_codes"] = updated.backupCodes.split(",");
+      let plaintextCodes = updated.backupCodes;
+      if (!/^\d{6}(,\d{6})*$/.test(plaintextCodes)) {
+        try {
+          plaintextCodes = await decryptEnvelope(plaintextCodes);
+        } catch (e) {
+          // fallback
+        }
+      }
+      data["backup_codes"] = plaintextCodes.split(",");
     }
 
     return emptyEnvelope(res, message, data);
@@ -298,9 +343,10 @@ export const profileController = {
     if (!req.user.isTfaSetupCompleted) throw new ApiException(138);
 
     const codes = generateBackupCodes();
+    const encryptedCodes = await encryptEnvelope(codes);
     await prisma().user.update({
       where: { id: req.user.id },
-      data: { backupCodes: codes },
+      data: { backupCodes: encryptedCodes },
     });
     return emptyEnvelope(res, "Backup codes regenerated successfully.", {
       backup_codes: codes.split(","),
@@ -373,7 +419,7 @@ export const profileController = {
         is_editable: true,
         is_repeatable: false,
         category: "Proof of Address",
-        children: isBusiness ? [expiryDateChild] : [backFileChild, expiryDateChild],
+        children: [backFileChild, expiryDateChild],
         validation: [],
         values_supported: [],
       },
@@ -385,7 +431,7 @@ export const profileController = {
         is_editable: true,
         is_repeatable: false,
         category: isBusiness ? "Proof of Ownership" : "ID Document",
-        children: isBusiness ? [expiryDateChild] : [backFileChild, expiryDateChild],
+        children: [backFileChild, expiryDateChild],
         validation: [],
         values_supported: [],
       },
@@ -397,7 +443,7 @@ export const profileController = {
         is_editable: true,
         is_repeatable: false,
         category: "Source of Funds",
-        children: isBusiness ? [expiryDateChild] : [backFileChild, expiryDateChild],
+        children: [backFileChild, expiryDateChild],
         validation: [],
         values_supported: [],
       },
@@ -567,7 +613,7 @@ export const profileController = {
 
     const businessModel = await getBusinessModel(merchant?.id ?? refreshed.merchantId);
     return emptyEnvelope(res, "Profile updated successfully.", {
-      user: shapeFullUser(refreshed, info, docs, !!merchant, businessModel),
+      user: await shapeFullUser(refreshed, info, docs, !!merchant, businessModel),
     });
   },
 };

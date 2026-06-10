@@ -117,6 +117,7 @@ class MassiveQuoteDriver implements QuoteDriver {
       expires_at: inner.expires_at ?? undefined,
       external_data: inner as Record<string, unknown>,
       quote_type: payload.quote_type,
+      external_commission_amount: 0,
     };
   }
 

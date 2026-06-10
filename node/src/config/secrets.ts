@@ -87,6 +87,7 @@ export interface AppSecret {
   APP_KEY: string;
   REQUEST_SIGNING_SECRET?: string;
   FVBANK_WEBHOOK_SECRET?: string;
+  CORS_ORIGINS?: string;
 }
 
 export interface AuthSecret {
@@ -191,6 +192,7 @@ export const Secrets = {
       APP_KEY: (await cfg("APP_KEY")) ?? "dev-app-key-not-for-production",
       REQUEST_SIGNING_SECRET: await cfg("REQUEST_SIGNING_SECRET"),
       FVBANK_WEBHOOK_SECRET: await cfg("FVBANK_WEBHOOK_SECRET"),
+      CORS_ORIGINS: await cfg("CORS_ORIGINS"),
     };
   },
 
@@ -287,7 +289,7 @@ export const Secrets = {
     if (Object.keys(out).length === 0) {
       throw new Error(
         `External provider "${provider}" has no keys configured. ` +
-          `Set ${prefix}* keys in your bundled AWS secret OR in env.`,
+        `Set ${prefix}* keys in your bundled AWS secret OR in env.`,
       );
     }
     return out as T;
@@ -341,8 +343,8 @@ export async function bootstrapSecrets(): Promise<void> {
   const id = env().SECRET_ID_BUNDLE;
   if (id) {
     logger.info(
-      { event: "secrets.fetch", id },
-      "Loading bundled secret from AWS Secrets Manager",
+      { event: "secrets.fetch" },
+      "Loading bundled secret",
     );
     const flat = await loadFlatSecret();
     // Hydrate bundled keys into process.env so code that reads process.env.*

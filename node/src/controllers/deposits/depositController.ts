@@ -12,9 +12,9 @@ import { apiSuccess } from "../../helpers/messages";
 import {
   DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED,
   DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
-  DEPOSIT_TRANSACTION_STATUS_MAP,
   DEPOSIT_TYPE_TOPUP,
   TAKE_COUNT,
+  TEAM_MEMBER_ROLE_CORPORATE,
 } from "../../helpers/constants";
 import { uniqueId } from "../../helpers/uniqueId";
 import { s3Service } from "../../services/storage/s3Service";
@@ -82,10 +82,17 @@ export const depositController = {
   async index(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as DepositListInput;
-    const status =
-      q.status && q.status in DEPOSIT_TRANSACTION_STATUS_MAP
-        ? DEPOSIT_TRANSACTION_STATUS_MAP[q.status]
-        : null;
+    let statusFilter: any = undefined;
+    if (q.status) {
+      const s = q.status.toUpperCase();
+      if (s === "PROCESSING") {
+        statusFilter = { in: [0, 4, 5] };
+      } else if (s === "FAILED") {
+        statusFilter = { in: [2, 3, 6] };
+      } else if (s === "COMPLETED") {
+        statusFilter = 1;
+      }
+    }
 
     let virtualAccountId: bigint | null = null;
     if (q.bank_account_id) {
@@ -99,7 +106,7 @@ export const depositController = {
 
     const where: Prisma.DepositTransactionWhereInput = {
       userId: req.user.id,
-      ...(status !== null ? { status } : {}),
+      ...(statusFilter !== undefined ? { status: statusFilter } : {}),
       ...(virtualAccountId !== null ? { virtualAccountId } : {}),
       ...(q.type ? { type: q.type } : {}),
       ...(q.from_date && q.to_date
@@ -117,6 +124,9 @@ export const depositController = {
               { externalReferenceId: { contains: q.search_key } },
             ],
           }
+        : {}),
+      ...(req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE
+        ? { teamMemberId: req.teamMember.id }
         : {}),
     };
     const skip = q.skip ?? 0;
@@ -156,16 +166,16 @@ export const depositController = {
       where: { ...baseScope, uniqueId: q.bank_account_id },
     });
     if (!va) throw new ApiException(120);
-    const merchantId = req.user.merchantId
-      ? (
-          await prisma().merchant.findFirst({
-            where: { id: req.user.merchantId },
-          })
-        )?.id ?? null
+    const merchant = req.user.merchantId
+      ? await prisma().merchant.findFirst({
+          where: { id: req.user.merchantId },
+        })
       : null;
+    const merchantId = merchant?.id ?? null;
+    const merchantType = merchant?.type ?? null;
     const currency = (q.deposit_currency ?? va.currency).toUpperCase();
     const commissions = await calcDepositCommissions(
-      { userId: req.user.id, merchantId },
+      { userId: req.user.id, merchantId, merchantType },
       Number(q.amount),
       currency,
     );
@@ -190,16 +200,16 @@ export const depositController = {
     });
     if (!va) throw new ApiException(120);
 
-    const merchantId = req.user.merchantId
-      ? (
-          await prisma().merchant.findFirst({
-            where: { id: req.user.merchantId },
-          })
-        )?.id ?? null
+    const merchant = req.user.merchantId
+      ? await prisma().merchant.findFirst({
+          where: { id: req.user.merchantId },
+        })
       : null;
+    const merchantId = merchant?.id ?? null;
+    const merchantType = merchant?.type ?? null;
     const currency = (body.deposit_currency ?? va.currency).toUpperCase();
     const commissions = await calcDepositCommissions(
-      { userId: req.user.id, merchantId },
+      { userId: req.user.id, merchantId, merchantType },
       Number(body.amount),
       currency,
     );
@@ -236,6 +246,7 @@ export const depositController = {
         data: {
           uniqueId: uniqueId(24),
           userId: req.user!.id,
+          teamMemberId: req.teamMember?.id ?? null,
           virtualAccountId: va.id,
           adminWalletId,
           amount: new Prisma.Decimal(String(body.amount)),
@@ -266,8 +277,8 @@ export const depositController = {
           depositTransactionId: dep.id,
           fromStatus: null,
           toStatus: String(DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED),
-          changedBy: req.user!.id.toString(),
-          changedByType: "user",
+          changedBy: req.teamMember ? req.teamMember.id.toString() : req.user!.id.toString(),
+          changedByType: req.teamMember ? "team" : "user",
           changedAt: new Date(),
         },
       });
@@ -309,10 +320,17 @@ export const depositController = {
     const fileType = String((req.query as { type?: string }).type ?? "pdf").toLowerCase();
 
     // Reuse the same filter logic as index() but no pagination.
-    const status =
-      q.status && q.status in DEPOSIT_TRANSACTION_STATUS_MAP
-        ? DEPOSIT_TRANSACTION_STATUS_MAP[q.status]
-        : null;
+    let statusFilter: any = undefined;
+    if (q.status) {
+      const s = q.status.toUpperCase();
+      if (s === "PROCESSING") {
+        statusFilter = { in: [0, 4, 5] };
+      } else if (s === "FAILED") {
+        statusFilter = { in: [2, 3, 6] };
+      } else if (s === "COMPLETED") {
+        statusFilter = 1;
+      }
+    }
     let virtualAccountId: bigint | null = null;
     if (q.bank_account_id) {
       const baseScope = await getVirtualAccountScope(req.user);
@@ -324,7 +342,7 @@ export const depositController = {
     }
     const where: Prisma.DepositTransactionWhereInput = {
       userId: req.user.id,
-      ...(status !== null ? { status } : {}),
+      ...(statusFilter !== undefined ? { status: statusFilter } : {}),
       ...(virtualAccountId !== null ? { virtualAccountId } : {}),
       ...(q.type && !["pdf", "excel", "xlsx"].includes(q.type.toLowerCase())
         ? { type: q.type }
@@ -344,6 +362,9 @@ export const depositController = {
               { externalReferenceId: { contains: q.search_key } },
             ],
           }
+        : {}),
+      ...(req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE
+        ? { teamMemberId: req.teamMember.id }
         : {}),
     };
     const rows = await prisma().depositTransaction.findMany({
@@ -380,11 +401,26 @@ export const depositController = {
       contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       extension = "xlsx";
     } else {
-      const logoPath = path.join(process.cwd(), "public", "logo", "eficyent-logo-dark.png");
       let logoUrl = "";
-      if (fs.existsSync(logoPath)) {
-        const logoBase64 = fs.readFileSync(logoPath).toString("base64");
-        logoUrl = `data:image/png;base64,${logoBase64}`;
+      const logoPaths = [
+        path.join(__dirname, "..", "..", "..", "public", "logo", "eficyent-logo-dark.png"),
+        path.join(__dirname, "..", "..", "public", "logo", "eficyent-logo-dark.png"),
+        path.join(process.cwd(), "public", "logo", "eficyent-logo-dark.png"),
+        path.join(process.cwd(), "dist", "public", "logo", "eficyent-logo-dark.png"),
+      ];
+      for (const p of logoPaths) {
+        if (fs.existsSync(p)) {
+          try {
+            const logoBase64 = fs.readFileSync(p).toString("base64");
+            logoUrl = `data:image/png;base64,${logoBase64}`;
+            break;
+          } catch (e) {
+            // ignore and try next path
+          }
+        }
+      }
+      if (!logoUrl) {
+        logoUrl = `${process.env.APP_URL || `http://localhost:${process.env.PORT || 1730}`}/logo/eficyent-logo-dark.png`;
       }
 
       const translations: Record<string, string> = {
@@ -450,7 +486,8 @@ export const depositController = {
       { buffer, contentType, extension },
       "exports/deposits",
     );
-    return emptyEnvelope(res, "", { url });
+    const signedUrl = await s3Service.temporaryUrl(url);
+    return emptyEnvelope(res, "", { url: signedUrl });
   },
 
   async retryDeposit(req: Request, res: Response): Promise<Response> {
@@ -469,6 +506,18 @@ export const depositController = {
         data: {
           uniqueId: newUniqueId,
           status: DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
+        },
+      });
+
+      await prisma().depositTransactionStatusHistory.create({
+        data: {
+          uniqueId: uniqueId(24),
+          depositTransactionId: transaction.id,
+          fromStatus: String(transaction.status),
+          toStatus: String(DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED),
+          changedBy: req.user!.id.toString(),
+          changedByType: "user",
+          changedAt: new Date(),
         },
       });
 

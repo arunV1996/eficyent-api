@@ -57,8 +57,7 @@ async function resolveMerchantId(user: User): Promise<bigint | null> {
   if (!user.merchantId) return null;
   const { prisma } = await import("../../db/prisma");
   const m = await prisma().merchant.findFirst({
-    // @ts-expect-error - Auto-fixed bigint/string mismatch
-    where: { uniqueId: user.merchantId },
+    where: { id: user.merchantId },
   });
   return m?.id ?? null;
 }

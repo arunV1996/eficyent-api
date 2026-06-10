@@ -6,7 +6,6 @@ import {
   validateMerchant,
 } from "../middleware/access";
 import { idempotency } from "../middleware/idempotency";
-import { limitedRateLimit } from "../middleware/rateLimit";
 import { validate } from "../middleware/validateRequest";
 import { depositController } from "../controllers/deposits/depositController";
 import {
@@ -24,7 +23,6 @@ import {
  */
 export async function depositsRoutes(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
   r.use(
     asyncHandler(authSanctum),
     asyncHandler(validateMerchant),
@@ -49,12 +47,11 @@ export async function depositsRoutes(): Promise<Router> {
   );
   r.post(
     "/store",
-    limited,
     idempotency(),
     validate({ body: DepositCreateSchema }),
     asyncHandler(depositController.store),
   );
-  r.get("/export", limited, depositController.export);
+  r.get("/export", depositController.export);
   return r;
 }
 
@@ -63,10 +60,8 @@ export async function depositsRoutes(): Promise<Router> {
  */
 export async function retryDepositRoute(): Promise<Router> {
   const r = Router();
-  const limited = await limitedRateLimit();
   r.post(
     "/retry_deposit/:trxn",
-    limited,
     validate({ params: DepositTrxnParamSchema }),
     asyncHandler(depositController.retryDeposit),
   );

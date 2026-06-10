@@ -1,6 +1,8 @@
 import { Wallet, WalletTransaction } from "@prisma/client";
 import { walletStatusLabel, walletTransactionStatusLabel } from "../../helpers/constants";
 import { formatDate } from "../../helpers/lookups";
+import { quoteResource, QuoteDto } from "../quotes/quoteResource";
+import { virtualAccountResource, VirtualAccountDto } from "../virtualAccounts/virtualAccountResource";
 
 export interface WalletDto {
   unique_id: string;
@@ -27,34 +29,49 @@ export function walletResource(
 export interface WalletTransactionDto {
   unique_id: string;
   transaction_id: string;
+  wallet: WalletDto | object;
+  quote: QuoteDto | object;
   amount: string;
   fees: string;
   total_amount: string;
-  type: number;
   status: string;
-  balance_before: string | null;
-  balance_after: string | null;
-  quote_id: string | null;
-  beneficiary_transaction_id: string | null;
+  transaction_type: number;
   created_at: string;
+  virtual_account?: VirtualAccountDto | null;
+  balance_before?: string | null;
+  balance_after?: string | null;
+  beneficiary_transaction_id?: string | null;
 }
 
 export function walletTransactionResource(t: WalletTransaction): WalletTransactionDto {
   const trans = t as any;
-  return {
+  const walletObj = trans.wallet ? walletResource(trans.wallet) : {};
+  const quoteObj = trans.quote ? quoteResource(trans.quote) : {};
+
+  const dto: WalletTransactionDto = {
     unique_id: t.uniqueId,
     transaction_id: trans.transactionId || t.uniqueId,
+    wallet: walletObj,
+    quote: quoteObj,
     amount: t.amount.toString(),
     fees: t.fees.toString(),
     total_amount: t.totalAmount.toString(),
-    type: t.type,
     status: walletTransactionStatusLabel(t.status),
+    transaction_type: t.type,
+    created_at: formatDate(t.createdAt),
     balance_before: t.balanceBefore ? t.balanceBefore.toString() : null,
     balance_after: t.balanceAfter ? t.balanceAfter.toString() : null,
-    quote_id: t.quoteId ? t.quoteId.toString() : null,
     beneficiary_transaction_id: t.beneficiaryTransactionId
       ? t.beneficiaryTransactionId.toString()
       : null,
-    created_at: formatDate(t.createdAt),
   };
+
+  if (trans.quote) {
+    const q = trans.quote;
+    if (q.sourceType === "App\\Models\\VirtualAccount" && q.virtual_accounts) {
+      dto.virtual_account = virtualAccountResource(q.virtual_accounts);
+    }
+  }
+
+  return dto;
 }

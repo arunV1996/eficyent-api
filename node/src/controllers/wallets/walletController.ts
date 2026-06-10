@@ -160,8 +160,9 @@ export const walletController = {
     if (!req.user) throw new ApiException(102);
     const body = req.body as ConvertInput;
 
+    // Mirror Laravel: Quote::where('unique_id', ...)->first() — no userId scoping.
     const quote = await prisma().quote.findFirst({
-      where: { uniqueId: body.quote_id, userId: req.user.id },
+      where: { uniqueId: body.quote_id },
     });
     if (!quote) throw new ApiException(121);
     if (!quote.receivingCurrency) throw new ApiException(121);
@@ -179,10 +180,9 @@ export const walletController = {
       where: { ...baseScope, id: quote.sourceId },
     });
     if (!va) throw new ApiException(120);
-    const checkBalance = await computeBankBalance(req.user, va);
+    const checkBalance = await computeBankBalance(req.user, va, req.teamMember);
     if (quote.amount.gt(checkBalance)) throw new ApiException(154);
 
-    const balanceBefore = await getWalletBalance(req.user, wallet);
     void ZERO;
 
     const randPart = Math.floor(Math.random() * 900) + 100;
@@ -197,6 +197,11 @@ export const walletController = {
     const transactionIdStr = `${randPart}${datePart}${fxPart}`;
 
     const wt = await prisma().$transaction(async (tx) => {
+      // Pessimistic lock on the VirtualAccount (source) and Wallet (destination)
+      // to serialize concurrent conversions and prevent race conditions.
+      await tx.$queryRaw`SELECT id FROM virtual_accounts WHERE id = ${va.id} FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM wallets WHERE id = ${wallet.id} FOR UPDATE`;
+
       const created = await tx.walletTransaction.create({
         data: {
           uniqueId: uniqueId(24),
@@ -217,10 +222,12 @@ export const walletController = {
         where: { id: quote.id },
         data: { status: QUOTE_SUBMITTED },
       });
-      // Ledger.transaction polymorphic write - mirrors Helper::updateLedger
-      // for the WalletTransaction case. Full polymorphic ledger mirroring
-      // BeneficiaryTransaction + DepositTransaction lands in Phase 5; here
-      // we record the wallet credit so the audit chain stays continuous.
+
+      // Mirror Laravel's Helper::updateLedger timing — balance is computed
+      // AFTER the wallet transaction row is inserted so the new CREDIT is
+      // included in the aggregate (getWalletBalance = SUM(CREDIT) - SUM(DEBIT)).
+      const balanceAfterCreate = await getWalletBalance(req.user!, wallet);
+
       await tx.ledger.create({
         data: {
           uniqueId: uniqueId(24),
@@ -229,26 +236,59 @@ export const walletController = {
           walletId: wallet.id,
           transactionType: "App\\Models\\WalletTransaction",
           transactionId: created.id,
-          balance: balanceBefore,
+          balance: balanceAfterCreate,
           externalType: quote.externalType,
           description: `Wallet conversion (${quote.uniqueId})`,
         },
       });
       return created;
     });
+
+    const wtWithRelations = {
+      ...wt,
+      wallet,
+      quote: {
+        ...quote,
+        virtual_accounts: va,
+      },
+    };
+
     return sendResponse(res, apiSuccess(108), 108, {
-      wallet_transaction: walletTransactionResource(wt as never),
+      wallet_transaction: walletTransactionResource(wtWithRelations as any),
     });
   },
 
   async transactions(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as WalletTransactionsInput;
+
+    let statusFilter: any = undefined;
+    if (q.status !== undefined) {
+      if (typeof q.status === "number") {
+        statusFilter = q.status;
+      } else if (typeof q.status === "string" && !isNaN(Number(q.status)) && q.status.trim() !== "") {
+        statusFilter = Number(q.status);
+      } else {
+        const s = String(q.status).toUpperCase();
+        if (s === "PENDING") {
+          statusFilter = 0;
+        } else if (s === "COMPLETED") {
+          statusFilter = 1;
+        } else if (s === "FAILED") {
+          statusFilter = { in: [2, 3, 4] };
+        } else if (s === "REJECTED") {
+          statusFilter = 3;
+        } else if (s === "CANCELLED") {
+          statusFilter = 4;
+        }
+      }
+    }
+
     const where: Prisma.WalletTransactionWhereInput = {
       userId: req.user.id,
       beneficiaryTransactionId: null,
       ...(q.transaction_type !== undefined ? { type: q.transaction_type } : {}),
-      ...(q.status !== undefined ? { status: q.status } : {}),
+      ...(statusFilter !== undefined ? { status: statusFilter } : {}),
       ...(q.search_key ? { uniqueId: { contains: q.search_key } } : {}),
     };
     if (q.wallet_id) {
@@ -273,6 +313,14 @@ export const walletController = {
         orderBy: { createdAt: "desc" },
         skip,
         take,
+        include: {
+          wallet: true,
+          quote: {
+            include: {
+              virtual_accounts: true,
+            },
+          },
+        },
       }),
     ]);
     return sendResponse(res, "", 200, {
@@ -286,6 +334,14 @@ export const walletController = {
     const q = req.query as unknown as WalletTransactionShowInput;
     const t = await prisma().walletTransaction.findFirst({
       where: { userId: req.user.id, uniqueId: q.wallet_transaction_id },
+      include: {
+        wallet: true,
+        quote: {
+          include: {
+            virtual_accounts: true,
+          },
+        },
+      },
     });
     if (!t) throw new ApiException(404, undefined, 404);
     return sendResponse(res, "", 200, {

@@ -22,6 +22,7 @@ export const qrService = {
   },
 
   async generateSvg(uri: string): Promise<string> {
-    return QRCode.toString(uri, { type: "svg", width: 200, margin: 2 });
+    // Return a base64 PNG data URI so the frontend can use it directly in <img src="..." />
+    return QRCode.toDataURL(uri, { type: "image/png", width: 200, margin: 2 });
   },
 };

@@ -2,22 +2,8 @@ import { call } from "./httpClient";
 import { Secrets } from "../../config/secrets";
 import { logger } from "../../helpers/logger";
 import { Prisma } from "@prisma/client";
+import { prisma } from "../../db/prisma";
 
-/**
- * Mirror of App\\Helpers\\TelegramHelper + App\\Services\\Telegram\\TelegramNotifier.
- *
- * Telegram is best-effort - we never let a notification failure break the
- * primary operation. Every send returns void.
- *
- * Bot token + default chat id come from the `eficyent/<env>/external/telegram`
- * secret bundle:
- *   {
- *     "BOT_TOKEN": "...",
- *     "CHAT_ID": "...",
- *     "CALLBACK_CHAT_ID": "...",
- *     "ENABLED": true
- *   }
- */
 
 interface TelegramSecret extends Record<string, unknown> {
   BOT_TOKEN: string;
@@ -83,15 +69,13 @@ function escape(s: unknown): string {
 
 function formatBeneficiaryTransaction(payload: BeneficiaryTransactionPayload): string {
   return [
-    `<b>Beneficiary Transaction Created</b>`,
+    `Transaction From <b>${escape(payload.user)}</b>`,
     ``,
-    `Txn ID: <code>${escape(payload.id)}</code>`,
-    `User: <b>${escape(payload.user)}</b>`,
-    `Amount: <b>${escape(payload.from_amount)} ${escape(payload.from_currency)}</b>`,
-    `Receiving: <b>${escape(payload.to_amount)} ${escape(payload.to_currency)}</b>`,
-    `FX Rate: <b>${escape(payload.fx_rate)}</b>`,
-    `Status: <b>${escape(payload.status)}</b>`,
-    `Time: <b>${escape(payload.created_at)}</b>`,
+    `<b>From Amount :</b> ${escape(payload.from_amount)} ${escape(payload.from_currency)}`,
+    `<b>To Amount :</b> ${escape(payload.to_amount)} ${escape(payload.to_currency)}`,
+    `<b>Exchange Rate :</b> 1 ${escape(payload.from_currency)} = ${escape(payload.fx_rate)} ${escape(payload.to_currency)}`,
+    `<b>Status :</b> ${escape(payload.status)}`,
+    `<b>Date :</b> ${escape(payload.created_at)}`,
   ].join("\n");
 }
 
@@ -157,15 +141,89 @@ interface CallbackPayload {
   channel?: string | null;
 }
 
+async function getChatIdForUser(
+  userId: bigint | null | undefined,
+  defaultChatId: string,
+): Promise<string> {
+  if (!userId) return defaultChatId;
+  try {
+    const user = await prisma().user.findUnique({
+      where: { id: userId },
+      select: { merchantId: true },
+    });
+    if (user && user.merchantId) {
+      const merchant = await prisma().merchant.findUnique({
+        where: { id: user.merchantId },
+        select: { telegram_channel: true },
+      });
+      if (merchant && merchant.telegram_channel) {
+        return merchant.telegram_channel;
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, userId: userId.toString() }, "Error resolving merchant chat ID");
+  }
+  return defaultChatId;
+}
+
 export const TelegramNotifier = {
+  async notifyBeneficiaryTransaction(txnId: bigint): Promise<void> {
+    const secret = await loadSecret();
+    if (!secret || String(secret.ENABLED) === "false") return;
+    
+    const txn = await prisma().beneficiaryTransaction.findUnique({
+      where: { id: txnId },
+      include: { users: true, quotes: true },
+    });
+    
+    if (!txn || !txn.users || !txn.quotes) return;
+    
+    let fromCurrency = "";
+    if (txn.quotes.sourceType === "App\\Models\\VirtualAccount") {
+      const va = await prisma().virtualAccount.findUnique({ where: { id: txn.quotes.sourceId! } });
+      if (va) fromCurrency = va.currency;
+    } else if (txn.quotes.sourceType === "App\\Models\\Wallet") {
+      const wallet = await prisma().wallet.findUnique({ where: { id: txn.quotes.sourceId! } });
+      if (wallet) fromCurrency = wallet.currency;
+    }
+
+    const { beneficiaryTransactionStatusLabel } = await import("../../helpers/constants");
+
+    const payload: BeneficiaryTransactionPayload = {
+      id: txn.uniqueId,
+      user: txn.users.firstName ? `${txn.users.firstName} ${txn.users.lastName ?? ""}`.trim() : txn.users.email,
+      from_amount: txn.totalAmount.toString(),
+      from_currency: fromCurrency,
+      to_amount: txn.recipientAmount?.toString() ?? "",
+      to_currency: txn.receivingCurrency ?? "",
+      fx_rate: txn.quotes.fxRate ?? "",
+      status: beneficiaryTransactionStatusLabel(txn.status),
+      created_at: txn.createdAt ? txn.createdAt.toISOString() : "",
+    };
+
+    const chatId = await getChatIdForUser(txn.users.id, secret.CHAT_ID);
+
+    await sendRaw(
+      formatBeneficiaryTransaction(payload),
+      chatId,
+      secret,
+    );
+  },
+
   async beneficiaryTransactionCreated(
     payload: BeneficiaryTransactionPayload,
   ): Promise<void> {
     const secret = await loadSecret();
     if (!secret || String(secret.ENABLED) === "false") return;
+    const txn = await prisma().beneficiaryTransaction.findFirst({
+      where: { uniqueId: payload.id },
+      select: { userId: true },
+    });
+    const defaultChat = payload.channel ?? secret.CHAT_ID;
+    const chatId = txn ? await getChatIdForUser(txn.userId, defaultChat) : defaultChat;
     await sendRaw(
       formatBeneficiaryTransaction(payload),
-      payload.channel ?? secret.CHAT_ID,
+      chatId,
       secret,
     );
   },
@@ -173,15 +231,27 @@ export const TelegramNotifier = {
   async depositReceived(payload: DepositPayload): Promise<void> {
     const secret = await loadSecret();
     if (!secret || String(secret.ENABLED) === "false") return;
-    await sendRaw(formatDeposit(payload), payload.channel ?? secret.CHAT_ID, secret);
+    const txn = await prisma().depositTransaction.findFirst({
+      where: { uniqueId: payload.id },
+      select: { userId: true },
+    });
+    const defaultChat = payload.channel ?? secret.CHAT_ID;
+    const chatId = txn ? await getChatIdForUser(txn.userId, defaultChat) : defaultChat;
+    await sendRaw(formatDeposit(payload), chatId, secret);
   },
 
   async processingUnitInitiationFailed(payload: PUFailurePayload): Promise<void> {
     const secret = await loadSecret();
     if (!secret || String(secret.ENABLED) === "false") return;
+    const txn = await prisma().beneficiaryTransaction.findFirst({
+      where: { uniqueId: payload.id },
+      select: { userId: true },
+    });
+    const defaultChat = payload.channel ?? secret.CHAT_ID;
+    const chatId = txn ? await getChatIdForUser(txn.userId, defaultChat) : defaultChat;
     await sendRaw(
       formatPUFailure(payload),
-      payload.channel ?? secret.CHAT_ID,
+      chatId,
       secret,
     );
   },

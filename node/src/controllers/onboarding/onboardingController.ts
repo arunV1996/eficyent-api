@@ -246,7 +246,7 @@ export const onboardingController = {
       where: { userId: updated.id },
     });
     return sendResponse(res, apiSuccess(106), 106, {
-      user: shapeOnboardingUser(updated, info),
+      user: await shapeOnboardingUser(updated, info),
     });
   },
 
@@ -335,7 +335,7 @@ export const onboardingController = {
     });
 
     const data: Record<string, unknown> = {
-      user: shapeDocumentsUser(resultUser as unknown as User, documents),
+      user: await shapeDocumentsUser(resultUser as unknown as User, documents),
     };
 
     // KYC handoff for individuals - mirror of Laravel's

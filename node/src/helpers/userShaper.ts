@@ -47,26 +47,57 @@ export function roleLabel(role: number | bigint | null): string {
   }
 }
 
-function shapeDocument(doc: UserDocument): Record<string, unknown> {
+async function shapeDocument(doc: UserDocument): Promise<Record<string, unknown>> {
+  let signedFile = doc.documentFile ?? "";
+  let signedBackFile = doc.documentBackFile ?? "";
+  try {
+    const { s3Service } = await import("../services/storage/s3Service");
+    if (doc.documentFile) signedFile = await s3Service.temporaryUrl(doc.documentFile);
+    if (doc.documentBackFile) signedBackFile = await s3Service.temporaryUrl(doc.documentBackFile);
+  } catch {
+    // fallback
+  }
   return {
     document_name: doc.documentName ?? "",
     document_type: doc.documentType ?? "",
     document_country: doc.documentCountry ?? "",
-    document_file: doc.documentFile ?? "",
-    document_back_file: doc.documentBackFile ?? "",
+    document_file: signedFile,
+    document_back_file: signedBackFile,
     document_expiry_date: doc.documentExpiryDate
       ? doc.documentExpiryDate.toISOString().split("T")[0]
       : "",
   };
 }
 
-export function shapeFullUser(
+async function formatBusinessPersons(
+  businessPersons: any
+): Promise<any[]> {
+  if (!Array.isArray(businessPersons)) return [];
+  const { lookupsService } = await import("../services/lookups/lookupsService");
+  const { LOOKUP_TYPE_ID_TYPE } = await import("./constants");
+  return Promise.all(
+    businessPersons.map(async (person: any) => {
+      if (person && typeof person === "object") {
+        const idTypeFormatted = person.id_type
+          ? await lookupsService.findValuebyKey(person.id_type, LOOKUP_TYPE_ID_TYPE)
+          : "";
+        return {
+          ...person,
+          id_type: idTypeFormatted || String(person.id_type || ""),
+        };
+      }
+      return person;
+    })
+  );
+}
+
+export async function shapeFullUser(
   user: User,
   info: UserInformation | null,
   docs: UserDocument[] = [],
   isMerchant: boolean = false,
   businessModel: string = "mto",
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const result: Record<string, unknown> = {
     unique_id: user.uniqueId,
     email: user.email,
@@ -99,7 +130,7 @@ export function shapeFullUser(
       purpose_of_transactions: info?.purposeOfTransactions ?? "",
       tax_id: info?.taxId ?? "",
       website: info?.website ?? "",
-      business_persons: info?.businessPersons ?? [],
+      business_persons: await formatBusinessPersons(info?.businessPersons),
       type_of_business: info?.type_of_business ?? "",
     };
   } else {
@@ -124,7 +155,7 @@ export function shapeFullUser(
     };
   }
 
-  result["documents"] = docs.map(shapeDocument);
+  result["documents"] = await Promise.all(docs.map(shapeDocument));
   result["role"] = roleLabel(user.userRole);
   result["is_merchant"] = yesNo(isMerchant);
   result["business_model"] = businessModel;
@@ -132,10 +163,10 @@ export function shapeFullUser(
   return result;
 }
 
-export function shapeOnboardingUser(
+export async function shapeOnboardingUser(
   user: User,
   info: UserInformation | null,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const result: Record<string, unknown> = {
     unique_id: user.uniqueId,
     title: user.title,
@@ -168,7 +199,7 @@ export function shapeOnboardingUser(
       purpose_of_transactions: info?.purposeOfTransactions ?? "",
       tax_id: info?.taxId ?? "",
       website: info?.website ?? "",
-      business_persons: info?.businessPersons ?? [],
+      business_persons: await formatBusinessPersons(info?.businessPersons),
       type_of_business: info?.type_of_business ?? "",
     };
   } else {
@@ -196,13 +227,13 @@ export function shapeOnboardingUser(
   return result;
 }
 
-export function shapeDocumentsUser(
+export async function shapeDocumentsUser(
   user: User,
   docs: UserDocument[],
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   return {
     onboarding_step: onboardingLabel(user.onboardingStep),
-    documents: docs.map(shapeDocument),
+    documents: await Promise.all(docs.map(shapeDocument)),
   };
 }
 

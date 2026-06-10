@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { sendResponse } from "../../helpers/response";
 import { ApiException } from "../../helpers/errors";
-import { lookupsService } from "../../services/lookups/lookupsService";
+import { lookupsService, relativeTime } from "../../services/lookups/lookupsService";
 import {
   DEPOSIT_PURPOSE,
   DEPOSIT_SOURCE_OF_FUNDS,
@@ -111,50 +111,90 @@ export const lookupsController = {
     });
     if (!supported) throw new ApiException(189);
 
-    // Massive only quotes USD as source. AED rates are derived from USD
-    // by dividing by env USD_TO_AED. Mirrors LookupRepository::createFxRate.
-    const rate = await Massive.rate({
-      amount: 1,
-      from_currency: "USD",
-      to_currency: validated.to_currency,
-    });
-    if (!rate.success || rate.fx_rate === null) throw new ApiException(189);
+    let finalRate: number;
+    let finalFromCurrency: string;
 
-    const isAed = validated.from_currency.toUpperCase() === "AED";
-    const { convertUsdRateToAed } = await import(
-      "../../services/quotes/aedOverride"
-    );
-    const finalRate = isAed
-      ? convertUsdRateToAed(rate.fx_rate, validated.to_currency)
-      : rate.fx_rate;
-    const finalFromCurrency = isAed ? "AED" : rate.from_currency;
+    try {
+      // Massive only quotes USD as source. AED rates are derived from USD
+      // by dividing by env USD_TO_AED. Mirrors LookupRepository::createFxRate.
+      const rate = await Massive.rate({
+        amount: 1,
+        from_currency: "USD",
+        to_currency: validated.to_currency,
+      });
+      if (!rate.success || rate.fx_rate === null) {
+        throw new Error("Provider rate empty");
+      }
+      const isAed = validated.from_currency.toUpperCase() === "AED";
+      const { convertUsdRateToAed } = await import(
+        "../../services/quotes/aedOverride"
+      );
+      finalRate = isAed
+        ? convertUsdRateToAed(rate.fx_rate, validated.to_currency)
+        : rate.fx_rate;
+      finalFromCurrency = isAed ? "AED" : rate.from_currency;
+    } catch (err) {
+      // Fallback: If external API fails, search fees table for fixed override (User -> Merchant -> Null owner)
+      const merchantId = req.user.merchantId
+        ? (
+            await prisma().merchant.findFirst({
+              where: { id: req.user.merchantId },
+            })
+          )?.id ?? null
+        : null;
+
+      const { getFixedRate } = await import(
+        "../../services/commissions/commissionsService"
+      );
+      const fallbackRate = await getFixedRate(
+        req.user.id,
+        merchantId,
+        validated.from_currency,
+        validated.to_currency,
+      );
+      if (fallbackRate !== null) {
+        finalRate = fallbackRate;
+        finalFromCurrency = validated.from_currency.toUpperCase();
+      } else {
+        throw new ApiException(189);
+      }
+    }
 
     const fxRate = String(finalRate);
-    const cached = await prisma().fxRate.upsert({
+    const existing = await prisma().fxRate.findFirst({
       where: {
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-        fx_rate_pair: {
-          fromCurrency: finalFromCurrency,
-          toCurrency: validated.to_currency,
-          provider: "em",
-        },
-      },
-      create: {
         fromCurrency: finalFromCurrency,
         toCurrency: validated.to_currency,
         provider: "em",
-        rate: fxRate,
       },
-      update: { rate: fxRate },
     });
+
+    let cached;
+    if (existing) {
+      cached = await prisma().fxRate.update({
+        where: { id: existing.id },
+        data: { rate: fxRate },
+      });
+    } else {
+      cached = await prisma().fxRate.create({
+        data: {
+          fromCurrency: finalFromCurrency,
+          toCurrency: validated.to_currency,
+          provider: "em",
+          rate: fxRate,
+        },
+      });
+    }
 
     return sendResponse(res, "", 200, {
       rate: {
         from_currency: cached.fromCurrency,
         to_currency: cached.toCurrency,
         fx_rate: Number(cached.rate).toFixed(4),
-// @ts-expect-error - Auto-fixed: 'cached.updatedAt' is possibly 'null'.
-        last_updated: cached.updatedAt.toISOString(),
+        last_updated: relativeTime(
+          cached.updatedAt || new Date(),
+          req.user.timezone ?? "Asia/Kolkata",
+        ),
       },
     });
   },

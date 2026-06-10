@@ -1,4 +1,5 @@
 import { BeneficiaryTransaction, Prisma } from "@prisma/client";
+import { computeBankBalance } from "../virtualAccounts/balanceService";
 import { prisma } from "../../db/prisma";
 import {
   DEPOSIT_TRANSACTION_COMPLETED,
@@ -57,6 +58,9 @@ export async function createRefund(
         where: { id: quote.sourceId!, userId: txn.userId },
       });
       if (!wallet) return;
+
+      // Pessimistic lock on the Wallet row to serialize concurrent credits/debits
+      await tx.$queryRaw`SELECT id FROM wallets WHERE id = ${wallet.id} FOR UPDATE`;
 
       // Sum existing wallet credits/debits for balance_before/after.
       const [creditAgg, debitAgg] = await Promise.all([
@@ -118,10 +122,15 @@ export async function createRefund(
         where: { id: quote.sourceId! },
       });
       if (!va) return;
+
+      // Pessimistic lock on the VirtualAccount row to serialize concurrent credits/debits
+      await tx.$queryRaw`SELECT id FROM virtual_accounts WHERE id = ${va.id} FOR UPDATE`;
+
       const refundDeposit = await tx.depositTransaction.create({
         data: {
           uniqueId: uniqueId(24),
           userId: txn.userId,
+          teamMemberId: txn.teamMemberId,
           virtualAccountId: va.id,
           amount: txn.totalAmount,
           totalAmount: txn.totalAmount,
@@ -129,6 +138,25 @@ export async function createRefund(
           type: DEPOSIT_TYPE_REFUND,
         },
       });
+
+      let teamMemberContext: { role: number; id: bigint } | null = null;
+      if (txn.teamMemberId) {
+        const tm = await tx.teamMember.findUnique({
+          where: { id: txn.teamMemberId },
+        });
+        if (tm) {
+          teamMemberContext = { role: tm.role, id: tm.id };
+        }
+      }
+
+      const oldBalance = await computeBankBalance(
+        { id: txn.userId } as any,
+        va,
+        teamMemberContext,
+      );
+
+      const freshBalance = oldBalance.plus(txn.totalAmount);
+
       await tx.ledger.create({
         data: {
           uniqueId: uniqueId(24),
@@ -137,7 +165,7 @@ export async function createRefund(
           walletId: null,
           transactionType: MORPH_DEPOSIT_TRANSACTION,
           transactionId: refundDeposit.id,
-          balance: new Prisma.Decimal(0),
+          balance: freshBalance,
           externalType: txn.externalType ?? null,
           description: `Refund for ${txn.uniqueId}`,
           refundLedgerId: originalLedger.id,

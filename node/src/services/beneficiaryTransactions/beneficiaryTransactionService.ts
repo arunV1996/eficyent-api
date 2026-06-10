@@ -8,6 +8,7 @@ import {
   BENEFICIARY_TRANSACTION_INITIATED,
   BENEFICIARY_TRANSACTION_REJECTED,
   BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
+  MERCHANT_TYPE_PAYOUT,
   MORPH_BENEFICIARY_TRANSACTION,
   MORPH_VIRTUAL_ACCOUNT,
   MORPH_WALLET,
@@ -56,6 +57,22 @@ interface CreatorContext {
   role: number;
   permission?: number;
   senderId: bigint | null;
+}
+
+/**
+ * Mirror of Helper::is_remitter_deposit_enabled.
+ * Returns true only when the user belongs to a PAYOUT-type merchant
+ * that has the 'enable_remitter_deposit' setting set to '1'.
+ * When true, the balance gate in createPayoutTransaction is bypassed.
+ */
+async function isRemitterDepositEnabled(merchantId: bigint | null): Promise<boolean> {
+  if (!merchantId) return false;
+  const merchant = await prisma().merchant.findFirst({ where: { id: merchantId } });
+  if (!merchant || merchant.type !== MERCHANT_TYPE_PAYOUT) return false;
+  const setting = await prisma().merchantSetting.findFirst({
+    where: { merchantId: merchant.id, key: "enable_remitter_deposit" },
+  });
+  return setting?.value === "1";
 }
 
 /**
@@ -109,23 +126,24 @@ export async function createPayoutTransaction(
     throw new ApiException(180);
   }
 
-  // Resolve quote source (VirtualAccount or Wallet) and check balance.
+  // Source validation happens here, but balance computation and locking 
+  // is deferred until inside the transaction to prevent race conditions.
   if (!quote.sourceType || !quote.sourceId) throw new ApiException(120);
-  let checkBalance = ZERO;
+  let va: any = null;
+  let wallet: any = null;
+
   if (quote.sourceType === MORPH_VIRTUAL_ACCOUNT) {
     const baseScope = await getVirtualAccountScope(user);
-    const va = await prisma().virtualAccount.findFirst({
+    va = await prisma().virtualAccount.findFirst({
       where: { ...baseScope, id: quote.sourceId },
     });
     if (!va) throw new ApiException(120);
-    checkBalance = await computeBankBalance(user, va);
   } else if (quote.sourceType === MORPH_WALLET) {
-    const wallet = await prisma().wallet.findFirst({
+    wallet = await prisma().wallet.findFirst({
       where: { id: quote.sourceId, userId: user.id },
     });
     if (!wallet) throw new ApiException(120);
     if (wallet.status !== WALLET_STATUS_ACTIVE) throw new ApiException(169);
-    checkBalance = await getWalletBalance(user, wallet);
   } else {
     throw new ApiException(120);
   }
@@ -147,9 +165,7 @@ export async function createPayoutTransaction(
     resolvedSenderId = sender.id;
   }
 
-  // Balance gate (skip when remitter-deposit is enabled - the deposit
-  // accounting branch isn't exercised in Phase 6; that path lands in Phase 8).
-  if (checkBalance.lt(quote.amount)) throw new ApiException(154);
+  // Balance gate check logic moved inside the transaction block below
 
   const fees = quote.commissionAmount
     .plus(quote.externalCommissionAmount)
@@ -170,7 +186,23 @@ export async function createPayoutTransaction(
     );
   }
 
+  const remitterDepositEnabled = await isRemitterDepositEnabled(user.merchantId ?? null);
+
   const created = await prisma().$transaction(async (tx) => {
+    // 1. Pessimistic Lock & Balance Check
+    let txCheckBalance = ZERO;
+    
+    if (quote.sourceType === MORPH_VIRTUAL_ACCOUNT) {
+      await tx.$queryRaw`SELECT id FROM virtual_accounts WHERE id = ${va.id} FOR UPDATE`;
+      txCheckBalance = await computeBankBalance(user, va, creator ? { role: creator.role, id: creator.id } : null);
+    } else if (quote.sourceType === MORPH_WALLET) {
+      await tx.$queryRaw`SELECT id FROM wallets WHERE id = ${wallet.id} FOR UPDATE`;
+      txCheckBalance = await getWalletBalance(user, wallet);
+    }
+
+    if (!remitterDepositEnabled && txCheckBalance.lt(quote.amount)) {
+      throw new ApiException(154);
+    }
     const txn = await tx.beneficiaryTransaction.create({
       data: {
         uniqueId: uniqueId(24),
@@ -226,7 +258,7 @@ export async function createPayoutTransaction(
         walletId: quote.sourceType === MORPH_WALLET ? quote.sourceId : null,
         transactionType: MORPH_BENEFICIARY_TRANSACTION,
         transactionId: txn.id,
-        balance: checkBalance.minus(quote.amount.plus(fees)),
+        balance: txCheckBalance.minus(quote.amount.plus(fees)),
         externalType: quote.externalType,
         description: `Payout ${txn.uniqueId}`,
       },
@@ -240,13 +272,15 @@ export async function createPayoutTransaction(
           walletId: quote.sourceId!,
           quoteId: quote.id,
           beneficiaryTransactionId: txn.id,
-          amount: quote.amount,
+          // Mirror of Laravel updateLedger: WalletTransaction.amount stores
+          // total_amount (base amount + fees), not the base amount alone.
+          amount: quote.amount.plus(fees),
           totalAmount: quote.amount.plus(fees),
           fees: fees,
           status: WALLET_TRANSACTION_COMPLETED,
           type: TRANSACTION_TYPE_DEBIT,
-          balanceBefore: checkBalance,
-          balanceAfter: checkBalance.minus(quote.amount.plus(fees)),
+          balanceBefore: txCheckBalance,
+          balanceAfter: txCheckBalance.minus(quote.amount.plus(fees)),
         },
       });
     }
@@ -273,10 +307,12 @@ export async function createPayoutTransaction(
   });
 
   // Dispatch when the transaction is in a queueable state.
+  // NOTE: CORPORATE_INITIATED is intentionally excluded — the payout must not
+  // be dispatched until a checker approves it (mirrors Laravel's
+  // Helper::processTransaction which gates on BENEFICIARY_TRANSACTION_APPROVED).
   if (
     finalStatus === BENEFICIARY_TRANSACTION_APPROVED ||
-    finalStatus === BENEFICIARY_TRANSACTION_INITIATED ||
-    finalStatus === BENEFICIARY_TRANSACTION_CORPORATE_INITIATED
+    finalStatus === BENEFICIARY_TRANSACTION_INITIATED
   ) {
     await Dispatch.payout({
       beneficiaryTransactionId: created.txn.id.toString(),
@@ -286,9 +322,23 @@ export async function createPayoutTransaction(
     });
   }
 
+  const { TelegramNotifier } = await import("../external/telegram");
+  void TelegramNotifier.notifyBeneficiaryTransaction(created.txn.id);
+
   return prisma().beneficiaryTransaction.findUniqueOrThrow({
     where: { id: created.txn.id },
-    include: { beneficiaryAccount: true, quotes: true },
+    include: {
+      beneficiaryAccount: {
+        include: { additionalDetails: true },
+      },
+      quotes: true,
+      senders: {
+        include: { documents: true },
+      },
+      team_members: true,
+      users: true,
+      proofs: true,
+    },
   });
 }
 
@@ -402,6 +452,8 @@ export async function updateTransactionStatus(
           });
         }
       }
+      const { TelegramNotifier } = await import("../external/telegram");
+      void TelegramNotifier.notifyBeneficiaryTransaction(updated.id);
       success.push({ unique_id: updated.uniqueId });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -430,22 +482,69 @@ export async function listWhere(
     wallet_id?: string;
     search_key?: string;
   },
-  isTeam = false,
+  teamMember: { role: number; id: bigint } | null = null,
 ): Promise<Prisma.BeneficiaryTransactionWhereInput> {
-  const { BENEFICIARY_TRANSACTION_STATUS_MAP } = await import("../../helpers/constants");
+  const { TEAM_MEMBER_ROLE_CORPORATE } = await import("../../helpers/constants");
 
   const where: Prisma.BeneficiaryTransactionWhereInput = {
     userId: user.id,
   };
 
+  if (teamMember && teamMember.role === TEAM_MEMBER_ROLE_CORPORATE) {
+    where.teamMemberId = teamMember.id;
+  }
+
   if (q.status) {
-    const { beneficiaryTransactionStatusLabel } = await import("../../helpers/constants");
-    const matchingStatuses = Array.from({ length: 18 }, (_, i) => i).filter(
-      (code) => beneficiaryTransactionStatusLabel(code, isTeam) === q.status,
-    );
-    where.status = matchingStatuses.length > 0
-      ? { in: matchingStatuses }
-      : BENEFICIARY_TRANSACTION_STATUS_MAP[q.status];
+    const {
+      BENEFICIARY_TRANSACTION_STATUS_MAP,
+      BENEFICIARY_TRANSACTION_PROCESSING,
+      BENEFICIARY_TRANSACTION_FAILED,
+      BENEFICIARY_TRANSACTION_APPROVED,
+      BENEFICIARY_TRANSACTION_INITIATED,
+      BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED,
+      BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED,
+      BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD,
+      BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED,
+      BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATED,
+      BENEFICIARY_TRANSACTION_PROCESSING_UNIT_PROCESSING,
+      BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
+      BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
+      BENEFICIARY_TRANSACTION_EXPIRED,
+      BENEFICIARY_TRANSACTION_CANCELLED,
+      BENEFICIARY_TRANSACTION_REJECTED,
+    } = await import("../../helpers/constants");
+
+    const statusVal = BENEFICIARY_TRANSACTION_STATUS_MAP[q.status];
+    if (statusVal !== undefined) {
+      if (statusVal === BENEFICIARY_TRANSACTION_PROCESSING) {
+        where.status = {
+          in: [
+            BENEFICIARY_TRANSACTION_APPROVED,
+            BENEFICIARY_TRANSACTION_INITIATED,
+            BENEFICIARY_TRANSACTION_PROCESSING,
+            BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED,
+            BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED,
+            BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD,
+            BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED,
+            BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATED,
+            BENEFICIARY_TRANSACTION_PROCESSING_UNIT_PROCESSING,
+            BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
+            BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
+          ],
+        };
+      } else if (statusVal === BENEFICIARY_TRANSACTION_FAILED) {
+        where.status = {
+          in: [
+            BENEFICIARY_TRANSACTION_FAILED,
+            BENEFICIARY_TRANSACTION_EXPIRED,
+            BENEFICIARY_TRANSACTION_CANCELLED,
+            BENEFICIARY_TRANSACTION_REJECTED,
+          ],
+        };
+      } else {
+        where.status = statusVal;
+      }
+    }
   }
   if (q.from_date && q.to_date) {
     where.createdAt = {

@@ -16,7 +16,7 @@ export interface QuoteDto {
   expires_at: string;
 }
 
-export function quoteResource(q: Quote, sourceCurrency?: string): QuoteDto {
+export function quoteResource(q: Quote, sourceCurrency?: string, timezone?: string): QuoteDto {
   const recipientType = q.recipientType === 2 ? "BUSINESS" : "PERSONAL";
   // Use the actual source account currency if provided; fall back to receivingCurrency
   // for same-currency flows, or "USD" as last resort. Never hardcode "USD" when we
@@ -38,6 +38,6 @@ export function quoteResource(q: Quote, sourceCurrency?: string): QuoteDto {
     recipient_country: q.recipientCountry ?? "",
     receiving_currency: q.receivingCurrency ?? "",
     payment_rail: q.paymentRail ?? "",
-    expires_at: formatDate(q.expiresAt),
+    expires_at: formatDate(q.expiresAt, timezone),
   };
 }

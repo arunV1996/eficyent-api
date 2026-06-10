@@ -3,6 +3,7 @@ import cors from "cors";
 import { NextFunction, Request, RequestHandler, Response } from "express";
 import helmet from "helmet";
 import { env } from "../config/env";
+import { Secrets } from "../config/secrets";
 
 // Augment Express Response so callers can call res.extendTimeout(ms)
 declare global {
@@ -45,16 +46,28 @@ export function helmetMiddleware(): RequestHandler {
 }
 
 export function corsMiddleware(): RequestHandler {
-  const origins = env()
-    .CORS_ORIGINS.split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
   return cors({
     origin: (origin, cb) => {
       // Allow same-origin / non-browser requests (no Origin header).
-      if (!origin) return cb(null, true);
-      if (origins.length === 0) return cb(new Error("CORS not configured"));
-      return cb(null, origins.includes(origin));
+      if (!origin) {
+        cb(null, true);
+        return;
+      }
+      Secrets.app()
+        .then((appSecret) => {
+          const origins = (appSecret.CORS_ORIGINS ?? "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          if (origins.length === 0) {
+            cb(new Error("CORS not configured"));
+            return;
+          }
+          cb(null, origins.includes(origin));
+        })
+        .catch((err) => {
+          cb(err);
+        });
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -150,3 +163,46 @@ export function requestTimeout(ms: number): RequestHandler {
     next();
   };
 }
+
+/**
+ * Recursively trim leading and trailing spaces from all string values in request payloads
+ * (req.body, req.query, and req.params), excluding password fields.
+ */
+export function trimPayloadMiddleware(): RequestHandler {
+  const trimStrings = (obj: any): any => {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj === "string") return obj.trim();
+    if (Array.isArray(obj)) {
+      return obj.map(trimStrings);
+    }
+    if (typeof obj === "object") {
+      if (Buffer.isBuffer(obj)) return obj;
+      for (const key of Object.keys(obj)) {
+        if (key.toLowerCase().includes("password")) {
+          continue;
+        }
+        const val = trimStrings(obj[key]);
+        if (val === "") {
+          delete obj[key];
+        } else {
+          obj[key] = val;
+        }
+      }
+    }
+    return obj;
+  };
+
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (req.body) {
+      req.body = trimStrings(req.body);
+    }
+    if (req.query) {
+      req.query = trimStrings(req.query);
+    }
+    if (req.params) {
+      req.params = trimStrings(req.params);
+    }
+    next();
+  };
+}
+

@@ -4,6 +4,7 @@ import { ApiException } from "../../helpers/errors";
 import { sendResponse } from "../../helpers/response";
 import { apiSuccess } from "../../helpers/messages";
 import {
+  TEAM_MEMBER_DISABLED,
   TEAM_MEMBER_INACTIVE,
   TEAM_MEMBER_ROLE_CORPORATE,
 } from "../../helpers/constants";
@@ -38,7 +39,12 @@ async function loginCommon(
   // see Phase 1 notes for the rationale).
   const valid = await passwordService.verify(member.password, body.password);
   if (!valid) throw new ApiException(125);
-  if (member.status === TEAM_MEMBER_INACTIVE) throw new ApiException(160);
+  if (
+    member.status === TEAM_MEMBER_INACTIVE ||
+    member.status === TEAM_MEMBER_DISABLED
+  ) {
+    throw new ApiException(160);
+  }
 
   const isCorporate = member.role === TEAM_MEMBER_ROLE_CORPORATE;
   if (expectedCorporate !== isCorporate) {

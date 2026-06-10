@@ -1,6 +1,6 @@
 import { DepositTransaction } from "@prisma/client";
 import { depositTransactionStatusLabel } from "../../helpers/constants";
-import { DEPOSIT_PURPOSE, DEPOSIT_SOURCE_OF_FUNDS } from "../../helpers/lookups";
+import { DEPOSIT_PURPOSE, DEPOSIT_SOURCE_OF_FUNDS, formatDate } from "../../helpers/lookups";
 
 /**
  * Mirror of App\\Http\\Resources\\DepositTransactionResource.
@@ -44,21 +44,4 @@ export function depositTransactionResource(d: DepositTransaction): DepositTransa
     created_at: formatDate(d.createdAt || new Date()),
     deposit_currency: currency,
   };
-}
-
-function formatDate(date: Date): string {
-  const months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-  ];
-  const d = date.getDate().toString().padStart(2, "0");
-  const m = months[date.getMonth()];
-  const y = date.getFullYear();
-  let h = date.getHours();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12;
-  h = h ? h : 12;
-  const hh = h.toString().padStart(2, "0");
-  const mm = date.getMinutes().toString().padStart(2, "0");
-  return `${d} ${m} ${y} ${hh}:${mm} ${ampm}`;
 }

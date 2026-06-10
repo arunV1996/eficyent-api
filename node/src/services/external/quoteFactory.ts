@@ -36,6 +36,7 @@ export interface QuoteDriverResponse {
   expires_at?: string;
   external_data?: Record<string, unknown>;
   quote_type: string;
+  external_commission_amount?: number;
 }
 
 export interface QuoteDriver {

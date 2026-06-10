@@ -3,6 +3,8 @@ import { prisma } from "../../db/prisma";
 import {
   DEPOSIT_TRANSACTION_COMPLETED,
   MORPH_VIRTUAL_ACCOUNT,
+  QUOTE_SUBMITTED,
+  TEAM_MEMBER_ROLE_CORPORATE,
   TRANSACTION_TYPE_CREDIT,
   TRANSACTION_TYPE_DEBIT,
   WALLET_TRANSACTION_COMPLETED,
@@ -26,6 +28,7 @@ const ZERO = new Prisma.Decimal(0);
 export async function computeBankBalance(
   user: User,
   virtualAccount: VirtualAccount,
+  teamMember: { role: number; id: bigint } | null = null,
 ): Promise<Prisma.Decimal> {
   // Scope deposit credits by memo when the user is a PAYINCOLLECTION
   // sub-account (mirror of the bankBalance branch in Helper.php).
@@ -44,6 +47,9 @@ export async function computeBankBalance(
     virtualAccountId: virtualAccount.id,
     status: DEPOSIT_TRANSACTION_COMPLETED,
     ...(payinCollection && user.memo ? { memo: user.memo } : {}),
+    ...(teamMember && teamMember.role === TEAM_MEMBER_ROLE_CORPORATE
+      ? { teamMemberId: teamMember.id }
+      : {}),
   };
 
   const [depositAgg, quotes] = await Promise.all([
@@ -52,7 +58,11 @@ export async function computeBankBalance(
       _sum: { totalAmount: true },
     }),
     prisma().quote.findMany({
-      where: { sourceType: MORPH_VIRTUAL_ACCOUNT, sourceId: virtualAccount.id },
+      where: {
+        sourceType: MORPH_VIRTUAL_ACCOUNT,
+        sourceId: virtualAccount.id,
+        status: QUOTE_SUBMITTED,
+      },
       select: { id: true, totalSendingAmount: true },
     }),
   ]);
@@ -62,23 +72,31 @@ export async function computeBankBalance(
   if (quotes.length > 0) {
     const quoteIds = quotes.map((q) => q.id);
     const payoutAgg = await prisma().beneficiaryTransaction.aggregate({
-      where: { userId: user.id, quoteId: { in: quoteIds } },
+      where: {
+        userId: user.id,
+        quoteId: { in: quoteIds },
+        ...(teamMember && teamMember.role === TEAM_MEMBER_ROLE_CORPORATE
+          ? { teamMemberId: teamMember.id }
+          : {}),
+      },
       _sum: { totalAmount: true },
     });
     payouts = payoutAgg._sum.totalAmount ?? ZERO;
 
-    const credits = await prisma().walletTransaction.findMany({
-      where: {
-        userId: user.id,
-        quoteId: { in: quoteIds },
-        type: TRANSACTION_TYPE_CREDIT,
-      },
-      select: { quoteId: true },
-    });
-    for (const wt of credits) {
-      const q = quotes.find((qq) => qq.id === wt.quoteId);
-      if (q?.totalSendingAmount) {
-        walletCredits = walletCredits.plus(q.totalSendingAmount);
+    if (!(teamMember && teamMember.role === TEAM_MEMBER_ROLE_CORPORATE)) {
+      const credits = await prisma().walletTransaction.findMany({
+        where: {
+          userId: user.id,
+          quoteId: { in: quoteIds },
+          type: TRANSACTION_TYPE_CREDIT,
+        },
+        select: { quoteId: true },
+      });
+      for (const wt of credits) {
+        const q = quotes.find((qq) => qq.id === wt.quoteId);
+        if (q?.totalSendingAmount) {
+          walletCredits = walletCredits.plus(q.totalSendingAmount);
+        }
       }
     }
   }

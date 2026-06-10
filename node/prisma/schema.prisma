@@ -1130,3 +1130,14 @@ enum static_pages_type {
   contact
   faq
 }
+
+model Dummy {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  name      String   @db.VarChar(255)
+  email     String   @db.VarChar(255)
+  status    Int      @default(1) @db.TinyInt
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@map("dummy")
+}

@@ -162,6 +162,7 @@ class DiginineQuoteDriver implements QuoteDriver {
       receiving_amount?: string | number;
       external_reference_id?: string;
       expires_at?: string;
+      fee_details?: Array<{ amount: number | string; [k: string]: unknown }>;
     }>(
       "POST",
       secret.GET_QUOTE_ENDPOINT,
@@ -175,6 +176,12 @@ class DiginineQuoteDriver implements QuoteDriver {
     if (!res.success || !res.data) {
       throw new ApiException(189, "Diginine quote rejected.", 502);
     }
+    let external_fees = 0;
+    if (res.data.fee_details && Array.isArray(res.data.fee_details)) {
+      for (const fee of res.data.fee_details) {
+        external_fees += Number(fee.amount ?? 0);
+      }
+    }
     return {
       amount: Number(res.data.amount ?? payload.amount),
       receiving_amount: Number(res.data.receiving_amount ?? 0),
@@ -184,6 +191,7 @@ class DiginineQuoteDriver implements QuoteDriver {
       expires_at: res.data.expires_at ?? undefined,
       external_data: res.data as Record<string, unknown>,
       quote_type: payload.quote_type,
+      external_commission_amount: external_fees,
     };
   }
 }

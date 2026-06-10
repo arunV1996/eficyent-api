@@ -18,7 +18,7 @@ export const credentialService = {
    */
   async generateAndStore(
     id: bigint,
-    model: "user" | "teamMember" = "user",
+    model: "user" | "teamMember" | "merchant" = "user",
     tx?: any,
   ) {
     const db = tx || prisma();
@@ -51,6 +51,11 @@ export const credentialService = {
 
     if (model === "user") {
       return await db.user.update({
+        where: { id },
+        data,
+      });
+    } else if (model === "merchant") {
+      return await db.merchant.update({
         where: { id },
         data,
       });

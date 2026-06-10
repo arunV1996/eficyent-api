@@ -1,5 +1,8 @@
 import { Sender, SenderDocument } from "@prisma/client";
 import { formatDate } from "../../helpers/lookups";
+import { lookupsService } from "../lookups/lookupsService";
+import { prisma } from "../../db/prisma";
+import { LOOKUP_TYPE_ID_TYPE, LOOKUP_TYPE_PROFESSION } from "../../helpers/constants";
 
 /**
  * Mirror of App\\Http\\Resources\\SenderResource.
@@ -54,9 +57,34 @@ const STATUS_MAP: Record<number, string> = {
   4: "DISABLED",
 };
 
-export function senderResource(
+async function getStateName(
+  stateCodeOrName: string | null | undefined,
+  countryCode?: string | null,
+): Promise<string> {
+  if (!stateCodeOrName) return "";
+  const trimmed = stateCodeOrName.trim();
+  const stateRow = await prisma().state.findFirst({
+    where: {
+      OR: [
+        { stateCode: { equals: trimmed } },
+        { name: { equals: trimmed } },
+      ],
+      ...(countryCode
+        ? {
+            OR: [
+              { countryCode: { equals: countryCode } },
+              { countryAlpha3: { equals: countryCode } },
+            ],
+          }
+        : {}),
+    },
+  });
+  return stateRow ? stateRow.name : trimmed;
+}
+
+export async function senderResource(
   sender: Sender & { documents?: SenderDocument[] | null },
-): SenderDto {
+): Promise<SenderDto> {
   const isBusiness = sender.type === 2;
   
   // Base fields shared by both types
@@ -64,6 +92,14 @@ export function senderResource(
     unique_id: sender.uniqueId,
     type: sender.type ? TYPE_MAP[sender.type] ?? "PERSONAL" : null,
   };
+
+  const stateName = sender.state ? await getStateName(sender.state, sender.country) : "";
+  const sourceOfFundsValue = sender.sourceOfFunds
+    ? await lookupsService.findValuebyKey(sender.sourceOfFunds)
+    : "";
+  const idTypeValue = sender.idType
+    ? await lookupsService.findValuebyKey(sender.idType, LOOKUP_TYPE_ID_TYPE)
+    : "";
 
   if (isBusiness) {
     // Business specific layout
@@ -75,31 +111,58 @@ export function senderResource(
       country: sender.country || "",
       nationality: sender.nationality || "",
       city: sender.city || "",
-      state: sender.state || "",
+      state: stateName,
       postal_code: sender.postalCode || "",
-      source_of_funds: sender.sourceOfFunds || "",
-      id_type: sender.idType || "",
+      source_of_funds: sourceOfFundsValue,
+      id_type: idTypeValue,
       id_number: sender.idNumber || "",
       status: STATUS_MAP[sender.status] ?? "PENDING",
       created_at: formatDate(sender.createdAt),
       business_name: sender.firstName || "",
-      business_persons: (sender.businessPersons as any[] | null || []).map(p => ({
-        email: p.email || "",
-        country: p.country || "",
-        id_type: p.id_type || "",
-        address_1: p.address_1 || "",
-        id_number: p.id_number || "",
-        last_name: p.last_name || "",
-        first_name: p.first_name || "",
-        designation: p.designation || "",
-        nationality: p.nationality || ""
-      })),
-      proofs: (sender.documents || []).map((d) => ({
-        document_name: d.documentName,
-        document_type: d.documentType,
-        document_country: d.documentCountry || "",
-        document_file: d.documentFile,
-      }))
+      business_persons: await Promise.all(
+        (sender.businessPersons as any[] | null || []).map(async (p) => {
+          const bpState = p.state ? await getStateName(p.state, p.country) : "";
+          const bpIdType = p.id_type ? await lookupsService.findValuebyKey(p.id_type, LOOKUP_TYPE_ID_TYPE) : "";
+          const bpDesignation = p.designation ? await lookupsService.findValuebyKey(p.designation, LOOKUP_TYPE_PROFESSION) : "";
+          return {
+            email: p.email || "",
+            country: p.country || "",
+            id_type: bpIdType,
+            address_1: p.address_1 || "",
+            id_number: p.id_number || "",
+            last_name: p.last_name || "",
+            first_name: p.first_name || "",
+            designation: bpDesignation,
+            nationality: p.nationality || "",
+            state: bpState,
+            mobile: p.mobile || "",
+            mobile_country_code: p.mobile_country_code || "",
+            address_2: p.address_2 || "",
+            postal_code: p.postal_code || "",
+            city: p.city || "",
+            ...(p.dob ? { dob: p.dob } : {}),
+          };
+        })
+      ),
+      proofs: await Promise.all(
+        (sender.documents || []).map(async (d) => {
+          let signedFile = d.documentFile || "";
+          if (d.documentFile) {
+            try {
+              const { s3Service } = await import("../../services/storage/s3Service");
+              signedFile = await s3Service.temporaryUrl(d.documentFile);
+            } catch {
+              // Ignore and use raw URL on failure
+            }
+          }
+          return {
+            document_name: d.documentName,
+            document_type: d.documentType,
+            document_country: d.documentCountry || "",
+            document_file: signedFile,
+          };
+        }),
+      ),
     });
   } else {
     // Individual specific layout
@@ -114,10 +177,10 @@ export function senderResource(
       country: sender.country || "",
       nationality: sender.nationality || "",
       city: sender.city || "",
-      state: sender.state || "",
+      state: stateName,
       postal_code: sender.postalCode || "",
-      source_of_funds: sender.sourceOfFunds || "",
-      id_type: sender.idType || "",
+      source_of_funds: sourceOfFundsValue,
+      id_type: idTypeValue,
       id_number: sender.idNumber || "",
       status: STATUS_MAP[sender.status] ?? "PENDING",
       created_at: formatDate(sender.createdAt),

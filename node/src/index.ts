@@ -14,14 +14,16 @@ import {
   corsMiddleware,
   helmetMiddleware,
   requestTimeout,
+  trimPayloadMiddleware,
 } from "./middleware/security";
-import { defaultRateLimit } from "./middleware/rateLimit";
 import { errorHandler, notFound } from "./middleware/error";
 import { requestId } from "./middleware/requestId";
 import { apiRouter } from "./routes";
+import { preloadLookups } from "./helpers/lookups";
 
 async function main(): Promise<void> {
   await bootstrapSecrets();
+  await preloadLookups();
 
   const app = express();
 
@@ -69,11 +71,15 @@ async function main(): Promise<void> {
   );
   app.use(express.urlencoded({ extended: false, limit: `${env().REQUEST_BODY_LIMIT_KB}kb` }));
   app.use(multer().any());
+  app.use(trimPayloadMiddleware());
   app.use(compressionMiddleware());
   app.use(requestTimeout(30_000));
-  app.use(await defaultRateLimit());
-  app.use(express.static(path.join(__dirname, "..", "public")));
-  app.use("/api", express.static(path.join(__dirname, "..", "public")));
+  const isProduction = __dirname.includes("dist");
+  const publicPath = isProduction
+    ? path.join(__dirname, "public")
+    : path.join(__dirname, "..", "public");
+  app.use(express.static(publicPath));
+  app.use("/api", express.static(publicPath));
 
   app.use("/api", await apiRouter());
 

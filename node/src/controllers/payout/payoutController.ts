@@ -98,7 +98,18 @@ async function findOneByAnyId(
           : { id: -1n },
       ],
     },
-    include: { beneficiaryAccount: true, quotes: true, senders: true, team_members: true },
+    include: {
+      beneficiaryAccount: {
+        include: { additionalDetails: true },
+      },
+      quotes: true,
+      senders: {
+        include: { documents: true },
+      },
+      team_members: true,
+      users: true,
+      proofs: true,
+    },
   });
 }
 
@@ -128,6 +139,22 @@ function resolvePartyTypes(typeRaw?: string): {
   return { payment_type: pt, ...map[pt] };
 }
 
+function cleanDbField(val: unknown): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim();
+  const lower = s.toLowerCase();
+  if (
+    lower === "" ||
+    lower === "undefined" ||
+    lower === "null" ||
+    lower === "n/a" ||
+    lower === "na"
+  ) {
+    return null;
+  }
+  return s;
+}
+
 async function handleSupportingDocument(
   doc: string | undefined,
   userId: bigint,
@@ -147,7 +174,7 @@ export const payoutController = {
   async index(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as PayoutListInput;
-    const where = await listWhere(req.user, q, !!req.teamMember);
+    const where = await listWhere(req.user, q, req.teamMember);
     const skip = q.skip ?? 0;
     const take = q.take ?? TAKE_COUNT;
     const [total, rows] = await Promise.all([
@@ -157,12 +184,25 @@ export const payoutController = {
         orderBy: { createdAt: "desc" },
         skip,
         take,
-        include: { beneficiaryAccount: true, quotes: true, senders: true, team_members: true },
+        include: {
+          beneficiaryAccount: {
+            include: { additionalDetails: true },
+          },
+          quotes: true,
+          senders: {
+            include: { documents: true },
+          },
+          team_members: true,
+          users: true,
+          proofs: true,
+        },
       }),
     ]);
     return sendResponse(res, "", "", {
       total,
-      beneficiary_transactions: rows.map((r) => beneficiaryTransactionResource(r, !!req.teamMember)),
+      beneficiary_transactions: await Promise.all(
+        rows.map((r) => beneficiaryTransactionResource(r, !!req.teamMember))
+      ),
     });
   },
 
@@ -177,7 +217,7 @@ export const payoutController = {
 
     const txn = await createPayoutTransaction(body, req.user, req.teamMember);
     return sendResponse(res, apiSuccess(108), "", {
-      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
+      beneficiary_transaction: await beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -187,7 +227,7 @@ export const payoutController = {
     const txn = await findOneByAnyId(req.user.id, q);
     if (!txn) throw new ApiException(124);
     return sendResponse(res, "Transaction fetched successfully.", "", {
-      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
+      beneficiary_transaction: await beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -216,8 +256,8 @@ export const payoutController = {
       }
     }
 
-    return sendResponse(res, "Transaction fetched.", 200, {
-      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
+    return sendResponse(res, "Transaction fetched successfully.", "", {
+      beneficiary_transaction: await beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -280,6 +320,7 @@ export const payoutController = {
       country: q.country,
       currency: q.currency,
       type: parties.beneficiary_type,
+      merchantId: req.user.merchantId,
     });
     const merchantRow = req.user.merchantId
       ? await prisma().merchant.findFirst({
@@ -311,6 +352,7 @@ export const payoutController = {
       country: q.country,
       currency: q.currency,
       type: parties.beneficiary_type,
+      merchantId: req.user.merchantId,
     });
     const merchantRow = req.user.merchantId
       ? await prisma().merchant.findFirst({
@@ -353,8 +395,8 @@ export const payoutController = {
       req.user.id,
     );
 
-    const beneficiaryEmail = beneficiary.beneficiaryAccount.email as string | undefined;
-    const accountNumber = beneficiary.beneficiaryAccount.account_number as string | undefined;
+    const beneficiaryEmail = cleanDbField(beneficiary.beneficiaryAccount.email);
+    const accountNumber = cleanDbField(beneficiary.beneficiaryAccount.account_number);
     const currency = String(beneficiary.beneficiaryAccount.currency ?? "");
     let beneficiaryAccount = beneficiaryEmail
       ? await prisma().beneficiaryAccount.findFirst({
@@ -372,20 +414,54 @@ export const payoutController = {
         data: {
           uniqueId: uniqueId(24),
           userId: req.user.id,
+          type: typeof beneficiary.beneficiaryAccount.type === "number" ? beneficiary.beneficiaryAccount.type : null,
           country: String(beneficiary.beneficiaryAccount.country ?? "US"),
           currency,
-          firstName: (beneficiary.beneficiaryAccount.first_name as string) ?? null,
-          lastName: (beneficiary.beneficiaryAccount.last_name as string) ?? null,
-          email: beneficiaryEmail ?? null,
-          accountNumber: accountNumber ?? null,
-          accountName: (beneficiary.beneficiaryAccount.account_name as string) ?? null,
-          bankName: (beneficiary.beneficiaryAccount.bank_name as string) ?? null,
+          firstName: cleanDbField(beneficiary.beneficiaryAccount.first_name),
+          middleName: cleanDbField(beneficiary.beneficiaryAccount.middle_name),
+          lastName: cleanDbField(beneficiary.beneficiaryAccount.last_name),
+          email: beneficiaryEmail,
+          mobileCountryCode: cleanDbField(beneficiary.beneficiaryAccount.mobile_country_code),
+          mobile: cleanDbField(beneficiary.beneficiaryAccount.mobile),
+          accountNumber: accountNumber,
+          accountName: cleanDbField(beneficiary.beneficiaryAccount.account_name),
+          bankName: cleanDbField(beneficiary.beneficiaryAccount.bank_name),
+          paymentRail: cleanDbField(beneficiary.beneficiaryAccount.payment_rail),
+          routingNumber: cleanDbField(beneficiary.beneficiaryAccount.routing_number),
+          swiftCode: cleanDbField(beneficiary.beneficiaryAccount.swift_code),
+          iban: cleanDbField(beneficiary.beneficiaryAccount.iban),
+          businessName: cleanDbField(beneficiary.beneficiaryAccount.business_name),
+          businessCountry: cleanDbField(beneficiary.beneficiaryAccount.business_country),
           status: 1,
+        },
+      });
+
+      const addDetail = beneficiary.beneficiaryAccountAdditionalDetail as Record<string, unknown>;
+      await prisma().beneficiaryAdditionalDetail.create({
+        data: {
+          uniqueId: uniqueId(24),
+          beneficiaryAccountId: beneficiaryAccount.id,
+          addressType: cleanDbField(addDetail.address_type) ?? "PRESENT",
+          addressLine1: cleanDbField(addDetail.address_line1),
+          addressLine2: cleanDbField(addDetail.address_line2),
+          postalCode: cleanDbField(addDetail.postal_code),
+          city: cleanDbField(addDetail.city),
+          state: cleanDbField(addDetail.state),
+          country: cleanDbField(addDetail.country),
+          paymentType: cleanDbField(addDetail.payment_type),
+          bankAddressLine1: cleanDbField(addDetail.bank_address_line1),
+          bankAddressLine2: cleanDbField(addDetail.bank_address_line2),
+          bankPostalCode: cleanDbField(addDetail.bank_postal_code),
+          bankCity: cleanDbField(addDetail.bank_city),
+          bankState: cleanDbField(addDetail.bank_state),
+          bankCountry: cleanDbField(addDetail.bank_country),
+          purposeOfTransaction: cleanDbField(addDetail.purpose_of_transaction),
+          userSourceOfIncome: cleanDbField(addDetail.user_source_of_income),
         },
       });
     }
 
-    const senderIdNumber = sender.id_number as string | undefined;
+    const senderIdNumber = cleanDbField(sender.id_number);
     let senderRow = senderIdNumber
       ? await prisma().sender.findFirst({
           where: {
@@ -396,15 +472,37 @@ export const payoutController = {
         })
       : null;
     if (!senderRow) {
+      let dobValue: Date | null = null;
+      if (sender.dob) {
+        const parsedDob = new Date(sender.dob as string);
+        if (!isNaN(parsedDob.getTime())) {
+          dobValue = parsedDob;
+        }
+      }
+
       senderRow = await prisma().sender.create({
         data: {
           uniqueId: uniqueId(24),
           userId: req.user.id,
-          firstName: (sender.first_name as string) ?? null,
-          lastName: (sender.last_name as string) ?? null,
-          email: (sender.email as string) ?? null,
-          idNumber: senderIdNumber ?? null,
-          type: sender.type,
+          firstName: cleanDbField(sender.first_name),
+          middleName: cleanDbField(sender.middle_name),
+          lastName: cleanDbField(sender.last_name),
+          email: cleanDbField(sender.email),
+          mobileCountryCode: cleanDbField(sender.mobile_country_code),
+          mobile: cleanDbField(sender.mobile),
+          dob: dobValue,
+          country: cleanDbField(sender.country),
+          nationality: cleanDbField(sender.nationality),
+          address1: cleanDbField(sender.address_1 ?? sender.address),
+          address2: cleanDbField(sender.address_2),
+          city: cleanDbField(sender.city),
+          state: cleanDbField(sender.state),
+          postalCode: cleanDbField(sender.postal_code),
+          type: typeof sender.type === "number" ? sender.type : null,
+          idType: cleanDbField(sender.id_type),
+          idNumber: senderIdNumber,
+          sourceOfFunds: cleanDbField(sender.source_of_funds),
+          businessPersons: sender.business_persons ? (sender.business_persons as any) : null,
           status: 1,
         },
       });
@@ -425,7 +523,7 @@ export const payoutController = {
       req.teamMember,
     );
     return sendResponse(res, apiSuccess(108), 108, {
-      beneficiary_transaction: beneficiaryTransactionResource(txn, !!req.teamMember),
+      beneficiary_transaction: await beneficiaryTransactionResource(txn, !!req.teamMember),
     });
   },
 
@@ -618,7 +716,8 @@ export const payoutController = {
       { buffer, contentType: "application/pdf", extension: "pdf" },
       "exports/transaction-receipts",
     );
-    return sendResponse(res, "Transaction receipt generated.", 200, { url });
+    const signedUrl = await s3Service.temporaryUrl(url);
+    return sendResponse(res, "Transaction receipt generated.", 200, { url: signedUrl });
   },
 
   /**
@@ -629,7 +728,7 @@ export const payoutController = {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as PayoutListInput;
     const fileType = String((req.query as { type?: string }).type ?? "pdf").toLowerCase();
-    const where = await listWhere(req.user, q, !!req.teamMember);
+    const where = await listWhere(req.user, q, req.teamMember);
     const rows = await prisma().beneficiaryTransaction.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -666,13 +765,87 @@ export const payoutController = {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       extension = "xlsx";
     } else {
-      const { generateBulkTransactionsPdf } = await import(
-        "../../services/exports/pdfReceipt"
-      );
-      buffer = await generateBulkTransactionsPdf(
-        exportRows,
-        "Beneficiary Transactions",
-      );
+      let logoUrl = "";
+      const logoPaths = [
+        path.join(__dirname, "..", "..", "..", "public", "logo", "eficyent-logo-dark.png"),
+        path.join(__dirname, "..", "..", "public", "logo", "eficyent-logo-dark.png"),
+        path.join(process.cwd(), "public", "logo", "eficyent-logo-dark.png"),
+        path.join(process.cwd(), "dist", "public", "logo", "eficyent-logo-dark.png"),
+      ];
+      for (const p of logoPaths) {
+        if (fs.existsSync(p)) {
+          try {
+            const logoBase64 = fs.readFileSync(p).toString("base64");
+            logoUrl = `data:image/png;base64,${logoBase64}`;
+            break;
+          } catch (e) {
+            // ignore and try next path
+          }
+        }
+      }
+      if (!logoUrl) {
+        logoUrl = `${process.env.APP_URL || `http://localhost:${process.env.PORT || 1730}`}/logo/eficyent-logo-dark.png`;
+      }
+
+      const translations: Record<string, string> = {
+        beneficiary_transactions: "Beneficiary Transactions",
+        s_no: "S.No",
+        txn_ref_no: "Txn Ref No",
+        client_ref_no: "Client Ref No",
+        account_number: "Account Number",
+        sending_amount: "Sending Amount",
+        receiving_amount: "Receiving Amount",
+        status: "Status",
+        date: "Date"
+      };
+      const tr = (key: string) => translations[key] || key;
+
+      const beneficiaryDetails = rows.map((r) => {
+        const statusLabel = beneficiaryTransactionStatusLabel(Number(r.status), !!req.teamMember);
+        return {
+          txn_ref_no: r.txnRefNo ?? "",
+          client_ref_no: r.clientReferenceId ?? "",
+          account_number: r.beneficiaryAccount?.accountNumber ?? "",
+          sending_amount: r.totalAmount.toString(),
+          receiving_amount: r.recipientAmount?.toString() ?? "",
+          receiving_currency: r.receivingCurrency ?? "",
+          status: statusLabel,
+          created_at: r.createdAt ? r.createdAt.toISOString().split("T")[0] : "",
+        };
+      });
+
+      const templatePath = path.join(__dirname, "..", "..", "views", "invoice", "beneficiaryTransaction.ejs");
+      const templateHtml = await fs.promises.readFile(templatePath, "utf-8");
+      
+      const today = new Date();
+      const formattedDate = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
+
+      const html = ejs.render(templateHtml, {
+        tr,
+        date: formattedDate,
+        logo: logoUrl,
+        beneficiary_details: beneficiaryDetails,
+      });
+
+      const browser = await puppeteer.launch({
+        headless: "new" as any,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      });
+      const page = await browser.newPage();
+      await page.setContent(html);
+      const pdfUint8Array = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        margin: {
+          top: "30px",
+          right: "30px",
+          bottom: "30px",
+          left: "30px",
+        },
+      });
+      buffer = Buffer.from(pdfUint8Array);
+      await browser.close();
+
       contentType = "application/pdf";
       extension = "pdf";
     }
@@ -680,7 +853,8 @@ export const payoutController = {
       { buffer, contentType, extension },
       "exports/beneficiary-transactions",
     );
-    return sendResponse(res, "Bulk export generated.", 200, { url });
+    const signedUrl = await s3Service.temporaryUrl(url);
+    return sendResponse(res, "Bulk export generated.", 200, { url: signedUrl });
   },
 
   /**
@@ -696,6 +870,7 @@ export const payoutController = {
       country: q.country,
       currency: q.currency,
       type: parties.beneficiary_type,
+      merchantId: req.user.merchantId,
     });
     const quote = await quoteFormFields();
     const merchantRow = req.user.merchantId
@@ -729,7 +904,8 @@ export const payoutController = {
       },
       "exports/payout-templates",
     );
-    return sendResponse(res, "Template ready.", 200, { url });
+    const signedUrl = await s3Service.temporaryUrl(url);
+    return sendResponse(res, "Template ready.", 200, { url: signedUrl });
   },
 
   /**
@@ -763,7 +939,7 @@ export const payoutController = {
 
     const fieldsStart = Date.now();
     console.log("[BulkStore] Fetching form fields");
-    const beneficiary = await beneficiaryFormFields({ country, currency, type });
+    const beneficiary = await beneficiaryFormFields({ country, currency, type, merchantId: req.user.merchantId });
     const quote = await quoteFormFields();
     const merchantRow = req.user.merchantId
       ? await prisma().merchant.findFirst({ where: { id: req.user.merchantId } })
@@ -876,6 +1052,7 @@ export const payoutController = {
             beneficiary: row.beneficiary,
             remitter: row.remitter,
             transaction: { amount: row.amount, remarks: row.remarks, txn_ref_no: row.txn_ref_no },
+            creator: req.teamMember?.id ? String(req.teamMember.id) : null,
           } as Prisma.InputJsonValue,
         },
       });
@@ -936,8 +1113,6 @@ export const payoutController = {
       data: {
         uniqueId: uniqueId(24),
         beneficiaryTransactionId: txn.id,
-// @ts-ignore - Catch-all auto-fix for: Object literal may only specif...
-        userId: req.user.id,
         documentType,
         remitterProof: url,
         status: PAYMENT_PROOF_REQUESTED,

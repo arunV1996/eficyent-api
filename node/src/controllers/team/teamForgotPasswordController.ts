@@ -108,11 +108,9 @@ export const teamForgotPasswordController = {
 
     const token = randomTokenBase64Url(32);
     await prisma().$transaction([
-// @ts-expect-error - Prisma client property missing
-      prisma().passwordReset.deleteMany({ where: { email: member.email } }),
-// @ts-expect-error - Prisma client property missing
-      prisma().passwordReset.create({
-        data: { email: member.email, token },
+      prisma().password_reset_tokens.deleteMany({ where: { email: member.email } }),
+      prisma().password_reset_tokens.create({
+        data: { email: member.email, token, created_at: new Date() },
       }),
       prisma().teamMember.update({
         where: { id: member.id },
@@ -127,13 +125,13 @@ export const teamForgotPasswordController = {
 
   async resetPassword(req: Request, res: Response): Promise<Response> {
     const body = req.body as TeamResetPasswordInput;
-// @ts-expect-error - Prisma client property missing
-    const reset = await prisma().passwordReset.findUnique({
+    const reset = await prisma().password_reset_tokens.findFirst({
       where: { token: body.reset_token },
     });
     if (!reset) throw new ApiException(128);
     if (
-      reset.createdAt.getTime() + PASSWORD_RESET_EXPIRY_MIN * 60_000 <
+      !reset.created_at ||
+      reset.created_at.getTime() + PASSWORD_RESET_EXPIRY_MIN * 60_000 <
       Date.now()
     ) {
       throw new ApiException(141);
@@ -151,8 +149,7 @@ export const teamForgotPasswordController = {
           lastPasswordReset: new Date(),
         },
       }),
-// @ts-expect-error - Prisma client property missing
-      prisma().passwordReset.deleteMany({ where: { token: body.reset_token } }),
+      prisma().password_reset_tokens.deleteMany({ where: { token: body.reset_token } }),
     ]);
     return sendResponse(res, apiSuccess(111), 111, []);
   },

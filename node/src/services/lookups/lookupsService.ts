@@ -337,7 +337,7 @@ export const lookupsService = {
   },
 };
 
-function relativeTime(date: Date, _tz: string): string {
+export function relativeTime(date: Date, _tz: string): string {
   const sec = Math.floor((Date.now() - date.getTime()) / 1000);
   if (sec < 60) return `${sec} seconds ago`;
   const min = Math.floor(sec / 60);
@@ -345,5 +345,9 @@ function relativeTime(date: Date, _tz: string): string {
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr} hour${hr === 1 ? "" : "s"} ago`;
   const day = Math.floor(hr / 24);
-  return `${day} day${day === 1 ? "" : "s"} ago`;
+  if (day < 30) return `${day} day${day === 1 ? "" : "s"} ago`;
+  const month = Math.floor(day / 30);
+  if (month < 12) return `${month} month${month === 1 ? "" : "s"} ago`;
+  const year = Math.floor(month / 12);
+  return `${year} year${year === 1 ? "" : "s"} ago`;
 }

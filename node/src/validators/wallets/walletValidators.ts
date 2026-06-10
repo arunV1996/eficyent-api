@@ -33,7 +33,7 @@ export const WalletTransactionsQuerySchema = z
   .object({
     wallet_id: z.string().min(1).max(64).optional(),
     transaction_type: z.coerce.number().int().min(1).max(2).optional(),
-    status: z.coerce.number().int().min(0).max(4).optional(),
+    status: z.union([z.coerce.number().int().min(0).max(4), z.string().max(64)]).optional(),
     from_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     to_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     search_key: z.string().max(64).optional(),

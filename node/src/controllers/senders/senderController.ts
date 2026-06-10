@@ -8,6 +8,7 @@ import {
   SENDER_STATUS_APPROVED,
   SENDER_STATUS_PENDING,
   TAKE_COUNT,
+  TEAM_MEMBER_ROLE_CORPORATE,
   USER_TYPE_BUSINESS,
   USER_TYPE_INDIVIDUAL,
 } from "../../helpers/constants";
@@ -145,23 +146,40 @@ export const senderController = {
     const status =
       q.status && q.status in REMITTER_STATUS_MAP ? REMITTER_STATUS_MAP[q.status] : null;
     const type = q.type ? USER_TYPE_MAP[q.type] : null;
+    const searchConditions: Prisma.SenderWhereInput[] = [];
+    if (q.search_key) {
+      searchConditions.push(
+        { email: { contains: q.search_key } },
+        { uniqueId: { contains: q.search_key } },
+        { firstName: { contains: q.search_key } },
+        { lastName: { contains: q.search_key } },
+        { middleName: { contains: q.search_key } },
+        { mobile: { contains: q.search_key } },
+        { idNumber: { contains: q.search_key } },
+      );
+
+      const parts = q.search_key.trim().split(/\s+/).filter(Boolean);
+      if (parts.length > 1) {
+        searchConditions.push({
+          AND: parts.map((part) => ({
+            OR: [
+              { firstName: { contains: part } },
+              { middleName: { contains: part } },
+              { lastName: { contains: part } },
+            ],
+          })),
+        });
+      }
+    }
+
     const where: Prisma.SenderWhereInput = {
       userId: req.user.id,
       deletedAt: null,
       ...(type !== null ? { type } : {}),
       ...(status !== null ? { status } : {}),
-      ...(q.search_key
-        ? {
-            OR: [
-              { email: { contains: q.search_key } },
-              { uniqueId: { contains: q.search_key } },
-              { firstName: { contains: q.search_key } },
-              { lastName: { contains: q.search_key } },
-              { middleName: { contains: q.search_key } },
-              { mobile: { contains: q.search_key } },
-              { idNumber: { contains: q.search_key } },
-            ],
-          }
+      ...(searchConditions.length > 0 ? { OR: searchConditions } : {}),
+      ...(req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE
+        ? { team_member_id: req.teamMember.id }
         : {}),
     };
     const skip = q.skip ?? 0;
@@ -178,7 +196,7 @@ export const senderController = {
     ]);
     return sendResponse(res, "", "", {
       total,
-      remitters: rows.map(senderResource),
+      remitters: await Promise.all(rows.map(senderResource)),
     });
   },
 
@@ -212,6 +230,7 @@ export const senderController = {
           ...(senderColumns as Prisma.SenderUncheckedCreateInput),
           uniqueId: uniqueId(24),
           userId: req.user!.id,
+          team_member_id: req.teamMember?.id ?? null,
           status: initialStatus,
         },
       });
@@ -244,7 +263,7 @@ export const senderController = {
       include: { documents: true },
     });
     return sendResponse(res, "Remitter created successfully.", "", {
-      remitter: senderResource(refreshed!),
+      remitter: await senderResource(refreshed!),
     });
   },
 
@@ -276,7 +295,7 @@ export const senderController = {
       include: { documents: true },
     });
     return sendResponse(res, "Remitter updated successfully.", "", {
-      remitter: senderResource(updated),
+      remitter: await senderResource(updated),
     });
   },
 
@@ -297,7 +316,7 @@ export const senderController = {
     });
     if (!sender) throw new ApiException(132);
     return sendResponse(res, "Remitter fetched successfully.", 132, {
-      remitter: senderResource(sender),
+      remitter: await senderResource(sender),
     });
   },
 
@@ -349,7 +368,8 @@ export const senderController = {
       },
       "exports/sender-templates",
     );
-    return sendResponse(res, "Template ready.", 200, { url });
+    const signedUrl = await s3Service.temporaryUrl(url);
+    return sendResponse(res, "Template ready.", 200, { url: signedUrl });
   },
 
   /**
@@ -384,6 +404,7 @@ export const senderController = {
       "../../services/senders/senderNormalizer"
     );
     const senderCache = createSenderValidationCache();
+    const seenIdNumbers = new Set<string>();
     const result = await processExcel(buffer, flat, async (payload, rowNumber) => {
       const normalized = await validateAndNormalizeSender(
         payload.remitter as Record<string, unknown>,
@@ -391,6 +412,22 @@ export const senderController = {
         depositEnabled,
         senderCache,
       );
+
+      const idNumber = normalized.id_number as string | undefined;
+      if (idNumber) {
+        if (seenIdNumbers.has(idNumber)) {
+          throw new Error(`Duplicate ID Number "${idNumber}" found in spreadsheet.`);
+        }
+        seenIdNumbers.add(idNumber);
+
+        const exists = await prisma().sender.findFirst({
+          where: { userId: req.user!.id, idNumber, deletedAt: null },
+        });
+        if (exists) {
+          throw new Error(`Remitter with ID Number "${idNumber}" already exists.`);
+        }
+      }
+
       return { row: rowNumber, sender: normalized };
     });
     if (result.errors.length > 0) {
@@ -405,6 +442,7 @@ export const senderController = {
         data: {
           uniqueId: uniqueId(24),
           userId: req.user.id,
+          team_member_id: req.teamMember?.id ?? null,
           firstName: (row.sender.first_name as string) ?? null,
           lastName: (row.sender.last_name as string) ?? null,
           email: (row.sender.email as string) ?? null,

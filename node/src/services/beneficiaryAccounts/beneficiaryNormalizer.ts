@@ -98,16 +98,16 @@ export async function validateAndNormalize(
 
   let fields: FieldDef[];
   if (cache) {
-    const fieldsKey = `${country}|${currency}|${type}`;
+    const fieldsKey = `${country}|${currency}|${type}|${user.merchantId?.toString() ?? "default"}`;
     const hit = cache.fields.get(fieldsKey);
     if (hit) {
       fields = hit;
     } else {
-      fields = await beneficiaryFormFields({ country, currency, type });
+      fields = await beneficiaryFormFields({ country, currency, type, merchantId: user.merchantId });
       cache.fields.set(fieldsKey, fields);
     }
   } else {
-    fields = await beneficiaryFormFields({ country, currency, type });
+    fields = await beneficiaryFormFields({ country, currency, type, merchantId: user.merchantId });
   }
   const result = validateAgainstFields(fields, payload);
   const validated = ensureNoFieldErrors(result);
