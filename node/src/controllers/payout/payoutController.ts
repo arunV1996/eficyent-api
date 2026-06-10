@@ -643,6 +643,7 @@ export const payoutController = {
    * generates a PDF receipt for a single transaction and uploads it to S3.
    */
   async export(req: Request, res: Response): Promise<Response> {
+    res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as PayoutShowInput;
     const txn = await findOneByAnyId(req.user.id, q);
@@ -725,6 +726,7 @@ export const payoutController = {
    * of a transaction list as PDF or XLSX.
    */
   async downloadList(req: Request, res: Response): Promise<Response> {
+    res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as PayoutListInput;
     const fileType = String((req.query as { type?: string }).type ?? "pdf").toLowerCase();
