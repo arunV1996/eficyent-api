@@ -50,6 +50,11 @@ import { logger } from "../helpers/logger";
  *
  *   AWS:
  *     S3_BUCKET, S3_REGION, S3_USE_PATH_STYLE
+ *     EXTERNAL_AWS_REGION, EXTERNAL_AWS_ACCESS_KEY_ID,
+ *     EXTERNAL_AWS_SECRET_ACCESS_KEY (optional cross-account S3 creds -
+ *     when both id+secret are set, the S3 client uses them instead of
+ *     the default chain, keeping Secrets Manager / KMS on the connected
+ *     account).
  *
  *   Mail:
  *     MAIL_HOST, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM
@@ -101,6 +106,14 @@ export interface AwsSecret {
   S3_BUCKET?: string;
   S3_REGION?: string;
   S3_USE_PATH_STYLE?: boolean;
+  // Optional cross-account S3 credentials. When EXTERNAL_AWS_ACCESS_KEY_ID and
+  // EXTERNAL_AWS_SECRET_ACCESS_KEY are both set, the S3 client uses them
+  // (and EXTERNAL_AWS_REGION when present) instead of the default credential
+  // chain - so file storage can live in a different AWS account than
+  // Secrets Manager / KMS, which keep using the connected account.
+  EXTERNAL_AWS_REGION?: string;
+  EXTERNAL_AWS_ACCESS_KEY_ID?: string;
+  EXTERNAL_AWS_SECRET_ACCESS_KEY?: string;
 }
 
 export interface MailSecret {
@@ -247,6 +260,9 @@ export const Secrets = {
       S3_BUCKET: await cfg("S3_BUCKET"),
       S3_REGION: await cfg("S3_REGION"),
       S3_USE_PATH_STYLE: asBool(await cfg("S3_USE_PATH_STYLE")),
+      EXTERNAL_AWS_REGION: await cfg("EXTERNAL_AWS_REGION"),
+      EXTERNAL_AWS_ACCESS_KEY_ID: await cfg("EXTERNAL_AWS_ACCESS_KEY_ID"),
+      EXTERNAL_AWS_SECRET_ACCESS_KEY: await cfg("EXTERNAL_AWS_SECRET_ACCESS_KEY"),
     };
   },
 

@@ -9,7 +9,11 @@ import { logger } from "../../helpers/logger";
  * Mirror of Helper::uploadToS3 / uploadBase64ToS3 / temporary_s3_url.
  *
  * Bucket name + region are loaded from Secrets Manager (eficyent/<env>/aws).
- * IAM credentials come from the EC2/ECS/EKS task role - never from env vars.
+ * IAM credentials come from EXTERNAL_AWS_ACCESS_KEY_ID +
+ * EXTERNAL_AWS_SECRET_ACCESS_KEY when both are set (so file storage can
+ * live in a separate AWS account from Secrets Manager / KMS); otherwise
+ * the SDK's default credential chain (EC2/ECS/EKS task role, env, etc.)
+ * is used.
  */
 
 const TEMP_URL_EXPIRY_MIN = 10; // mirrors AWS_TEMP_URL_EXPIRY constant
@@ -23,10 +27,22 @@ async function getClient(): Promise<{ client: S3Client; bucket: string }> {
   const aws = await Secrets.aws();
   if (!aws.S3_BUCKET) throw new Error("S3_BUCKET not configured in Secrets Manager");
   bucket = aws.S3_BUCKET;
-  region = aws.S3_REGION ?? env().AWS_REGION;
+  // EXTERNAL_AWS_REGION wins when the bucket lives in a cross-account region;
+  // fall back to the legacy S3_REGION, then the global AWS_REGION.
+  region = aws.EXTERNAL_AWS_REGION ?? aws.S3_REGION ?? env().AWS_REGION;
+  const useExternalCreds =
+    !!aws.EXTERNAL_AWS_ACCESS_KEY_ID && !!aws.EXTERNAL_AWS_SECRET_ACCESS_KEY;
   client = new S3Client({
     region,
     forcePathStyle: aws.S3_USE_PATH_STYLE === true,
+    ...(useExternalCreds
+      ? {
+          credentials: {
+            accessKeyId: aws.EXTERNAL_AWS_ACCESS_KEY_ID!,
+            secretAccessKey: aws.EXTERNAL_AWS_SECRET_ACCESS_KEY!,
+          },
+        }
+      : {}),
   });
   return { client, bucket };
 }
