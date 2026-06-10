@@ -44,6 +44,19 @@ async function getClient(): Promise<{ client: S3Client; bucket: string }> {
         }
       : {}),
   });
+  logger.info(
+    {
+      bucket,
+      region,
+      credsSource: useExternalCreds ? "EXTERNAL_AWS_*" : "default-chain",
+      regionSource: aws.EXTERNAL_AWS_REGION
+        ? "EXTERNAL_AWS_REGION"
+        : aws.S3_REGION
+          ? "S3_REGION"
+          : "AWS_REGION (fallback)",
+    },
+    "S3Client initialised",
+  );
   return { client, bucket };
 }
 
