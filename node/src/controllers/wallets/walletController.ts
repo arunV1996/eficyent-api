@@ -130,7 +130,7 @@ export const walletController = {
     return sendResponse(res, "", 200, {
       total,
       wallets: page.map((w) =>
-        walletResource({ ...w.row, balance: w.balance.toString(), flag: w.flag } as never),
+        walletResource({ ...w.row, balance: w.balance.toString(), flag: w.flag } as never, req.user?.timezone),
       ),
     });
   },
@@ -152,7 +152,7 @@ export const walletController = {
     const flag = country ? getFlagUrl(country.countryCode, APP_URL) : null;
 
     return sendResponse(res, "", 200, {
-      wallet: walletResource({ ...w, balance: balance.toString(), flag } as never),
+      wallet: walletResource({ ...w, balance: balance.toString(), flag } as never, req.user.timezone),
     });
   },
 
@@ -222,25 +222,6 @@ export const walletController = {
         where: { id: quote.id },
         data: { status: QUOTE_SUBMITTED },
       });
-
-      // Mirror Laravel's Helper::updateLedger timing — balance is computed
-      // AFTER the wallet transaction row is inserted so the new CREDIT is
-      // included in the aggregate (getWalletBalance = SUM(CREDIT) - SUM(DEBIT)).
-      const balanceAfterCreate = await getWalletBalance(req.user!, wallet);
-
-      await tx.ledger.create({
-        data: {
-          uniqueId: uniqueId(24),
-          userId: req.user!.id,
-          virtualAccountId: va.id,
-          walletId: wallet.id,
-          transactionType: "App\\Models\\WalletTransaction",
-          transactionId: created.id,
-          balance: balanceAfterCreate,
-          externalType: quote.externalType,
-          description: `Wallet conversion (${quote.uniqueId})`,
-        },
-      });
       return created;
     });
 
@@ -254,7 +235,7 @@ export const walletController = {
     };
 
     return sendResponse(res, apiSuccess(108), 108, {
-      wallet_transaction: walletTransactionResource(wtWithRelations as any),
+      wallet_transaction: walletTransactionResource(wtWithRelations as any, req.user.timezone),
     });
   },
 
@@ -325,7 +306,7 @@ export const walletController = {
     ]);
     return sendResponse(res, "", 200, {
       total,
-      wallet_transactions: rows.map(walletTransactionResource),
+      wallet_transactions: rows.map((r) => walletTransactionResource(r, req.user?.timezone)),
     });
   },
 
@@ -345,7 +326,7 @@ export const walletController = {
     });
     if (!t) throw new ApiException(404, undefined, 404);
     return sendResponse(res, "", 200, {
-      wallet_transaction: walletTransactionResource(t),
+      wallet_transaction: walletTransactionResource(t, req.user.timezone),
     });
   },
 };

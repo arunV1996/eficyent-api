@@ -89,17 +89,19 @@ export async function processBulkPayout(
       : null;
     const accountNumber = String(beneficiaryPayload.beneficiaryAccount.account_number).trim();
     const currency = String(beneficiaryPayload.beneficiaryAccount.currency ?? "").trim();
-    let beneficiaryAccount = beneficiaryEmail
-      ? await prisma().beneficiaryAccount.findFirst({
-          where: {
-            userId: user.id,
-            email: beneficiaryEmail,
-            accountNumber,
-            currency,
-            deletedAt: null,
-          },
-        })
-      : null;
+
+    // Always look up by accountNumber + currency (the real unique key for a
+    // bank account). Email is included as an extra filter only when present —
+    // mirroring how the sender is deduped by idNumber regardless of other fields.
+    let beneficiaryAccount = await prisma().beneficiaryAccount.findFirst({
+      where: {
+        userId: user.id,
+        accountNumber,
+        currency,
+        deletedAt: null,
+        ...(beneficiaryEmail ? { email: beneficiaryEmail } : {}),
+      },
+    });
 
     if (!beneficiaryAccount) {
       beneficiaryAccount = await prisma().beneficiaryAccount.create({

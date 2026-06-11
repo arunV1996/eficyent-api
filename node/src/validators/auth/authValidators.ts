@@ -103,6 +103,11 @@ export const ResetPasswordSchema = z
   .object({
     reset_token: z.string().min(20).max(200),
     password,
+    password_confirmation: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .refine((v) => !v.password_confirmation || v.password === v.password_confirmation, {
+    message: "Password confirmation does not match.",
+    path: ["password_confirmation"],
+  });
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;

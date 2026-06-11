@@ -191,7 +191,7 @@ export const senderController = {
         skip,
         take,
         orderBy: { createdAt: "desc" },
-        include: { documents: true },
+        include: { documents: true, user: { select: { timezone: true } } },
       }),
     ]);
     return sendResponse(res, "", "", {
@@ -260,7 +260,7 @@ export const senderController = {
 
     const refreshed = await prisma().sender.findUnique({
       where: { id: created.id },
-      include: { documents: true },
+      include: { documents: true, user: { select: { timezone: true } } },
     });
     return sendResponse(res, "Remitter created successfully.", "", {
       remitter: await senderResource(refreshed!),
@@ -292,7 +292,7 @@ export const senderController = {
     const updated = await prisma().sender.update({
       where: { id: sender.id },
       data: data as Prisma.SenderUncheckedUpdateInput,
-      include: { documents: true },
+      include: { documents: true, user: { select: { timezone: true } } },
     });
     return sendResponse(res, "Remitter updated successfully.", "", {
       remitter: await senderResource(updated),
@@ -312,7 +312,7 @@ export const senderController = {
 
     const sender = await prisma().sender.findFirst({
       where,
-      include: { documents: true },
+      include: { documents: true, user: { select: { timezone: true } } },
     });
     if (!sender) throw new ApiException(132);
     return sendResponse(res, "Remitter fetched successfully.", 132, {

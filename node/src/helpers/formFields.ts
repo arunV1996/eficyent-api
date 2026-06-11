@@ -418,7 +418,12 @@ function businessOnboardingFields(ctx: FormBuildContext): FieldDef[] {
     }),
     make("tax_id", "Tax ID Number", { validation: VALIDATION_PRESETS.id_number }),
     make("country_of_incorporation", "Country  of Incorporation", { values: ctx.countries }),
-    make("formation_date", "Formation Date", { type: "date" }),
+    make("formation_date", "Formation Date", {
+      type: "date",
+      validation: {
+        max_date: new Date().toISOString().split("T")[0],
+      },
+    }),
     make("business_name", "Business Name", {
       validation: VALIDATION_PRESETS.business_name,
     }),

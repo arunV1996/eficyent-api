@@ -1,6 +1,4 @@
 import {
-  BeneficiaryTransaction,
-  DepositTransaction,
   Ledger,
   Quote,
   Wallet,
@@ -44,57 +42,49 @@ export function ledgerResource(
     transaction?: any;
     wallet?: Wallet | null;
     virtualAccount?: any | null;
+    users?: { timezone?: string | null } | null;
+    refundLedger?: { transaction?: any } | null;
   },
   options: LedgerResourceOptions = {},
 ): LedgerDto {
   const tx = l.transaction;
 
-  let transId = "";
-  let clientRef = "";
-  let txnRef = "";
-  let type = "DEBIT";
-  let amount = "0.00";
-  let currency = l.wallet?.currency ?? l.virtualAccount?.currency ?? "";
-  let fromCurrency = l.virtualAccount?.currency ?? currency;
-  let paidTo: number | string | null = "";
+  const currency = l.wallet?.currency ?? l.virtualAccount?.currency ?? "";
+  const fromCurrency = l.virtualAccount?.currency ?? currency;
+  let displayCurrency = fromCurrency;
+  if (options.wallet_id) {
+    displayCurrency = currency;
+  }
+
+  let amount: any = tx?.totalAmount ?? 0;
   let balanceStr = l.balance ? `${parseFloat(l.balance.toString()).toFixed(2)} ${currency}`.trim() : "";
-  let refundId = "";
 
-  // 1. Determine base type and basic info
-  if (l.transactionType === MORPH_DEPOSIT_TRANSACTION && tx) {
-    const dt = tx as DepositTransaction;
-    transId = dt.uniqueId || "";
-    clientRef = dt.clientReferenceId || "";
+  let type = "DEBIT";
+  if (l.transactionType === MORPH_DEPOSIT_TRANSACTION) {
     type = "CREDIT";
-    amount = dt.totalAmount.toString();
-    fromCurrency = dt.depositCurrency || fromCurrency;
-  } else if (l.transactionType === MORPH_BENEFICIARY_TRANSACTION && tx) {
-    const bt = tx as BeneficiaryTransaction;
-    transId = bt.uniqueId || "";
-    clientRef = bt.clientReferenceId || "";
-    txnRef = bt.txnRefNo || "";
-    type = "DEBIT";
-    amount = bt.totalAmount.toString();
-    paidTo = PAID_TO_BENEFICIARY;
   } else if (l.transactionType === MORPH_WALLET_TRANSACTION && tx) {
-    const wt = tx as WalletTransaction & { quote?: Quote; wallet?: Wallet };
-    transId = wt.uniqueId;
-    clientRef = wt.quote?.uniqueId || "";
-    type = wt.type === TRANSACTION_TYPE_CREDIT ? "CREDIT" : "DEBIT";
-    amount = wt.totalAmount.toString();
+    type = tx.type === TRANSACTION_TYPE_CREDIT ? "CREDIT" : "DEBIT";
+  }
 
-    if (options.wallet_id || options.bank_account_id) {
-      if (wt.quote?.totalSendingAmount) {
-        amount = wt.quote.totalSendingAmount.toString();
-      }
+  let paidTo: number | string | null = "";
+
+  if (l.transactionType === MORPH_BENEFICIARY_TRANSACTION && tx) {
+    paidTo = PAID_TO_BENEFICIARY;
+  }
+
+  if (l.transactionType === MORPH_WALLET_TRANSACTION && tx) {
+    const wt = tx as WalletTransaction & { quote?: Quote; wallet?: Wallet };
+
+    if (options.bank_account_id) {
+      amount = wt.quote?.totalSendingAmount ?? amount;
     }
+
     if (options.wallet_id) {
-      amount = wt.totalAmount.toString();
-      fromCurrency = wt.wallet?.currency || "";
       balanceStr = wt.balanceAfter
         ? `${parseFloat(wt.balanceAfter.toString()).toFixed(2)} ${currency}`.trim()
         : "";
     }
+
     if (options.bank_account_id) {
       balanceStr = l.balance ? `${parseFloat(l.balance.toString()).toFixed(2)} ${fromCurrency}`.trim() : "";
     }
@@ -102,27 +92,44 @@ export function ledgerResource(
     if (l.virtualAccountId && l.walletId && !options.wallet_id) {
       type = "DEBIT";
     }
+
     paidTo = PAID_TO_WALLET;
   }
 
+  // Refund transaction resolving
+  let refundId = "";
   if (l.refundLedgerId) {
     const refundTx = (l as any).refundLedger?.transaction;
     refundId = refundTx?.clientReferenceId || refundTx?.client_reference_id || "";
-    if (refundId && !clientRef) {
-      clientRef = refundId;
-    }
   }
+
+  // Client reference ID logic:
+  let clientRef = "";
+  if (tx) {
+    clientRef = tx.clientReferenceId || tx.client_reference_id || "";
+  }
+  if (!clientRef) {
+    clientRef = refundId;
+  }
+
+  // txn_ref_no
+  let txnRef = "";
+  if (tx) {
+    txnRef = tx.txnRefNo || tx.txn_ref_no || "";
+  }
+
+  const timezone = l.users?.timezone || "Asia/Kolkata";
 
   return {
     unique_id: l.uniqueId,
-    transaction_id: transId,
+    transaction_id: tx?.uniqueId || "",
     client_reference_id: clientRef,
     txn_ref_no: txnRef,
     transaction_type: type,
     paid_to: type === "DEBIT" ? paidTo : "",
-    amount: amount ? `${parseFloat(amount).toFixed(2)} ${fromCurrency}`.trim() : "",
+    amount: amount ? `${parseFloat(amount.toString()).toFixed(2)} ${displayCurrency}`.trim() : "",
     balance: balanceStr,
     refund_transaction_id: refundId,
-    created_at: formatDate(tx?.createdAt || l.createdAt),
+    created_at: formatDate(tx?.createdAt || l.createdAt, timezone),
   };
 }

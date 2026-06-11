@@ -164,7 +164,7 @@ export async function beneficiaryTransactionResource(
     txn_ref_no: txn.txnRefNo ?? "",
     utr_number: txn.externalReferenceId ?? "",
     beneficiary_account: txn.beneficiaryAccount
-      ? beneficiaryAccountResource(txn.beneficiaryAccount as any)
+      ? await beneficiaryAccountResource(txn.beneficiaryAccount as any)
       : {},
     quote: quoteDto ?? {},
     amount: txn.amount.toFixed(2),
@@ -271,13 +271,10 @@ export async function beneficiaryTransactionResource(
   if (txn.proofs && txn.proofs.length > 0) {
     const p = txn.proofs[0];
     if (p) {
-      dto.transaction_proof = {
-        transaction_id: txn.uniqueId,
-        status: p.status ? transactionProofStatusLabel(p.status) : "",
-        file: p.fileUrl ? await safeTemporaryUrl(p.fileUrl) : "",
-        remitter_proof: p.remitterProof ? await safeTemporaryUrl(p.remitterProof) : "",
-        requested_at: formatDate(p.requestedAt, userTimezone),
-      };
+      dto.transaction_proof = await transactionProofResource(
+        { ...p, transaction: { uniqueId: txn.uniqueId } },
+        userTimezone,
+      );
     }
   }
 
@@ -307,13 +304,13 @@ export function beneficiaryTransactionCallbackResource(
   txn: BeneficiaryTransaction,
 ): Record<string, unknown> {
   return {
-    unique_id: txn.uniqueId,
-    txn_ref_no: txn.txnRefNo,
-    external_reference_id: txn.externalReferenceId,
-    status: txn.status,
-    amount: txn.amount.toString(),
-    receiving_currency: txn.receivingCurrency,
-    created_at: txn.createdAt ? txn.createdAt.toISOString() : "",
+    unique_id: txn.uniqueId ?? "",
+    txn_ref_no: txn.txnRefNo ?? "",
+    client_reference_id: txn.clientReferenceId ?? "",
+    utr_number: txn.externalReferenceId ?? "",
+    total_amount: txn.totalAmount ? txn.totalAmount.toString() : "",
+    status: beneficiaryTransactionStatusLabel(txn.status) ?? "",
+    remarks: txn.notes ?? "",
   };
 }
 
@@ -321,31 +318,25 @@ export function beneficiaryTransactionCallbackResource(
  * Mirror of TransactionProofResource.
  */
 export interface TransactionProofDto {
-  unique_id: string;
-  document_type: string;
+  transaction_id: string;
   status: string;
-  remitter_proof: string | null;
-  file_url: string | null;
-  requested_at: string | null;
-  uploaded_at: string | null;
+  file: string;
+  remitter_proof: string;
+  requested_at: string;
 }
 
-export function transactionProofResource(p: {
-  uniqueId: string;
-  documentType: string;
-  status: number;
-  remitterProof: string | null;
-  fileUrl: string | null;
-  requestedAt: Date | null;
-  uploadedAt: Date | null;
-}): TransactionProofDto {
+export async function transactionProofResource(
+  p: BeneficiaryTransactionProof & {
+    transaction?: { uniqueId: string } | null;
+  },
+  timezone?: string,
+): Promise<TransactionProofDto> {
+  const tz = timezone || "Asia/Kolkata";
   return {
-    unique_id: p.uniqueId,
-    document_type: p.documentType,
-    status: transactionProofStatusLabel(p.status),
-    remitter_proof: p.remitterProof,
-    file_url: p.fileUrl,
-    requested_at: p.requestedAt ? p.requestedAt.toISOString() : null,
-    uploaded_at: p.uploadedAt ? p.uploadedAt.toISOString() : null,
+    transaction_id: p.transaction?.uniqueId ?? "",
+    status: p.status ? transactionProofStatusLabel(p.status) : "",
+    file: p.fileUrl ? await safeTemporaryUrl(p.fileUrl) : "",
+    remitter_proof: p.remitterProof ? await safeTemporaryUrl(p.remitterProof) : "",
+    requested_at: p.requestedAt ? formatDate(p.requestedAt, tz) : "",
   };
 }

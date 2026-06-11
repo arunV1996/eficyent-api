@@ -255,3 +255,35 @@ export function findValueByKeySync(key: string | number | null | undefined): str
   return lookupsCache[strKey] ?? strKey;
 }
 
+export async function getStateName(
+  stateCode: string | null | undefined,
+  countryCode: string | null | undefined,
+): Promise<string> {
+  if (!stateCode) return "";
+  const trimmed = stateCode.trim();
+  if (trimmed.length > 3) return trimmed;
+
+  try {
+    const mcc = countryCode
+      ? await prisma().mobileCountryCode.findFirst({
+          where: { OR: [{ alpha2Code: countryCode }, { alpha3Code: countryCode }] },
+        })
+      : null;
+    const alpha3 = mcc?.alpha3Code ?? countryCode;
+
+    const state = await prisma().state.findFirst({
+      where: {
+        OR: [
+          { stateCode: trimmed },
+          { stateCode: trimmed.toUpperCase() },
+          { stateCode: trimmed.toLowerCase() },
+        ],
+        ...(alpha3 ? { countryAlpha3: alpha3 } : {}),
+      },
+    });
+    return state?.name ?? trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+

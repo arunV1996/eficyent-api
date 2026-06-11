@@ -47,7 +47,7 @@ export function roleLabel(role: number | bigint | null): string {
   }
 }
 
-async function shapeDocument(doc: UserDocument): Promise<Record<string, unknown>> {
+export async function shapeDocument(doc: UserDocument): Promise<Record<string, unknown>> {
   let signedFile = doc.documentFile ?? "";
   let signedBackFile = doc.documentBackFile ?? "";
   try {
@@ -75,20 +75,105 @@ async function formatBusinessPersons(
   if (!Array.isArray(businessPersons)) return [];
   const { lookupsService } = await import("../services/lookups/lookupsService");
   const { LOOKUP_TYPE_ID_TYPE } = await import("./constants");
+  const { getStateName } = await import("./lookups");
   return Promise.all(
     businessPersons.map(async (person: any) => {
       if (person && typeof person === "object") {
         const idTypeFormatted = person.id_type
           ? await lookupsService.findValuebyKey(person.id_type, LOOKUP_TYPE_ID_TYPE)
           : "";
+        const stateFormatted = person.state
+          ? await getStateName(person.state, person.country)
+          : "";
         return {
           ...person,
           id_type: idTypeFormatted || String(person.id_type || ""),
+          state: stateFormatted || String(person.state || ""),
         };
       }
       return person;
     })
   );
+}
+
+export function genderFormatted(gender: string | null | undefined): string {
+  if (!gender) return "";
+  const g = gender.toLowerCase().trim();
+  if (g === "male" || g === "1") return "Male";
+  if (g === "female" || g === "2") return "Female";
+  if (g === "others" || g === "3") return "Others";
+  return gender;
+}
+
+export async function shapeUserInfo(
+  user: User,
+  info: UserInformation | null,
+): Promise<{ business_information?: any; user_information?: any }> {
+  const { lookupsService } = await import("../services/lookups/lookupsService");
+  const { getStateName } = await import("./lookups");
+
+  if (Number(user.userType) === USER_TYPE_BUSINESS) {
+    const typeOfBusinessFormatted = info?.type_of_business
+      ? await lookupsService.findValuebyKey(info.type_of_business)
+      : "";
+    const stateFormatted = info?.state
+      ? await getStateName(info.state, info.country)
+      : "";
+
+    return {
+      business_information: {
+        legal_name: info?.legalName ?? "",
+        country_of_incorporation: info?.country_of_incorporation ?? "",
+        formation_date: info?.formationDate
+          ? info.formationDate.toISOString().split("T")[0]
+          : "",
+        business_name: info?.businessName ?? "",
+        address_line_1: info?.address1 ?? "",
+        address_line_2: info?.address2 ?? "",
+        city: info?.city ?? "",
+        state: stateFormatted,
+        country: info?.country ?? "",
+        postal_code: info?.postalCode ?? "",
+        purpose_of_transactions: info?.purposeOfTransactions ?? "",
+        tax_id: info?.taxId ?? "",
+        website: info?.website ?? "",
+        business_persons: await formatBusinessPersons(info?.businessPersons),
+        type_of_business: typeOfBusinessFormatted,
+      },
+    };
+  } else {
+    const stateFormatted = info?.state
+      ? await getStateName(info.state, info.country)
+      : "";
+    const professionFormatted = info?.profession
+      ? await lookupsService.findValuebyKey(info.profession)
+      : "";
+    const sourceOfIncomeFormatted = info?.sourceOfIncome
+      ? await lookupsService.findValuebyKey(info.sourceOfIncome)
+      : "";
+
+    return {
+      user_information: {
+        title: user.title ?? "",
+        first_name: user.firstName ?? "",
+        middle_name: user.middleName ?? "",
+        last_name: user.lastName ?? "",
+        dob: user.dob ? user.dob.toISOString().split("T")[0] : "",
+        gender: genderFormatted(user.gender),
+        address_line_1: info?.address1 ?? "",
+        address_line_2: info?.address2 ?? "",
+        city: info?.city ?? "",
+        state: stateFormatted,
+        country: info?.country ?? "",
+        postal_code: info?.postalCode ?? "",
+        purpose_of_transactions: info?.purposeOfTransactions ?? "",
+        id_type: info?.idType ?? "",
+        id_number: info?.idNumber ?? "",
+        profession: professionFormatted,
+        source_of_income: sourceOfIncomeFormatted,
+      },
+    };
+  }
 }
 
 export async function shapeFullUser(
@@ -113,47 +198,8 @@ export async function shapeFullUser(
     tour_status: tourLabel(user.tourStatus),
   };
 
-  if (Number(user.userType) === USER_TYPE_BUSINESS) {
-    result["business_information"] = {
-      legal_name: info?.legalName ?? "",
-      country_of_incorporation: info?.country_of_incorporation ?? "",
-      formation_date: info?.formationDate
-        ? info.formationDate.toISOString().split("T")[0]
-        : "",
-      business_name: info?.businessName ?? "",
-      address_line_1: info?.address1 ?? "",
-      address_line_2: info?.address2 ?? "",
-      city: info?.city ?? "",
-      state: info?.state ?? "",
-      country: info?.country ?? "",
-      postal_code: info?.postalCode ?? "",
-      purpose_of_transactions: info?.purposeOfTransactions ?? "",
-      tax_id: info?.taxId ?? "",
-      website: info?.website ?? "",
-      business_persons: await formatBusinessPersons(info?.businessPersons),
-      type_of_business: info?.type_of_business ?? "",
-    };
-  } else {
-    result["user_information"] = {
-      title: user.title ?? "",
-      first_name: user.firstName ?? "",
-      middle_name: user.middleName ?? "",
-      last_name: user.lastName ?? "",
-      dob: user.dob ? user.dob.toISOString().split("T")[0] : "",
-      gender: user.gender ?? "",
-      address_line_1: info?.address1 ?? "",
-      address_line_2: info?.address2 ?? "",
-      city: info?.city ?? "",
-      state: info?.state ?? "",
-      country: info?.country ?? "",
-      postal_code: info?.postalCode ?? "",
-      purpose_of_transactions: info?.purposeOfTransactions ?? "",
-      id_type: info?.idType ?? "",
-      id_number: info?.idNumber ?? "",
-      profession: info?.profession ?? "",
-      source_of_income: info?.sourceOfIncome ?? "",
-    };
-  }
+  const infoShaped = await shapeUserInfo(user, info);
+  Object.assign(result, infoShaped);
 
   result["documents"] = await Promise.all(docs.map(shapeDocument));
   result["role"] = roleLabel(user.userRole);
@@ -182,47 +228,8 @@ export async function shapeOnboardingUser(
     id_verification: verificationLabel(user.idVerification),
   };
 
-  if (Number(user.userType) === USER_TYPE_BUSINESS) {
-    result["business_information"] = {
-      legal_name: info?.legalName ?? "",
-      country_of_incorporation: info?.country_of_incorporation ?? "",
-      formation_date: info?.formationDate
-        ? info.formationDate.toISOString().split("T")[0]
-        : "",
-      business_name: info?.businessName ?? "",
-      address_line_1: info?.address1 ?? "",
-      address_line_2: info?.address2 ?? "",
-      city: info?.city ?? "",
-      state: info?.state ?? "",
-      country: info?.country ?? "",
-      postal_code: info?.postalCode ?? "",
-      purpose_of_transactions: info?.purposeOfTransactions ?? "",
-      tax_id: info?.taxId ?? "",
-      website: info?.website ?? "",
-      business_persons: await formatBusinessPersons(info?.businessPersons),
-      type_of_business: info?.type_of_business ?? "",
-    };
-  } else {
-    result["user_information"] = {
-      title: user.title ?? "",
-      first_name: user.firstName ?? "",
-      middle_name: user.middleName ?? "",
-      last_name: user.lastName ?? "",
-      dob: user.dob ? user.dob.toISOString().split("T")[0] : "",
-      gender: user.gender ?? "",
-      address_line_1: info?.address1 ?? "",
-      address_line_2: info?.address2 ?? "",
-      city: info?.city ?? "",
-      state: info?.state ?? "",
-      country: info?.country ?? "",
-      postal_code: info?.postalCode ?? "",
-      purpose_of_transactions: info?.purposeOfTransactions ?? "",
-      id_type: info?.idType ?? "",
-      id_number: info?.idNumber ?? "",
-      profession: info?.profession ?? "",
-      source_of_income: info?.sourceOfIncome ?? "",
-    };
-  }
+  const infoShaped = await shapeUserInfo(user, info);
+  Object.assign(result, infoShaped);
 
   return result;
 }

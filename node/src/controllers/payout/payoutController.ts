@@ -556,6 +556,7 @@ export const payoutController = {
           beneficiary: body.beneficiary,
           remitter: body.remitter,
           transaction: body.transaction,
+          creator: req.teamMember?.id ? String(req.teamMember.id) : null,
         } as Prisma.InputJsonValue,
       },
     });
@@ -643,7 +644,6 @@ export const payoutController = {
    * generates a PDF receipt for a single transaction and uploads it to S3.
    */
   async export(req: Request, res: Response): Promise<Response> {
-    res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as PayoutShowInput;
     const txn = await findOneByAnyId(req.user.id, q);
@@ -658,7 +658,16 @@ export const payoutController = {
       ? `${sender.firstName ?? ""} ${sender.lastName ?? ""}`.trim()
       : `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim();
 
-    const { formatDate } = await import("../../helpers/lookups");
+    const { formatDate, findValueByKeySync } = await import("../../helpers/lookups");
+
+    const detail = Array.isArray((txn.beneficiaryAccount as any)?.additionalDetails)
+      ? (txn.beneficiaryAccount as any).additionalDetails[0]
+      : (txn.beneficiaryAccount as any)?.additionalDetails;
+
+    let finalRemarks = txn.remarks ?? "";
+    if (!finalRemarks && detail?.purposeOfTransaction) {
+      finalRemarks = findValueByKeySync(detail.purposeOfTransaction) ?? "";
+    }
 
     const statusLabel = beneficiaryTransactionStatusLabel(txn.status);
 
@@ -691,7 +700,8 @@ export const payoutController = {
       routing_number: txn.beneficiaryAccount?.routingNumber ?? "",
       currency: txn.receivingCurrency ?? "",
       amount: txn.recipientAmount?.toString() ?? "",
-      remarks: txn.remarks ?? "",
+      remarks: finalRemarks,
+      purpose: txn.purposeOfPayment ?? "",
       status: statusLabel,
     });
     const browser = await puppeteer.launch({
@@ -726,7 +736,6 @@ export const payoutController = {
    * of a transaction list as PDF or XLSX.
    */
   async downloadList(req: Request, res: Response): Promise<Response> {
-    res.extendTimeout?.(300_000);
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as PayoutListInput;
     const fileType = String((req.query as { type?: string }).type ?? "pdf").toLowerCase();
@@ -1133,10 +1142,11 @@ export const payoutController = {
     if (!txn) throw new ApiException(124);
     const proof = await prisma().beneficiaryTransactionProof.findFirst({
       where: { beneficiaryTransactionId: txn.id },
+      include: { transaction: { select: { uniqueId: true } } },
     });
     if (!proof) throw new ApiException(199);
     return sendResponse(res, apiSuccess(115), 115, {
-      transaction_proof: transactionProofResource(proof),
+      transaction_proof: await transactionProofResource(proof, req.user.timezone),
     });
   },
 };
