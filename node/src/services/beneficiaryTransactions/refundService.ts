@@ -149,8 +149,14 @@ export async function createRefund(
         }
       }
 
+      // Load the real user row - computeBankBalance reads user.merchantId
+      // to decide whether to apply the PAYINCOLLECTION memo filter on
+      // deposits. A stub {id} object would silently skip that branch and
+      // overstate the balance for PAYINCOLLECTION merchants.
+      const refundUser = await tx.user.findUnique({ where: { id: txn.userId } });
+      if (!refundUser) return;
       const oldBalance = await computeBankBalance(
-        { id: txn.userId } as any,
+        refundUser,
         va,
         teamMemberContext,
       );

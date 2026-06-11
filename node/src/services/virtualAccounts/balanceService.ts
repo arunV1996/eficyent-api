@@ -108,7 +108,9 @@ export async function computeBankBalance(
 }
 
 /**
- * Mirror of Helper::getWalletBalance.
+ * Mirror of Helper::getWalletBalance. Neither side filters by status -
+ * matching Laravel - so credits and debits contribute the moment they're
+ * inserted (even before reaching COMPLETED).
  */
 export async function getWalletBalance(
   user: User,
@@ -120,7 +122,6 @@ export async function getWalletBalance(
         userId: user.id,
         walletId: wallet.id,
         type: TRANSACTION_TYPE_CREDIT,
-        status: WALLET_TRANSACTION_COMPLETED,
       },
       _sum: { totalAmount: true },
     }),

@@ -391,7 +391,18 @@ async function handleDeposit(data: Record<string, unknown>): Promise<{
       }
 
       const { computeBankBalance } = await import("../../services/virtualAccounts/balanceService");
-      const currentBalance = await computeBankBalance(user, va);
+      // Mirror Helper::updateLedger: bankBalance is scoped to the deposit's
+      // team member when the deposit was raised by a corporate team member,
+      // otherwise the row will store a balance summed across all team
+      // members of the user.
+      let teamMemberContext: { role: number; id: bigint } | null = null;
+      if (txn.teamMemberId) {
+        const tm = await prisma().teamMember.findUnique({
+          where: { id: txn.teamMemberId },
+        });
+        if (tm) teamMemberContext = { role: tm.role, id: tm.id };
+      }
+      const currentBalance = await computeBankBalance(user, va, teamMemberContext);
 
       await prisma().ledger.create({
         data: {
