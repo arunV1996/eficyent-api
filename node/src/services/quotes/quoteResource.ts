@@ -22,9 +22,11 @@ export function quoteResource(q: Quote, sourceCurrency?: string, timezone?: stri
   // for same-currency flows, or "USD" as last resort. Never hardcode "USD" when we
   // know the real source currency.
   const effectiveSourceCurrency = sourceCurrency ?? q.receivingCurrency ?? "USD";
-  const fxRateString = q.fxRate && q.fxRate !== "1"
-    ? `1 ${effectiveSourceCurrency} = ${q.fxRate} ${q.receivingCurrency}`
-    : `1 ${effectiveSourceCurrency} = 1 ${effectiveSourceCurrency}`;
+  const fxRateString = q.fxRate
+    ? (q.fxRate !== "1"
+      ? `1 ${effectiveSourceCurrency} = ${q.fxRate} ${q.receivingCurrency}`
+      : `1 ${effectiveSourceCurrency} = 1 ${effectiveSourceCurrency}`)
+    : "";
 
   return {
     unique_id: q.uniqueId,

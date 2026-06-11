@@ -15,6 +15,8 @@ import {
   TEAM_MEMBER_ROLE_CORPORATE,
   TRANSACTION_TYPE_CREDIT,
   TRANSACTION_TYPE_DEBIT,
+  MORPH_VIRTUAL_ACCOUNT,
+  MORPH_WALLET,
 } from "../../helpers/constants";
 import { ledgerResource } from "../../services/ledgers/ledgerResource";
 import {
@@ -177,9 +179,37 @@ export const ledgerController = {
     }
 
     if (req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE) {
+      // Resolve the source VA/wallet from the filters so the corporate scope
+      // ID lists are consistent with the root where.virtualAccountId/walletId.
+      let corporateVaId: bigint | undefined;
+      let corporateWalletId: bigint | undefined;
+      if (q.bank_account_id) {
+        const baseScope = await getVirtualAccountScope(req.user);
+        const va = await prisma().virtualAccount.findFirst({
+          where: { ...baseScope, uniqueId: q.bank_account_id },
+        });
+        if (va) corporateVaId = va.id;
+      }
+      if (q.wallet_id) {
+        const wallet = await prisma().wallet.findFirst({
+          where: { uniqueId: q.wallet_id, userId: req.user.id },
+        });
+        if (wallet) corporateWalletId = wallet.id;
+      }
+
+      // Deposits scoped to the filtered VA/wallet + team member.
+      // Payouts: ALL team member payouts regardless of source — corporate users
+      // on DEAL_BASED model pay via an INR wallet whose ledger rows carry
+      // walletId, not the USD virtualAccountId, so a source filter here would
+      // silently exclude all debit entries.
       const [depIds, benIds] = await Promise.all([
         prisma().depositTransaction.findMany({
-          where: { userId: req.user.id, teamMemberId: req.teamMember.id },
+          where: {
+            userId: req.user.id,
+            teamMemberId: req.teamMember.id,
+            ...(corporateVaId ? { virtualAccountId: corporateVaId } : {}),
+            ...(corporateWalletId ? { walletId: corporateWalletId } : {}),
+          },
           select: { id: true },
         }),
         prisma().beneficiaryTransaction.findMany({
@@ -190,12 +220,21 @@ export const ledgerController = {
       const depIdList = depIds.map((r) => r.id);
       const benIdList = benIds.map((r) => r.id);
 
+      // Remove the root VA/wallet filter — it only makes sense for deposits.
+      // Embed it inside the deposit arm of corporateWhere instead.
+      if (corporateVaId) delete (where as any).virtualAccountId;
+      if (corporateWalletId) delete (where as any).walletId;
+
       const corporateWhere: Prisma.LedgerWhereInput = {
         OR: [
           {
             transactionType: MORPH_DEPOSIT_TRANSACTION,
             transactionId: { in: depIdList },
+            ...(corporateVaId ? { virtualAccountId: corporateVaId } : {}),
+            ...(corporateWalletId ? { walletId: corporateWalletId } : {}),
           },
+          // Payout entries have their own virtualAccountId/walletId from the
+          // quote source — do NOT add a source filter here.
           {
             transactionType: MORPH_BENEFICIARY_TRANSACTION,
             transactionId: { in: benIdList },
@@ -220,13 +259,172 @@ export const ledgerController = {
       prisma().ledger.count({ where }),
       prisma().ledger.findMany({
         where,
-        include: { wallet: true, virtualAccount: true } as any,
+        include: { wallet: true, virtualAccount: true, users: { select: { timezone: true } } } as any,
         orderBy: { createdAt: "desc" },
         skip,
         take,
       }),
     ]);
     const enriched = await Promise.all(rows.map(loadTransaction));
+
+    if (req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE) {
+      let vaId: bigint | null = null;
+      let walletId: bigint | null = null;
+
+      if (q.bank_account_id) {
+        const baseScope = await getVirtualAccountScope(req.user);
+        const va = await prisma().virtualAccount.findFirst({
+          where: { ...baseScope, uniqueId: q.bank_account_id },
+        });
+        if (va) vaId = va.id;
+      }
+      if (q.wallet_id) {
+        const wallet = await prisma().wallet.findFirst({
+          where: { uniqueId: q.wallet_id, userId: req.user.id },
+        });
+        if (wallet) walletId = wallet.id;
+      }
+
+      const depTransactions = await prisma().depositTransaction.findMany({
+        where: {
+          userId: req.user.id,
+          teamMemberId: req.teamMember.id,
+          status: 1, // 1 = COMPLETED
+          ...(vaId ? { virtualAccountId: vaId } : {}),
+          ...(walletId ? { walletId: walletId } : {}),
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, totalAmount: true, createdAt: true }
+      });
+      // All payouts by this corporate team member (no source filter) so that
+      // wallet-sourced payouts are included in the running-balance timeline.
+      const benTransactions = await prisma().beneficiaryTransaction.findMany({
+        where: { userId: req.user.id, teamMemberId: req.teamMember.id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, totalAmount: true, createdAt: true }
+      });
+
+      const timeline: { id: bigint; type: string; amount: number; createdAt: Date }[] = [];
+      for (const d of depTransactions) {
+        timeline.push({ id: d.id, type: MORPH_DEPOSIT_TRANSACTION, amount: Number(d.totalAmount), createdAt: d.createdAt! });
+      }
+      for (const b of benTransactions) {
+        timeline.push({ id: b.id, type: MORPH_BENEFICIARY_TRANSACTION, amount: -Number(b.totalAmount), createdAt: b.createdAt! });
+      }
+      timeline.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || Number(a.id - b.id));
+
+      let running = 0;
+      const corporateBalancesMap = new Map<string, string>();
+      for (const item of timeline) {
+        running += item.amount;
+        corporateBalancesMap.set(`${item.type}_${item.id}`, running.toFixed(2));
+      }
+
+      for (const l of enriched as any) {
+        const key = `${l.transactionType}_${l.transactionId}`;
+        if (corporateBalancesMap.has(key)) {
+          l.balance = new Prisma.Decimal(corporateBalancesMap.get(key)!);
+        } else {
+          l.balance = new Prisma.Decimal(0);
+        }
+      }
+    }
+
+    // Non-corporate users: recompute the running balance dynamically when a
+    // specific bank account or wallet is selected. The stored ledger.balance
+    // snapshot can be stale for wallet-conversion DEBIT entries because it is
+    // computed via computeBankBalance which deducts all pending submitted-quote
+    // payouts at the moment the entry is written — producing balances that
+    // appear inconsistently lower than simple credit-minus-debit arithmetic.
+    if (!req.teamMember && (q.bank_account_id || q.wallet_id)) {
+      let nonCorpVaId: bigint | null = null;
+      let nonCorpWalletId: bigint | null = null;
+
+      if (q.bank_account_id) {
+        const baseScope = await getVirtualAccountScope(req.user);
+        const va = await prisma().virtualAccount.findFirst({
+          where: { ...baseScope, uniqueId: q.bank_account_id },
+        });
+        if (va) nonCorpVaId = va.id;
+      }
+      if (q.wallet_id) {
+        const wallet = await prisma().wallet.findFirst({
+          where: { uniqueId: q.wallet_id, userId: req.user.id },
+        });
+        if (wallet) nonCorpWalletId = wallet.id;
+      }
+
+      // Completed deposits for this VA/wallet.
+      const ncDepTxns = await prisma().depositTransaction.findMany({
+        where: {
+          userId: req.user.id,
+          status: 1,
+          ...(nonCorpVaId ? { virtualAccountId: nonCorpVaId } : {}),
+          ...(nonCorpWalletId ? { walletId: nonCorpWalletId } : {}),
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, totalAmount: true, createdAt: true },
+      });
+
+      // Wallet-conversion DEBIT transactions sourced from this VA.
+      // These are the entries whose stored balance is wrong.
+      const ncWalletTxns = nonCorpVaId
+        ? await prisma().walletTransaction.findMany({
+            where: {
+              userId: req.user.id,
+              type: TRANSACTION_TYPE_DEBIT,
+              quote: { sourceType: MORPH_VIRTUAL_ACCOUNT, sourceId: nonCorpVaId },
+            },
+            orderBy: { createdAt: "asc" },
+            select: { id: true, createdAt: true, quote: { select: { totalSendingAmount: true } } },
+          } as any)
+        : [];
+
+      // Beneficiary payouts sourced from this VA/wallet.
+      const ncBenTxns = await prisma().beneficiaryTransaction.findMany({
+        where: {
+          userId: req.user.id,
+          ...(nonCorpVaId
+            ? { quotes: { sourceType: MORPH_VIRTUAL_ACCOUNT, sourceId: nonCorpVaId } }
+            : {}),
+          ...(nonCorpWalletId
+            ? { quotes: { sourceType: MORPH_WALLET, sourceId: nonCorpWalletId } }
+            : {}),
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, totalAmount: true, createdAt: true },
+      });
+
+      const ncTimeline: { id: bigint; type: string; amount: number; createdAt: Date }[] = [];
+      for (const d of ncDepTxns) {
+        ncTimeline.push({ id: d.id, type: MORPH_DEPOSIT_TRANSACTION, amount: Number(d.totalAmount), createdAt: d.createdAt! });
+      }
+      for (const w of ncWalletTxns as any[]) {
+        const amt = Number(w.quote?.totalSendingAmount ?? 0);
+        ncTimeline.push({ id: w.id, type: MORPH_WALLET_TRANSACTION, amount: -amt, createdAt: w.createdAt! });
+      }
+      for (const b of ncBenTxns) {
+        ncTimeline.push({ id: b.id, type: MORPH_BENEFICIARY_TRANSACTION, amount: -Number(b.totalAmount), createdAt: b.createdAt! });
+      }
+      ncTimeline.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || Number(a.id - b.id));
+
+      let ncRunning = 0;
+      const ncBalancesMap = new Map<string, string>();
+      for (const item of ncTimeline) {
+        ncRunning += item.amount;
+        ncBalancesMap.set(`${item.type}_${item.id}`, ncRunning.toFixed(2));
+      }
+
+      for (const l of enriched as any) {
+        const key = `${l.transactionType}_${l.transactionId}`;
+        if (ncBalancesMap.has(key)) {
+          l.balance = new Prisma.Decimal(ncBalancesMap.get(key)!);
+        }
+        // If the key is not found (e.g. wallet CREDIT tx from a different source),
+        // leave the stored balance intact.
+      }
+    }
+
     return sendResponse(res, "", "", {
       total,
       receiving_currency: q.receiving_currency || null,
@@ -239,10 +437,38 @@ export const ledgerController = {
     const q = req.query as unknown as LedgerShowInput;
     const row = await prisma().ledger.findFirst({
       where: { userId: req.user.id, uniqueId: q.ledger_id },
-      include: { wallet: true, virtualAccount: true } as any,
+      include: { wallet: true, virtualAccount: true, users: { select: { timezone: true } } } as any,
     });
     if (!row) throw new ApiException(149);
     const enriched = await loadTransaction(row as any);
+
+    if (req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE && row) {
+      const depAgg = await prisma().depositTransaction.aggregate({
+        where: {
+          userId: req.user.id,
+          teamMemberId: req.teamMember.id,
+          status: 1, // 1 = COMPLETED
+          createdAt: { lte: row.createdAt! },
+          ...(row.virtualAccountId ? { virtualAccountId: row.virtualAccountId } : {}),
+          ...(row.walletId ? { walletId: row.walletId } : {}),
+        },
+        _sum: { totalAmount: true },
+      });
+      const benAgg = await prisma().beneficiaryTransaction.aggregate({
+        where: {
+          userId: req.user.id,
+          teamMemberId: req.teamMember.id,
+          createdAt: { lte: row.createdAt! },
+          ...(row.virtualAccountId ? { quotes: { sourceType: MORPH_VIRTUAL_ACCOUNT, sourceId: row.virtualAccountId } } : {}),
+          ...(row.walletId ? { quotes: { sourceType: MORPH_WALLET, sourceId: row.walletId } } : {}),
+        },
+        _sum: { totalAmount: true },
+      });
+      const depSum = depAgg._sum.totalAmount ?? new Prisma.Decimal(0);
+      const benSum = benAgg._sum.totalAmount ?? new Prisma.Decimal(0);
+      (enriched as any).balance = depSum.minus(benSum);
+    }
+
     return sendResponse(res, "", "", { ledger: ledgerResource(enriched as any, q as any) });
   },
 
@@ -378,11 +604,35 @@ export const ledgerController = {
     }
 
     if (req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE) {
+      // Resolve the source VA/wallet from the filters so the corporate scope
+      // ID lists are consistent with the root where.virtualAccountId/walletId.
+      let corporateVaId: bigint | undefined;
+      let corporateWalletId: bigint | undefined;
+      if (q.bank_account_id) {
+        const baseScope = await getVirtualAccountScope(req.user);
+        const va = await prisma().virtualAccount.findFirst({
+          where: { ...baseScope, uniqueId: q.bank_account_id },
+        });
+        if (va) corporateVaId = va.id;
+      }
+      if (q.wallet_id) {
+        const wallet = await prisma().wallet.findFirst({
+          where: { uniqueId: q.wallet_id, userId: req.user.id },
+        });
+        if (wallet) corporateWalletId = wallet.id;
+      }
+
       const [depIds, benIds] = await Promise.all([
         prisma().depositTransaction.findMany({
-          where: { userId: req.user.id, teamMemberId: req.teamMember.id },
+          where: {
+            userId: req.user.id,
+            teamMemberId: req.teamMember.id,
+            ...(corporateVaId ? { virtualAccountId: corporateVaId } : {}),
+            ...(corporateWalletId ? { walletId: corporateWalletId } : {}),
+          },
           select: { id: true },
         }),
+        // All team member payouts — no source filter (same reason as index).
         prisma().beneficiaryTransaction.findMany({
           where: { userId: req.user.id, teamMemberId: req.teamMember.id },
           select: { id: true },
@@ -391,11 +641,16 @@ export const ledgerController = {
       const depIdList = depIds.map((r) => r.id);
       const benIdList = benIds.map((r) => r.id);
 
+      if (corporateVaId) delete (where as any).virtualAccountId;
+      if (corporateWalletId) delete (where as any).walletId;
+
       const corporateWhere: Prisma.LedgerWhereInput = {
         OR: [
           {
             transactionType: MORPH_DEPOSIT_TRANSACTION,
             transactionId: { in: depIdList },
+            ...(corporateVaId ? { virtualAccountId: corporateVaId } : {}),
+            ...(corporateWalletId ? { walletId: corporateWalletId } : {}),
           },
           {
             transactionType: MORPH_BENEFICIARY_TRANSACTION,
@@ -417,7 +672,7 @@ export const ledgerController = {
 
     const rows = await prisma().ledger.findMany({
       where,
-      include: { wallet: true, virtualAccount: true } as any,
+      include: { wallet: true, virtualAccount: true, users: { select: { timezone: true } } } as any,
       orderBy: { createdAt: "desc" },
     });
 
@@ -425,17 +680,87 @@ export const ledgerController = {
     let buffer: Buffer;
     let contentType: string;
     let extension: string;
+
+    const enriched = await Promise.all(rows.map(loadTransaction));
+
+    if (req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE) {
+      let vaId: bigint | null = null;
+      let walletId: bigint | null = null;
+
+      if (q.bank_account_id) {
+        const baseScope = await getVirtualAccountScope(req.user);
+        const va = await prisma().virtualAccount.findFirst({
+          where: { ...baseScope, uniqueId: q.bank_account_id },
+        });
+        if (va) vaId = va.id;
+      }
+      if (q.wallet_id) {
+        const wallet = await prisma().wallet.findFirst({
+          where: { uniqueId: q.wallet_id, userId: req.user.id },
+        });
+        if (wallet) walletId = wallet.id;
+      }
+
+      const depTransactions = await prisma().depositTransaction.findMany({
+        where: {
+          userId: req.user.id,
+          teamMemberId: req.teamMember.id,
+          status: 1, // 1 = COMPLETED
+          ...(vaId ? { virtualAccountId: vaId } : {}),
+          ...(walletId ? { walletId: walletId } : {}),
+        },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, totalAmount: true, createdAt: true }
+      });
+      const benTransactions = await prisma().beneficiaryTransaction.findMany({
+        where: { userId: req.user.id, teamMemberId: req.teamMember.id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, totalAmount: true, createdAt: true }
+      });
+
+      const timeline: { id: bigint; type: string; amount: number; createdAt: Date }[] = [];
+      for (const d of depTransactions) {
+        timeline.push({ id: d.id, type: MORPH_DEPOSIT_TRANSACTION, amount: Number(d.totalAmount), createdAt: d.createdAt! });
+      }
+      for (const b of benTransactions) {
+        timeline.push({ id: b.id, type: MORPH_BENEFICIARY_TRANSACTION, amount: -Number(b.totalAmount), createdAt: b.createdAt! });
+      }
+      timeline.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || Number(a.id - b.id));
+
+      let running = 0;
+      const corporateBalancesMap = new Map<string, string>();
+      for (const item of timeline) {
+        running += item.amount;
+        corporateBalancesMap.set(`${item.type}_${item.id}`, running.toFixed(2));
+      }
+
+      for (const l of enriched as any) {
+        const key = `${l.transactionType}_${l.transactionId}`;
+        if (corporateBalancesMap.has(key)) {
+          l.balance = new Prisma.Decimal(corporateBalancesMap.get(key)!);
+        } else {
+          l.balance = new Prisma.Decimal(0);
+        }
+      }
+    }
+
     if (fileType === "excel" || fileType === "xlsx") {
-      const exportRows = rows.map((r) => ({
-        unique_id: r.uniqueId,
-        transaction_type: r.transactionType ?? "",
-        transaction_id: r.transactionId ? r.transactionId.toString() : "",
-        balance: r.balance.toString(),
-        external_type: r.externalType ?? "",
-        description: r.description ?? "",
-// @ts-expect-error - Auto-fixed: 'r.createdAt' is possibly 'null'.
-        created_at: r.createdAt.toISOString(),
-      }));
+      const exportRows = enriched.map((l: any, i) => {
+        const res = ledgerResource(l, q);
+        const row: Record<string, any> = {
+          "S.No": i + 1,
+          "Transaction ID": res.transaction_id || "",
+          "Client Reference No": `'${res.client_reference_id || ""}`,
+          "Credit": res.transaction_type === "CREDIT" ? res.amount : "-",
+          "Debit": res.transaction_type === "DEBIT" ? res.amount : "-",
+        };
+        if (!q.receiving_currency) {
+          row["Balance"] = res.balance || "";
+        }
+        row["Date"] = res.created_at || "";
+        return row;
+      });
+
       const { generateExcel } = await import("../../services/exports/excelExport");
       buffer = await generateExcel(exportRows, { sheetTitle: "Ledgers" });
       contentType =
@@ -476,7 +801,6 @@ export const ledgerController = {
         }
       }
 
-      const enriched = await Promise.all(rows.map(loadTransaction));
       const ledgerDetails = enriched.map((l: any) => {
         const res = ledgerResource(l, q);
         return {

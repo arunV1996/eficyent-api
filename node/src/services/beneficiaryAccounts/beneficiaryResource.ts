@@ -1,5 +1,5 @@
 import { BeneficiaryAccount, BeneficiaryAdditionalDetail } from "@prisma/client";
-import { formatDate, findValueByKeySync } from "../../helpers/lookups";
+import { formatDate, findValueByKeySync, getStateName } from "../../helpers/lookups";
 import { BENEFICIARY_ACCOUNT_STATUS_MAP } from "../../helpers/constants";
 
 /**
@@ -38,7 +38,7 @@ export interface BeneficiaryAccountDto {
 export function filterEmptyValues(val: any): any {
   if (val === null || val === undefined) return undefined;
   if (Array.isArray(val)) {
-    const filtered = val.map(v => filterEmptyValues(v)).filter(v => v !== undefined && v !== "");
+    const filtered = val.map(v => filterEmptyValues(v)).filter(v => v !== undefined);
     return filtered.length > 0 ? filtered : undefined;
   }
   if (typeof val === "object" && !(val instanceof Date)) {
@@ -46,22 +46,21 @@ export function filterEmptyValues(val: any): any {
     let hasKeys = false;
     for (const k of Object.keys(val)) {
       const v = filterEmptyValues(val[k]);
-      if (v !== undefined && v !== "") {
+      if (v !== undefined) {
         filtered[k] = v;
         hasKeys = true;
       }
     }
     return hasKeys ? filtered : undefined;
   }
-  if (val === "") return undefined;
   return val;
 }
 
-export function beneficiaryAccountResource(
+export async function beneficiaryAccountResource(
   account: BeneficiaryAccount & {
     additionalDetails?: BeneficiaryAdditionalDetail[] | BeneficiaryAdditionalDetail | null;
   },
-): BeneficiaryAccountDto {
+): Promise<BeneficiaryAccountDto> {
   const statusLabel = Object.keys(BENEFICIARY_ACCOUNT_STATUS_MAP).find(
     (key) => BENEFICIARY_ACCOUNT_STATUS_MAP[key] === account.status,
   ) ?? "PENDING";
@@ -107,7 +106,7 @@ export function beneficiaryAccountResource(
             address_line2: detail.addressLine2 ?? "",
             postal_code: detail.postalCode ?? "",
             city: detail.city ?? "",
-            state: detail.state ?? "",
+            state: await getStateName(detail.state, detail.country),
             country: detail.country ?? "",
           },
           bank_address: {
@@ -115,7 +114,7 @@ export function beneficiaryAccountResource(
             address_line2: detail.bankAddressLine2 ?? "",
             postal_code: detail.bankPostalCode ?? "",
             city: detail.bankCity ?? "",
-            state: detail.bankState ?? "",
+            state: await getStateName(detail.bankState, detail.bankCountry),
             country: detail.bankCountry ?? "",
           },
         }

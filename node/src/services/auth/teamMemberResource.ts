@@ -28,6 +28,7 @@ export interface TeamMemberDto {
   permission: string;
   sender_enabled: string;
   is_merchant: string;
+  business_model: string;
   status: string;
   created_at: string;
   sender_id?: string | null;
@@ -37,6 +38,7 @@ export function teamMemberResource(
   member: TeamMember,
   user?: User,
   senderUniqueId?: string | null,
+  businessModel: string = "mto",
 ): TeamMemberDto {
   let senderEnabled = "NO";
   let isMerchant = "NO";
@@ -57,8 +59,9 @@ export function teamMemberResource(
     permission: teamMemberPermissionLabel(member.permission),
     sender_enabled: senderEnabled,
     is_merchant: isMerchant,
+    business_model: businessModel.toLowerCase(),
     status: teamMemberStatusLabel(member.status),
-    created_at: formatDate(member.createdAt),
+    created_at: formatDate(member.createdAt, user?.timezone || "Asia/Kolkata"),
     ...(member.role === TEAM_MEMBER_ROLE_CORPORATE ? { sender_id: senderUniqueId ?? null } : {}),
   };
 }

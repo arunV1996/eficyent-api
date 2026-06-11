@@ -19,15 +19,16 @@ export interface VirtualAccountDto {
   flag: string;
   status: string;
   created_at: string;
-  balance: number;
-  memo: string;
-  swift?: VirtualAccountDto | null;
+  balance?: number;
+  memo?: string;
+  swift_account?: VirtualAccountDto | null;
 }
 
 export function virtualAccountResource(
   va: VirtualAccount & { swift?: VirtualAccount | null; balance?: string },
-  userMemo: string = "",
+  userMemo?: string | null,
   baseUrl: string = "",
+  timezone?: string,
 ): VirtualAccountDto {
   const dto: VirtualAccountDto = {
     unique_id: va.uniqueId,
@@ -42,12 +43,20 @@ export function virtualAccountResource(
     routing_number: va.routingNumber,
     flag: getFlagUrl(va.country, baseUrl),
     status: virtualAccountStatusLabel(va.status),
-    created_at: formatDate(va.createdAt),
-    balance: Number(parseFloat(va.balance ?? "0").toFixed(2)),
-    memo: userMemo,
+    created_at: formatDate(va.createdAt, timezone),
   };
-  if (va.swift) {
-    dto.swift = virtualAccountResource(va.swift, userMemo, baseUrl);
+
+  if (va.balance !== undefined) {
+    dto.balance = Number(parseFloat(va.balance ?? "0").toFixed(2));
   }
+
+  if (userMemo !== undefined && userMemo !== null) {
+    dto.memo = userMemo;
+  }
+
+  if (va.swift !== undefined) {
+    dto.swift_account = va.swift ? virtualAccountResource(va.swift, userMemo, baseUrl, timezone) : null;
+  }
+
   return dto;
 }

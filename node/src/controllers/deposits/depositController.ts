@@ -142,7 +142,7 @@ export const depositController = {
     ]);
     return emptyEnvelope(res, "", {
       total,
-      deposit_transactions: rows.map(depositTransactionResource),
+      deposit_transactions: await Promise.all(rows.map(depositTransactionResource)),
     });
   },
 
@@ -154,7 +154,7 @@ export const depositController = {
     });
     if (!row) throw new ApiException(124);
     return emptyEnvelope(res, "", {
-      deposit_transaction: depositTransactionResource(row),
+      deposit_transaction: await depositTransactionResource(row),
     });
   },
 
@@ -305,7 +305,7 @@ export const depositController = {
     });
 
     return emptyEnvelope(res, "Deposit successful.", {
-      deposit_transaction: depositTransactionResource(created),
+      deposit_transaction: await depositTransactionResource(created),
     });
   },
 
@@ -377,8 +377,8 @@ export const depositController = {
     let extension: string;
 
     if (fileType === "excel" || fileType === "xlsx") {
-      const exportRows = rows.map((r) => {
-        const res = depositTransactionResource(r);
+      const exportRows = await Promise.all(rows.map(async (r) => {
+        const res = await depositTransactionResource(r);
         return {
           unique_id: res.unique_id,
           memo: res.memo,
@@ -392,7 +392,7 @@ export const depositController = {
           status: res.status,
           created_at: res.created_at,
         };
-      });
+      }));
 
       const ws = XLSX.utils.json_to_sheet(exportRows);
       const wb = XLSX.utils.book_new();
@@ -434,8 +434,8 @@ export const depositController = {
       };
       const tr = (key: string) => translations[key] || key;
 
-      const depositDetails = rows.map((r) => {
-        const res = depositTransactionResource(r);
+      const depositDetails = await Promise.all(rows.map(async (r) => {
+        const res = await depositTransactionResource(r);
         return {
           unique_id: res.unique_id,
           memo: res.memo,
@@ -444,7 +444,7 @@ export const depositController = {
           status: res.status,
           created_at: res.created_at,
         };
-      });
+      }));
 
       const templatePath = path.join(__dirname, "..", "..", "views", "invoice", "depositTransactions.ejs");
       const templateHtml = await fs.promises.readFile(templatePath, "utf-8");

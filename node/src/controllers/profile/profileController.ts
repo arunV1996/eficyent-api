@@ -369,6 +369,15 @@ export const profileController = {
     const today = new Date().toISOString().split("T")[0];
     const isBusiness = Number(req.user.userType) === USER_TYPE_BUSINESS;
 
+    const [existingDocs, info] = await Promise.all([
+      prisma().userDocument.findMany({
+        where: { userId: req.user.id },
+      }),
+      prisma().userInformation.findFirst({
+        where: { userId: req.user.id },
+      }),
+    ]);
+
     const commonChildOptions = {
       is_repeatable: false,
       field_value: "",
@@ -410,7 +419,7 @@ export const profileController = {
       ...commonChildOptions,
     };
 
-    const fields: any[] = [
+    const rawFields: any[] = [
       {
         field_key: "proof_of_address",
         field_label: "Proof of Address",
@@ -449,7 +458,30 @@ export const profileController = {
       },
     ];
 
-    if (isBusiness) {
+    const fields: any[] = [];
+
+    for (const f of rawFields) {
+      const doc = existingDocs.find((d) => d.documentName === f.field_key);
+      if (doc) {
+        const remainingChildren = [];
+        if (!doc.documentBackFile) {
+          remainingChildren.push(backFileChild);
+        }
+        if (!doc.documentExpiryDate) {
+          remainingChildren.push(expiryDateChild);
+        }
+        if (remainingChildren.length > 0) {
+          fields.push({
+            ...f,
+            children: remainingChildren,
+          });
+        }
+      } else {
+        fields.push(f);
+      }
+    }
+
+    if (isBusiness && (!info || !info.businessVerificationType)) {
       fields.push({
         field_key: "business_verification_type",
         field_label: "Business Verification Type",

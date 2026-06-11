@@ -30,6 +30,7 @@ export interface SenderDto {
   status: string;
   created_at: string;
   dob?: string | null;
+  client_reference_id?: string;
   
   // Business fields
   business_name?: string | null;
@@ -83,7 +84,10 @@ async function getStateName(
 }
 
 export async function senderResource(
-  sender: Sender & { documents?: SenderDocument[] | null },
+  sender: Sender & {
+    documents?: SenderDocument[] | null;
+    user?: { timezone?: string | null } | null;
+  },
 ): Promise<SenderDto> {
   const isBusiness = sender.type === 2;
   
@@ -101,13 +105,16 @@ export async function senderResource(
     ? await lookupsService.findValuebyKey(sender.idType, LOOKUP_TYPE_ID_TYPE)
     : "";
 
+  const timezone = sender.user?.timezone || "Asia/Kolkata";
+  const formattedCreatedAt = formatDate(sender.createdAt, timezone);
+
   if (isBusiness) {
     // Business specific layout
     Object.assign(dto, {
       email: sender.email,
       mobile_country_code: sender.mobileCountryCode,
       mobile: sender.mobile,
-      address: [sender.address1, sender.address2].filter(Boolean).join(" "),
+      address: sender.address1 || "",
       country: sender.country || "",
       nationality: sender.nationality || "",
       city: sender.city || "",
@@ -117,7 +124,7 @@ export async function senderResource(
       id_type: idTypeValue,
       id_number: sender.idNumber || "",
       status: STATUS_MAP[sender.status] ?? "PENDING",
-      created_at: formatDate(sender.createdAt),
+      created_at: formattedCreatedAt,
       business_name: sender.firstName || "",
       business_persons: await Promise.all(
         (sender.businessPersons as any[] | null || []).map(async (p) => {
@@ -173,7 +180,7 @@ export async function senderResource(
       email: sender.email,
       mobile_country_code: sender.mobileCountryCode,
       mobile: sender.mobile,
-      address: [sender.address1, sender.address2].filter(Boolean).join(" "),
+      address: sender.address1 || "",
       country: sender.country || "",
       nationality: sender.nationality || "",
       city: sender.city || "",
@@ -183,9 +190,16 @@ export async function senderResource(
       id_type: idTypeValue,
       id_number: sender.idNumber || "",
       status: STATUS_MAP[sender.status] ?? "PENDING",
-      created_at: formatDate(sender.createdAt),
-      dob: sender.dob ? sender.dob.toISOString().slice(0, 10) : "",
+      created_at: formattedCreatedAt,
     });
+  }
+
+  if (sender.clientReferenceId) {
+    dto.client_reference_id = sender.clientReferenceId;
+  }
+
+  if (sender.dob) {
+    dto.dob = sender.dob.toISOString().slice(0, 10);
   }
 
   return dto as SenderDto;

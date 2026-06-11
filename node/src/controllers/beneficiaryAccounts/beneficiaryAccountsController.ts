@@ -217,7 +217,7 @@ export const beneficiaryAccountsController = {
 
     return sendResponse(res, "", "", {
       total,
-      beneficiary_accounts: rows.map(beneficiaryAccountResource),
+      beneficiary_accounts: await Promise.all(rows.map(beneficiaryAccountResource)),
     });
   },
 
@@ -243,7 +243,7 @@ export const beneficiaryAccountsController = {
     if (!row) throw new ApiException(118);
     return sendResponse(res, "Beneficiary fetched successfully.", "", {
 // @ts-ignore - Catch-all auto-fix for: Argument of type '{ additional...
-      beneficiary_account: beneficiaryAccountResource(row),
+      beneficiary_account: await beneficiaryAccountResource(row),
     });
   },
 
@@ -358,7 +358,7 @@ export const beneficiaryAccountsController = {
 
     return sendResponse(res, "", 200, {
 // @ts-ignore - Catch-all auto-fix for: Argument of type '{ additional...
-      beneficiary_account: beneficiaryAccountResource(refreshed!),
+      beneficiary_account: await beneficiaryAccountResource(refreshed!),
     });
   },
 
@@ -600,16 +600,15 @@ function shapeValidation(row: {
   remarks: string | null;
   status: number;
 }): Record<string, unknown> {
-  return {
-    unique_id: row.uniqueId,
-    account_name: row.accountName,
-    account_number: row.accountNumber,
-    code: row.code,
-    external_reference_id: row.externalReferenceId,
-    external_status: row.externalStatus,
-    is_account_exists: row.isAccountExists === 1,
+  const data: Record<string, unknown> = {
+    account_number: row.accountNumber ?? "",
+    ifsc: row.code ?? "",
     is_nre_account: row.isNreAccount === 1,
-    remarks: row.remarks,
-    status: row.status,
   };
+
+  if (row.accountName) {
+    data.account_name = row.accountName;
+  }
+
+  return data;
 }

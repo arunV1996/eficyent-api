@@ -1,273 +1,319 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment Invoice | <%= invoice_details.unique_id %></title>
-    <style>
-        html {
-            padding: 0;
-            margin: 0;
-        }
-
-        p {
-            padding: 0;
-            margin: 0;
-        }
-
-        th,
-        td {
-            padding: 0;
-            margin: 0;
-        }
-
-        body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            margin: 30px;
-            padding: 0;
-            margin: 0;
-            line-height: 1;
-        }
-
-        .statement {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Remittance Invoice</title>
 </head>
-
-<body class="statement">
-    <table bgcolor="#E3F3FE" style="background-color: #E3F3FE; width: 50%;">
-        <tr>
-            <td style=" padding: 10px;"></td>
-        </tr>
-    </table>
-    <table bgcolor="#01FFD1" style="background-color: #01FFD1; width: 80%;">
-        <tr>
-            <td style=" padding: 10px;"></td>
-        </tr>
-    </table>
-    <table bgcolor="#0176FF" style="background-color: #0176FF; margin-bottom: 20px;">
-        <tr>
-            <td style=" padding: 10px;"></td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td>
-                <p style="font-size: 20px;font-weight: 300;color: #777777;padding-top: 20px;">
-                    <strong style="color: #111111;">Invoice Details</strong>
-                </p>
+<body style="margin:0;padding:0;font-family:'Times New Roman',Times,serif;">
+ 
+  <!-- Page shadow wrapper — mimics PDF viewer -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" >
+    <tr>
+      <td align="center" valign="top">
+ 
+        <!-- A4-like document sheet -->
+        <table width="620" cellpadding="0" cellspacing="0" border="0"
+          style="max-width:620px;width:100%;background-color:#ffffff;
+                 border:1px solid #d0dae8;">
+ 
+          <!-- ── TITLE STRIP ── -->
+          <tr>
+            <td style="background-color:#1a3a6b;padding:20px 36px;text-align:center;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td valign="middle" align="center">
+                    <span style="font-size:17px;font-weight:bold;color:#ffffff;
+                                 font-family:'Times New Roman',serif;letter-spacing:0.5px;">
+                      Remittance Details
+                    </span>
+                  </td>
+                </tr>
+              </table>
             </td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="padding-top: 30px;">
-                <table>
-                    <tr>
-                        <td>
-                            <p style="font-size: 14px;font-weight: 500;color: #777777;text-align: left;padding-bottom: 20px;">
-                                <strong style="color: #111111;">Date: </strong> <%= invoice_details.created_at || '--' %>
-                            </p>
+          </tr>
+ 
+          <!-- ── BODY CONTENT ── -->
+          <tr>
+            <td style="padding:28px 36px 0 36px;">
+ 
+              <!-- Date & UTR row -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="margin-bottom:18px;">
+                <tr>
+                  <td style="width:50%;padding-right:10px;vertical-align:top;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="border:1px solid #d0dae8;border-radius:3px;">
+                      <tr>
+                        <td style="background-color:#f4f7fb;border-bottom:1px solid #d0dae8;
+                                   padding:6px 12px;text-align:center;">
+                          <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                       letter-spacing:1.5px;text-transform:uppercase;">Date</span>
                         </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            <p style="font-size: 14px;font-weight: 500;color: #777777;text-align: left;padding-bottom: 20px;">
-                                <strong style="color: #111111;">Transaction Reference No: </strong> <%= invoice_details.txn_ref_no || '--' %>
-                            </p>
+                      </tr>
+                      <tr>
+                        <td style="padding:10px 12px;text-align:center;">
+                          <span style="font-size:13px;color:#1a2a3a;font-family:'Times New Roman',serif;">
+                            <%= invoice_details.created_at || '--' %>
+                          </span>
                         </td>
-                    </tr>
-                    <% if (invoice_details.utr_no) { %>
-                    <tr>
-                        <td>
-                            <p style="font-size: 14px;font-weight: 500;color: #777777;text-align: left; padding-bottom: 20px;">
-                                <strong style="color: #111111;">UTR No: </strong> <%= invoice_details.utr_no %>
-                            </p>
+                      </tr>
+                    </table>
+                  </td>
+                  <td style="width:50%;padding-left:10px;vertical-align:top;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="border:1px solid #d0dae8;border-radius:3px;">
+                      <tr>
+                        <td style="background-color:#f4f7fb;border-bottom:1px solid #d0dae8;
+                                   padding:6px 12px;text-align:center;">
+                          <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                       letter-spacing:1.5px;text-transform:uppercase;">Transaction Reference No.</span>
                         </td>
-                    </tr>
-                    <% } %>
-                </table>
-            </td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td>
-                <p style="font-size: 20px;font-weight: 300;color: #777777;padding-top: 20px;">
-                    <strong style="color: #111111;">Remitter Details</strong>
-                </p>
-            </td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="padding-top: 30px;">
-                <table>
-                    <tr>
-                        <td>
-                            <p style="font-size: 14px;font-weight: 500;color: #777777;text-align: left;padding-bottom: 20px;">
-                                <strong style="color: #111111;">Name: </strong> <%= invoice_details.sender_name || '--' %>
-                            </p>
+                      </tr>
+                      <tr>
+                        <td style="padding:10px 12px;text-align:center;">
+                          <span style="font-size:13px;color:#1a2a3a;font-family:'Courier New',monospace;
+                                       font-weight:bold;">
+                            <%= invoice_details.txn_ref_no || '--' %>
+                          </span>
                         </td>
-                    </tr>
-
-                    <tr>
-                        <td>
-                            <p style="font-size: 14px;font-weight: 500;color: #777777;text-align: left;padding-bottom: 20px;">
-                                <strong style="color: #111111;">Address: </strong> <%= [invoice_details.sender_address, invoice_details.sender_city, invoice_details.sender_state, invoice_details.sender_country, invoice_details.sender_postal_code].filter(Boolean).join(', ') || '--' %>
-                            </p>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+ 
+              <% if (invoice_details.utr_no) { %>
+              <!-- Transaction Reference -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="margin-bottom:22px;border:1px solid #d0dae8;border-radius:3px;">
+                <tr>
+                  <td style="background-color:#f4f7fb;border-bottom:1px solid #d0dae8;
+                             padding:6px 12px;text-align:center;">
+                    <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                 letter-spacing:1.5px;text-transform:uppercase;">
+                      UTR No.
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 12px;text-align:center;">
+                    <span style="font-size:13px;color:#1a2a3a;font-family:'Courier New',monospace;font-weight:bold;">
+                       <%= invoice_details.utr_no %>
+                    </span>
+                  </td>
+                </tr>
+              </table>
+              <% } %>
+ 
+              <!-- Section heading: Remitter -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="margin-bottom:10px;">
+                <tr>
+                  <td style="border-bottom:2px solid #1a3a6b;padding-bottom:5px;text-align:center;">
+                    <span style="font-size:11px;font-weight:bold;color:#1a3a6b;
+                                 font-family:'Times New Roman',serif;letter-spacing:0.5px;
+                                 text-transform:uppercase;">
+                      Remitter Details
+                    </span>
+                  </td>
+                </tr>
+              </table>
+ 
+              <!-- Remitter table -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="margin-bottom:22px;border:1px solid #d0dae8;border-radius:3px;
+                       border-collapse:collapse;">
+                <tr style="background-color:#f4f7fb;">
+                  <td style="padding:8px 12px;width:30%;border-bottom:1px solid #d0dae8;
+                             border-right:1px solid #d0dae8;text-align:center;">
+                    <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                 letter-spacing:1px;text-transform:uppercase;">Name</span>
+                  </td>
+                  <td style="padding:8px 12px;border-bottom:1px solid #d0dae8;text-align:center;">
+                    <span style="font-size:13px;color:#1a2a3a;font-family:'Times New Roman',serif;
+                                 font-weight:bold;"><%= invoice_details.sender_name || '--' %></span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:8px 12px;width:30%;background-color:#f4f7fb;
+                             border-right:1px solid #d0dae8;text-align:center;">
+                    <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                 letter-spacing:1px;text-transform:uppercase;">Address</span>
+                  </td>
+                 <td style="padding:8px 12px;text-align:center;">
+                    <span style="font-size:12px;color:#3a4a5a;font-family:'Times New Roman',serif;
+                                line-height:1.6;">
+                        <%= [invoice_details.sender_address, invoice_details.sender_city, invoice_details.sender_state, invoice_details.sender_country, invoice_details.sender_postal_code].filter(Boolean).join(', ') || '--' %>
+                    </span>
+                </td>
+                </tr>
+              </table>
+ 
+              <!-- Section heading: Recipient -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="margin-bottom:10px;">
+                <tr>
+                  <td style="border-bottom:2px solid #1a3a6b;padding-bottom:5px;text-align:center;">
+                    <span style="font-size:11px;font-weight:bold;color:#1a3a6b;
+                                 font-family:'Times New Roman',serif;letter-spacing:0.5px;
+                                 text-transform:uppercase;">
+                      Recipient Details
+                    </span>
+                  </td>
+                </tr>
+              </table>
+ 
+              <!-- Recipient table -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="margin-bottom:22px;border:1px solid #d0dae8;border-radius:3px;
+                       border-collapse:collapse;">
+                <tr style="background-color:#f4f7fb;">
+                  <td style="padding:8px 12px;width:30%;border-bottom:1px solid #d0dae8;
+                             border-right:1px solid #d0dae8;text-align:center;">
+                    <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                 letter-spacing:1px;text-transform:uppercase;">Name</span>
+                  </td>
+                  <td style="padding:8px 12px;border-bottom:1px solid #d0dae8;text-align:center;">
+                    <span style="font-size:13px;color:#1a2a3a;font-family:'Times New Roman',serif;
+                                 font-weight:bold;"><%= invoice_details.beneficiary_name || '--' %></span>
+                  </td>
+                </tr>
+                <tr style="background-color:#ffffff;">
+                  <td style="padding:8px 12px;background-color:#f4f7fb;
+                             border-bottom:1px solid #d0dae8;border-right:1px solid #d0dae8;text-align:center;">
+                    <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                 letter-spacing:1px;text-transform:uppercase;">Account No.</span>
+                  </td>
+                  <td style="padding:8px 12px;border-bottom:1px solid #d0dae8;text-align:center;">
+                    <span style="font-size:13px;color:#1a2a3a;font-family:'Courier New',monospace;">
+                      <%= invoice_details.account_number || '--' %>
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:8px 12px;background-color:#f4f7fb;
+                             border-right:1px solid #d0dae8;text-align:center;">
+                    <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                 letter-spacing:1px;text-transform:uppercase;">Bank Code</span>
+                  </td>
+                  <td style="padding:8px 12px;text-align:center;">
+                    <span style="font-size:13px;color:#1a2a3a;font-family:'Courier New',monospace;">
+                      <%= invoice_details.bank_code || '--' %>
+                    </span>
+                  </td>
+                </tr>
+              </table>
+ 
+              <!-- Section heading: Transfer Overview -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="margin-bottom:10px;">
+                <tr>
+                  <td style="border-bottom:2px solid #1a3a6b;padding-bottom:5px;text-align:center;">
+                    <span style="font-size:11px;font-weight:bold;color:#1a3a6b;
+                                 font-family:'Times New Roman',serif;letter-spacing:0.5px;
+                                 text-transform:uppercase;">
+                      Transfer Overview
+                    </span>
+                  </td>
+                </tr>
+              </table>
+ 
+              <!-- Amount highlight box -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="margin-bottom:22px;">
+                <tr>
+                  <td style="background-color:#f0f6ff;border:1px solid #b0c8e8;
+                             border-left:4px solid #1a3a6b;border-radius:3px;
+                             padding:16px 20px;text-align:center;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td align="center">
+                          <span style="font-size:10px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                       letter-spacing:1px;text-transform:uppercase;">
+                            Transferred Amount
+                          </span>
+                          <br/>
+                          <span style="font-size:30px;font-weight:bold;color:#1a3a6b;
+                                       font-family:'Times New Roman',serif;letter-spacing:-0.5px;">
+                           <%= invoice_details.currency || '--' %> <%= invoice_details.amount || '--' %>
+                          </span>
+                          <br/>
                         </td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td>
-                <p style="font-size: 20px;font-weight: 300;color: #777777;padding-top: 20px;">
-                    <strong style="color: #111111;">Recipient Details</strong>
-                </p>
-            </td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="padding-top: 30px;">
-                <table>
-                    <tr>
-                        <td>
-                            <p style="font-size: 14px;font-weight: 500;color: #777777;text-align: left;padding-bottom: 20px;">
-                                <strong style="color: #111111;">Name: </strong> <%= invoice_details.beneficiary_name || '--' %>
-                            </p>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+ 
+              <!-- Remark & Status row -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="margin-bottom:28px;">
+                <tr>
+                  <td style="width:50%;padding-right:10px;vertical-align:top;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="border:1px solid #d0dae8;border-radius:3px;">
+                      <tr>
+                        <td style="background-color:#f4f7fb;border-bottom:1px solid #d0dae8;
+                                   padding:6px 12px;text-align:center;">
+                          <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                       letter-spacing:1.5px;text-transform:uppercase;">
+                            <%= invoice_details.remarks ? 'Customer Remark' : 'Purpose of Payment' %>
+                          </span>
                         </td>
-                        <td>
-                            <p style="font-size: 14px;font-weight: 500;color: #777777;text-align: left;">
-                                <strong style="color: #111111;">Account Number: </strong> <%= invoice_details.account_number || '--' %>
-                            </p>
+                      </tr>
+                      <tr>
+                        <td style="padding:10px 12px;text-align:center;">
+                          <span style="font-size:13px;color:#3a4a5a;font-family:'Times New Roman',serif;
+                                       font-style:italic;"><%= invoice_details.remarks || invoice_details.purpose || '--' %></span>
                         </td>
-                    </tr>
-
-                    <tr>
-                        <% if (invoice_details.bank_code) { %>
-                        <td>
-                            <p style="font-size: 14px;font-weight: 500;color: #777777;text-align: left;padding-bottom: 20px;">
-                                <strong style="color: #111111;">Bank Code: </strong> <%= invoice_details.bank_code %>
-                            </p>
+                      </tr>
+                    </table>
+                  </td>
+                  <td style="width:50%;padding-left:10px;vertical-align:top;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="border:1px solid #d0dae8;border-radius:3px;">
+                      <tr>
+                        <td style="background-color:#f4f7fb;border-bottom:1px solid #d0dae8;
+                                   padding:6px 12px;text-align:center;">
+                          <span style="font-size:9px;color:#5a78a0;font-family:Verdana,sans-serif;
+                                       letter-spacing:1.5px;text-transform:uppercase;">
+                            Transaction Status
+                          </span>
                         </td>
-                        <% } %>
-                        <% if (invoice_details.routing_number) { %>
-                        <td>
-                            <p style="font-size: 14px;font-weight: 500;color: #777777;text-align: left;padding-bottom: 20px;">
-                                <strong style="color: #111111;">Routing Number: </strong> <%= invoice_details.routing_number %>
-                            </p>
+                      </tr>
+                      <tr>
+                        <td style="padding:10px 12px;text-align:center;">
+                          <span style="font-size:13px;font-weight:bold;color:#1e7a40;
+                                       font-family:'Times New Roman',serif;">
+                            <%= invoice_details.status || '--' %>
+                          </span>
                         </td>
-                        <% } %>
-                    </tr>
-                </table>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+ 
             </td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td>
-                <p style="font-size: 20px;font-weight: 300;color: #777777;padding-top: 20px;">
-                    <strong style="color: #111111;"> Transfer Overview</strong>
-                </p>
+          </tr>
+ 
+          <!-- ── FOOTER NOTE ── -->
+          <tr>
+            <td style="background-color:#f4f7fb;border-top:1px solid #d0dae8;
+                       padding:14px 36px 20px 36px;text-align:center;">
+              <span style="font-size:10px;color:#8a9db5;font-family:Verdana,sans-serif;
+                           font-style:italic;line-height:1.6;">
+                Note: This is a computer generated receipt and does not require physical signature.
+              </span>
             </td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="border-bottom:1px solid #eaeaea; padding-top:10px;padding-bottom: 10px;"></td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="padding-top: 30px;">
-                <p style="font-size: 14px;font-weight: 500;color: #111111;text-align: left;padding-bottom: 15px;">
-                    <strong>Transfered Amount</strong>
-                </p>
-                <p style="font-size: 15px;color: #777;text-align: left; font-weight: 500;"><%= invoice_details.currency || '--' %> <%= invoice_details.amount || '--' %></p>
-            </td>
-        </tr>
-        <tr>
-            <td style="padding-top: 30px;">
-                <p style="font-size: 14px;font-weight: 500;color: #111111;text-align: left;padding-bottom: 15px;">
-                    <strong>Remark</strong>
-                </p>
-                <p style="font-size: 15px;color: #777;text-align: left; font-weight: 500;"><%= invoice_details.remarks || '--' %></p>
-            </td>
-            <td style="padding-top: 30px;">
-                <p style="font-size: 14px;font-weight: 500;color: #111111;text-align: left;padding-bottom: 15px;">
-                    <strong>Status</strong>
-                </p>
-                <p style="font-size: 15px; color: #777; text-align: left; font-weight: 500;">
-                    <%= invoice_details.status || '--' %>
-                </p>
-
-            </td>
-        </tr>
-    </table>
-    <table>
-        <tr>
-            <td style="border-bottom:1px solid #eaeaea; padding-top:20px;padding-bottom: 15px;"></td>
-        </tr>
-    </table>
-
-    <table bgcolor="#0176FF" style="background-color: #0176FF; margin-top: 40px;">
-        <tr>
-            <td style="padding:20px;" align="center">
-                <p style="font-size: 14px;font-weight: 300;color: #111111;">
-                    <strong style="color: #111111;">
-                        Note:
-                    </strong>
-                    This is computer generated receipt and does not require physical signature.
-                </p>
-            </td>
-        </tr>
-    </table>
+          </tr>
+        </table>
+        <!-- end document sheet -->
+ 
+      </td>
+    </tr>
+  </table>
+ 
 </body>
-
 </html>

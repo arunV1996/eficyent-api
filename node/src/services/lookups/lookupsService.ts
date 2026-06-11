@@ -195,7 +195,7 @@ export const lookupsService = {
           country_name: r.countryName,
           country_code: r.countryCode,
           currencies: r.currency ? new Set([r.currency]) : new Set(),
-          alpha_2_code: mccMap.get(r.countryCode) ?? "",
+          alpha_2_code: (mccMap.get(r.countryCode) ?? "").toUpperCase(),
         });
       }
     }

@@ -82,9 +82,9 @@ export async function payoutRoutes(): Promise<Router> {
   r.get(
     "/export",
     validate({ query: PayoutShowSchema }),
-    asyncHandler(payoutController.export),
+    payoutController.export,
   );
-  r.get("/download", asyncHandler(payoutController.downloadList));
+  r.get("/download", payoutController.downloadList);
 
   r.get(
     "/get-form-fields",

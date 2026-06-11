@@ -187,7 +187,7 @@ export const subuserController = {
     await UserAuthEmailService.emailVerified(updated);
 
     return sendResponse(res, apiSuccess(102), 102, {
-      user: userResource(updated, METHOD_VERIFY_EMAIL),
+      user: await userResource(updated, METHOD_VERIFY_EMAIL),
       access_token: issued.plaintext,
     });
   },

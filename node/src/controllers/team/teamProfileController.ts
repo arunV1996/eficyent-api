@@ -10,6 +10,7 @@ import { teamMemberResource } from "../../services/auth/teamMemberResource";
 import { credentialService } from "../../services/auth/credentialService";
 import { TeamChangePasswordInput } from "../../validators/team/teamAuthValidators";
 import { settingsController } from "../settings/settingsController";
+import { getBusinessModel } from "../../services/merchants/merchantService";
 
 /**
  * Mirror of TeamMembers\\ProfileController + the /team/get_settings shim
@@ -19,8 +20,9 @@ import { settingsController } from "../settings/settingsController";
 export const teamProfileController = {
   async profile(req: Request, res: Response): Promise<Response> {
     if (!req.teamMember) throw new ApiException(102);
+    const businessModel = await getBusinessModel(req.user?.merchantId ?? null);
     return sendResponse(res, "", 200, {
-      user: teamMemberResource(req.teamMember, req.user),
+      user: teamMemberResource(req.teamMember, req.user, undefined, businessModel),
     });
   },
 

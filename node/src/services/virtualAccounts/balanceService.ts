@@ -89,6 +89,7 @@ export async function computeBankBalance(
           userId: user.id,
           quoteId: { in: quoteIds },
           type: TRANSACTION_TYPE_CREDIT,
+          status: WALLET_TRANSACTION_COMPLETED,
         },
         select: { quoteId: true },
       });

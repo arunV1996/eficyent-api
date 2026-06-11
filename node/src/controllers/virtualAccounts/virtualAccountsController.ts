@@ -6,6 +6,7 @@ import { sendResponse } from "../../helpers/response";
 import {
   MERCHANT_TYPE_PAYOUT,
   TAKE_COUNT,
+  TEAM_MEMBER_ROLE_CORPORATE,
   VIRTUAL_ACCOUNT_STATUS_CREATED,
   VIRTUAL_ACCOUNT_STATUS_MAP,
 } from "../../helpers/constants";
@@ -141,7 +142,7 @@ export const virtualAccountsController = {
 
     return sendResponse(res, "", 200, {
       total: groupedTotal,
-      accounts: grouped.map((a) => virtualAccountResource(a, req.user!.memo ?? "", appUrl)),
+      accounts: grouped.map((a) => virtualAccountResource(a, req.user!.memo ?? "", appUrl, req.user!.timezone)),
     });
   },
 
@@ -232,7 +233,7 @@ export const virtualAccountsController = {
     const acc: VirtualAccount & { balance?: string } = { ...va };
     await attachBalance(req.user, acc, req.teamMember);
     const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";
-    return sendResponse(res, "", 200, { account: virtualAccountResource(acc, req.user.memo ?? "", appUrl) });
+    return sendResponse(res, "", 200, { account: virtualAccountResource(acc, req.user.memo ?? "", appUrl, req.user.timezone) });
   },
 
   async show(req: Request, res: Response): Promise<Response> {
@@ -263,7 +264,7 @@ export const virtualAccountsController = {
     }
     const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";
     return sendResponse(res, "", 200, {
-      account: virtualAccountResource(account, req.user.memo ?? "", appUrl),
+      account: virtualAccountResource(account, req.user.memo ?? "", appUrl, req.user.timezone),
     });
   },
 
@@ -280,10 +281,16 @@ export const virtualAccountsController = {
     // here was incorrectly scoping the balance to the corporate member's tagged
     // deposits only, making their payouts appear invisible in the total balance.
     const balances = await Promise.all(
-      accounts.map(async (a) => ({
-        currency: a.currency,
-        balance: (await computeBankBalance(req.user!, a, null)).toString(),
-      })),
+      accounts.map(async (a) => {
+        const teamMember =
+          req.teamMember && req.teamMember.role === TEAM_MEMBER_ROLE_CORPORATE
+            ? req.teamMember
+            : null;
+        return {
+          currency: a.currency,
+          balance: (await computeBankBalance(req.user!, a, teamMember)).toString(),
+        };
+      }),
     );
     return sendResponse(res, "", 200, { balances });
   },
@@ -299,7 +306,7 @@ export const virtualAccountsController = {
     const grouped = groupAccountsByExternalType(accounts);
     const appUrl = (await settingGet<string>("app_url", "")) || process.env["APP_URL"] || "";
     return sendResponse(res, "", 200, {
-      accounts: grouped.map((a) => virtualAccountResource(a, req.user!.memo ?? "", appUrl)),
+      accounts: grouped.map((a) => virtualAccountResource(a, req.user!.memo ?? "", appUrl, req.user!.timezone)),
     });
   },
 };
