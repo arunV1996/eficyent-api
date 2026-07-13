@@ -1,0 +1,11 @@
+{
+    "1002": "User not found",
+    "1006": "No authentication token provided",
+    "1007": "Invalid or expired authentication token",
+    "1100": "Required parameter is missing",
+    "1101": "Invalid email format",
+    "1102": "Email is already registered",
+    "1103": "Password must be at least 8 characters",
+    "125": "Invalid email or password",
+    "500": "An unexpected error occurred"
+}
