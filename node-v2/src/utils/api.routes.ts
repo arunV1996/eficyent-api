@@ -4,6 +4,7 @@ import {
     loginValidator,
     registerValidator,
 } from "../validators/auth.validator";
+import { changePasswordValidator } from "../validators/profile.validator";
 
 /**
  * Central registry of every route's path + middleware chain.
@@ -23,6 +24,21 @@ export const authApiRoutes = {
     },
     LOGOUT: {
         path: "/logout",
+        middleware: [authSanctum],
+    },
+};
+
+export const profileApiRoutes = {
+    CHANGE_PASSWORD: {
+        path: "/change-password",
+        middleware: [
+            authSanctum,
+            changePasswordValidator,
+            checkValidationErrors,
+        ],
+    },
+    UPDATE_TOUR_STATUS: {
+        path: "/update-tour-status",
         middleware: [authSanctum],
     },
 };

@@ -24,6 +24,7 @@ interface UserAttributes {
     isTfaEnabled: boolean;
     isTfaSetupCompleted: boolean;
     emailVerifiedAt: Date | null;
+    tourStatus: number;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -38,6 +39,7 @@ interface UserCreationAttributes
         | "isTfaEnabled"
         | "isTfaSetupCompleted"
         | "emailVerifiedAt"
+        | "tourStatus"
     > {}
 
 class User
@@ -55,6 +57,7 @@ class User
     public isTfaEnabled!: boolean;
     public isTfaSetupCompleted!: boolean;
     public emailVerifiedAt!: Date | null;
+    public tourStatus!: number;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -112,6 +115,11 @@ User.init(
         emailVerifiedAt: {
             type: DataTypes.DATE,
             allowNull: true,
+        },
+        tourStatus: {
+            type: DataTypes.TINYINT.UNSIGNED,
+            allowNull: false,
+            defaultValue: 0,
         },
     },
     {

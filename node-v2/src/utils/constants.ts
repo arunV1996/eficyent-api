@@ -17,3 +17,8 @@ export const TOKEN_ABILITY_TWO_FACTOR_PENDING = "two-factor-pending";
 // Kept as the Laravel model FQCN so tokens issued by the legacy service
 // and the restructured service are interchangeable.
 export const TOKENABLE_TYPE_USER = "App\\Models\\User";
+
+// Generic active/inactive flags used across several tables (mirrors the
+// current node/src/helpers/constants.ts ACTIVE/INACTIVE pair).
+export const ACTIVE = 1;
+export const INACTIVE = 0;

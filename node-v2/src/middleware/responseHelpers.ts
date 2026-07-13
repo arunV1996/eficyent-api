@@ -29,6 +29,16 @@ declare global {
                 httpStatus?: number,
             ) => void;
             handleError: (error: unknown) => void;
+            /**
+             * Legacy profile-style envelope preserved for endpoints that
+             * historically returned `{ success, message, code: "", data }`
+             * (see node/src/controllers/profile/profileController.ts's
+             * emptyEnvelope helper). The frontend depends on this shape.
+             */
+            sendEmptyEnvelope: (
+                data: Record<string, unknown>,
+                message: string,
+            ) => void;
         }
     }
 }
@@ -67,6 +77,18 @@ export const responseHelpers = (
             code,
             message,
             data: null,
+        });
+    };
+
+    res.sendEmptyEnvelope = (
+        data: Record<string, unknown>,
+        message: string,
+    ): void => {
+        res.status(200).json({
+            success: true,
+            message,
+            code: "",
+            data,
         });
     };
 
