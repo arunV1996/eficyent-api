@@ -1,6 +1,7 @@
 import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
 import { createHash, randomBytes } from "crypto";
 import moment from "moment-timezone";
+import { ALPHA3_TO_ALPHA2, DISPOSABLE_EMAIL_DOMAINS } from "./constants";
 
 /**
  * Hashes a plain text password using argon2id.
@@ -86,4 +87,92 @@ export const formatDate = (
         resolvedTimezone = "Asia/Kolkata";
     }
     return moment.utc(date).tz(resolvedTimezone).format("D MMM YYYY h:mm A");
+};
+
+/**
+ * True when the email's domain is on the disposable-provider blocklist.
+ */
+export const isDisposableEmail = (email: string): boolean => {
+    const atPosition = email.lastIndexOf("@");
+    if (atPosition === -1) {
+        return false;
+    }
+    return DISPOSABLE_EMAIL_DOMAINS.has(
+        email.slice(atPosition + 1).toLowerCase(),
+    );
+};
+
+/**
+ * Builds the flag asset URL for a country code (alpha-2 or alpha-3).
+ * Mirror of the Laravel get_flag() helper which served
+ * images/countries/<alpha2>.png from the public folder.
+ */
+export const getFlagUrl = (
+    countryCode: string | null | undefined,
+    baseUrl: string,
+): string => {
+    if (!countryCode) {
+        return "";
+    }
+    const upperCode = countryCode.toUpperCase();
+    const alpha2Code = ALPHA3_TO_ALPHA2[upperCode] || countryCode.toLowerCase();
+    return `${baseUrl.replace(/\/$/, "")}/images/countries/${alpha2Code}.png`;
+};
+
+/**
+ * Ten unique 6-digit backup codes joined by commas. Mirror of the
+ * generateBackupCodes() helper used for TFA recovery codes.
+ */
+export const generateBackupCodes = (): string => {
+    const backupCodes = new Set<string>();
+    while (backupCodes.size < 10) {
+        const randomValue = 100_000 + (randomBytes(4).readUInt32BE(0) % 900_000);
+        backupCodes.add(String(randomValue));
+    }
+    return Array.from(backupCodes).join(",");
+};
+
+/**
+ * ISO timestamp N minutes from now, used as an OTP / email-code expiry.
+ * Mirror of generateEmailCodeExpiry().
+ */
+export const generateEmailCodeExpiry = (minutesAhead = 10): string => {
+    return new Date(Date.now() + minutesAhead * 60_000).toISOString();
+};
+
+/**
+ * Human-readable relative time ("5 minutes ago"). Mirror of
+ * lookupsService.relativeTime — used by fx-rate lookups.
+ */
+export const relativeTime = (date: Date): string => {
+    const elapsedSeconds = Math.max(
+        0,
+        Math.floor((Date.now() - date.getTime()) / 1000),
+    );
+    if (elapsedSeconds < 60) {
+        return `${elapsedSeconds} seconds ago`;
+    }
+
+    const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+    if (elapsedMinutes < 60) {
+        return `${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} ago`;
+    }
+
+    const elapsedHours = Math.floor(elapsedMinutes / 60);
+    if (elapsedHours < 24) {
+        return `${elapsedHours} hour${elapsedHours === 1 ? "" : "s"} ago`;
+    }
+
+    const elapsedDays = Math.floor(elapsedHours / 24);
+    if (elapsedDays < 30) {
+        return `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} ago`;
+    }
+
+    const elapsedMonths = Math.floor(elapsedDays / 30);
+    if (elapsedMonths < 12) {
+        return `${elapsedMonths} month${elapsedMonths === 1 ? "" : "s"} ago`;
+    }
+
+    const elapsedYears = Math.floor(elapsedMonths / 12);
+    return `${elapsedYears} year${elapsedYears === 1 ? "" : "s"} ago`;
 };
