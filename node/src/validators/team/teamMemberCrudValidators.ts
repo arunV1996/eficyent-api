@@ -98,7 +98,7 @@ export const TeamMemberListSchema = z
     permission: permission.optional(),
     search_key: z.string().max(128).optional(),
     skip: z.coerce.number().int().min(0).max(100_000).optional(),
-    take: z.coerce.number().int().min(1).max(200).optional(),
+    take: z.coerce.number().int().min(1).optional(),
   })
   .strict();
 export type TeamMemberListInput = z.infer<typeof TeamMemberListSchema>;

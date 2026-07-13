@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   USER_TYPE_BUSINESS,
-  USER_TYPE_INDIVIDUAL,
   USER_TYPE_PENDING,
 } from "../../helpers/constants";
 
@@ -72,11 +71,10 @@ export const RegisterSchema = z
       .preprocess((val) => {
         if (typeof val === "string") {
           const str = val.trim().replace(/^["']|["']$/g, "").toUpperCase();
-          if (str === "PERSONAL" || str === "INDIVIDUAL") return USER_TYPE_INDIVIDUAL;
           if (str === "BUSINESS") return USER_TYPE_BUSINESS;
         }
         return val;
-      }, z.coerce.number().pipe(z.union([z.literal(USER_TYPE_PENDING), z.literal(USER_TYPE_INDIVIDUAL), z.literal(USER_TYPE_BUSINESS)])))
+      }, z.coerce.number().pipe(z.union([z.literal(USER_TYPE_PENDING), z.literal(USER_TYPE_BUSINESS)])))
       .optional(),
     timezone: z.string().max(30).optional(),
     country: z.string().min(2).max(3).optional(),

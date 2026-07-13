@@ -98,6 +98,8 @@ import {
   TransactionProofGetSchema,
   TransactionProofRequestSchema,
 } from "../validators/payout/payoutValidators";
+import { statementController } from "../controllers/statement/statementController";
+import { StatementExportSchema } from "./statement.routes";
 
 import {
   QUOTE_MODE_QUOTATION,
@@ -459,6 +461,13 @@ export async function teamAuthedRoutes(): Promise<Router> {
     "/ledgers/export",
     validate({ query: LedgerListSchema }),
     ledgerController.export,
+  );
+
+  // ----- Statements -----
+  r.get(
+    "/statement/export",
+    validate({ query: StatementExportSchema }),
+    asyncHandler(statementController.export),
   );
 
   // ----- Authenticated lookups -----

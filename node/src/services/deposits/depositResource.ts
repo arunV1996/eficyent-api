@@ -16,7 +16,7 @@ export interface DepositTransactionDto {
   fee: string;
   total_amount: string;
   currency: string;
-  type: string;
+  type: string | null;
   purpose_of_payment: string;
   source_of_funds: string;
   status: string;
@@ -32,6 +32,26 @@ export interface DepositTransactionDto {
   from_wallet_address?: string;
   to_wallet?: string;
   transaction_hash?: string;
+}
+
+function depositTypeLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  switch (value.toLowerCase()) {
+    case "deposit":
+      return "DEPOSIT";
+    case "refund":
+      return "REFUND";
+    case "topup":
+      return "TOPUP";
+    case "credit":
+      return "CREDIT";
+    case "premium":
+      return "PREMIUM";
+    case "charges":
+      return "CHARGES";
+    default:
+      return null;
+  }
 }
 
 export async function depositTransactionResource(
@@ -57,10 +77,7 @@ export async function depositTransactionResource(
   }
   const currency = (d.depositCurrency || vaCurrency).toUpperCase();
   
-  // Format type to Title Case (e.g., "credit" -> "Credit")
-  const typeLabel = d.type 
-    ? d.type.charAt(0).toUpperCase() + d.type.slice(1).toLowerCase()
-    : "Topup";
+  const typeLabel = depositTypeLabel(d.type);
 
   const res: DepositTransactionDto = {
     unique_id: d.uniqueId,

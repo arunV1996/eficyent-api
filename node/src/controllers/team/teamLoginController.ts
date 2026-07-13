@@ -33,7 +33,7 @@ async function loginCommon(
   const member = await prisma().teamMember.findUnique({
     where: { email: body.email },
   });
-  if (!member) throw new ApiException(102);
+  if (!member || member.deletedAt) throw new ApiException(102);
 
   // Constant-time-ish password verify (always run, even on missing member,
   // see Phase 1 notes for the rationale).

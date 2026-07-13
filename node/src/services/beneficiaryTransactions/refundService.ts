@@ -69,6 +69,7 @@ export async function createRefund(
             walletId: wallet.id,
             userId: txn.userId,
             type: TRANSACTION_TYPE_CREDIT,
+            status: WALLET_TRANSACTION_COMPLETED
           },
           _sum: { totalAmount: true },
         }),

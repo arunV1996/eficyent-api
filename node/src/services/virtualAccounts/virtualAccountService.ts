@@ -46,7 +46,8 @@ export async function getVirtualAccountScope(
       }
     }
 
-    return { userId: null };
+    // If no bank_account_id is configured in settings, return an empty scope
+    return { id: 0n };
   }
 
   return { userId: user.id };

@@ -38,7 +38,7 @@ import {
   depositTransactionCallbackPayload,
 } from "../../services/callbacks/payloadBuilders";
 import { uniqueId } from "../../helpers/uniqueId";
-import { TelegramNotifier } from "../../services/external/telegram";
+import { pushNotificationService } from "../../services/notifications/pushNotificationService";
 
 /**
  * Mirror of App\\Http\\Controllers\\Api\\Callbacks\\ProcessingUnitWebhookController.
@@ -79,6 +79,11 @@ export const processingUnitWebhookController = {
       } else if (moduleName === "deposit") {
         const result = await handleDeposit(data);
         depositTransactionId = result.depositTransactionId;
+      } else if (moduleName === "verify_bank_account") {
+        const result = await handleVerifyBankAccount(data);
+        beneficiaryTransactionId = result.beneficiaryTransactionId;
+        success = result.success;
+        errorMessage = result.errorMessage;
       } else if (moduleName === "caliza_virtual_account") {
         const result = await handleCalizaVirtualAccount(data);
         success = result.success;
@@ -162,13 +167,7 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
       finalStatus = BENEFICIARY_TRANSACTION_COMPLETED;
     }
   } else {
-    if (serviceType === "EVP" && mappedStatus === BENEFICIARY_TRANSACTION_FAILED) {
-      logger.info({ orderId }, "Skipping rejected transaction for EVP");
-      success = false;
-      errorMessage = "Skipping rejected status for EVP";
-    } else {
-      finalStatus = mappedStatus;
-    }
+    finalStatus = mappedStatus;
   }
 
   if (finalStatus === null || finalStatus === oldStatus) {
@@ -178,6 +177,9 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
   const updateData: Record<string, unknown> = { status: finalStatus };
   if (utr) {
     updateData.externalReferenceId = utr;
+  }
+  if (!utr && !txn.externalReferenceId && finalStatus === BENEFICIARY_TRANSACTION_COMPLETED) {
+    updateData.externalReferenceId = txn.txnRefNo;
   }
   if (serviceType) {
     updateData.externalType = mapProcessingUnitServiceToExternalType(serviceType);
@@ -195,7 +197,7 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
     updateData.serviceMid = serviceMid.toUpperCase();
   }
 
-  // Reverse refund logic if a refund was previously generated and status moves back to initiated/processing
+  // Reverse refund logic if a refund was previously generated and status moves back to initiated/processing/completed
   const originalLedger = await prisma().ledger.findFirst({
     where: {
       transactionType: MORPH_BENEFICIARY_TRANSACTION,
@@ -208,14 +210,13 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
     });
     if (
       refundLedger &&
-      txn.status === BENEFICIARY_TRANSACTION_FAILED &&
       [
         BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATED,
         BENEFICIARY_TRANSACTION_PROCESSING_UNIT_PROCESSING,
         BENEFICIARY_TRANSACTION_COMPLETED,
       ].includes(mappedStatus)
     ) {
-      logger.info({ orderId }, "Reversing refund for FAILED -> COMPLETED/INITIATED/PROCESSING txn");
+      logger.info({ orderId }, "Reversing refund for FAILED -> COMPLETED txn");
       const { reverseRefund } = await import("../../services/beneficiaryTransactions/refundService");
       await reverseRefund(txn);
     }
@@ -257,9 +258,25 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
     await Dispatch.debitNotification({
       beneficiaryTransactionId: txn.id.toString(),
     });
-    void TelegramNotifier.notifyBeneficiaryTransaction(txn.id).catch((err) =>
-      logger.warn({ err, txnId: txn.uniqueId }, "Telegram notification failed for completed payout"),
-    );
+
+
+      const user = await prisma().user.findUnique({ where: { id: txn.userId } });
+      if (user) {
+      const deviceToken = (user as any)?.deviceToken;
+      if (deviceToken) {
+        void pushNotificationService.sendToToken(deviceToken, {
+          title: "Withdrawal Successful",
+          body: `Your withdrawal of ${txn.amount.toString()} ${txn.receivingCurrency || "USD"} has been completed successfully.`,
+          data: {
+            content_unique_id: txn.uniqueId,
+            status: "COMPLETED",
+            type: "withdraw",
+          },
+        }).catch((err) =>
+          logger.error({ err, userId: user?.id.toString() }, "Failed to send successful withdraw push notification")
+        );
+      }
+    }
   } else if (finalStatus === BENEFICIARY_TRANSACTION_FAILED) {
     await Dispatch.callback({
       userId: txn.userId.toString(),
@@ -274,6 +291,23 @@ async function handleWithdraw(data: Record<string, unknown>): Promise<{
       await createRefund(updated).catch((err) =>
         logger.error({ err, txnId: txn.uniqueId }, "createRefund threw"),
       );
+      const user = await prisma().user.findUnique({ where: { id: txn.userId } });
+      if (user) {
+        const deviceToken = (user as any)?.deviceToken;
+        if (deviceToken) {
+          void pushNotificationService.sendToToken(deviceToken, {
+            title: "Withdrawal Failed",
+            body: `Your withdrawal of ${txn.amount.toString()} ${txn.receivingCurrency || "USD"} has failed.`,
+            data: {
+              content_unique_id: txn.uniqueId,
+              status: "FAILED",
+              type: "withdraw",
+            },
+          }).catch((err) =>
+            logger.error({ err, userId: user.id.toString() }, "Failed to send failed withdraw push notification")
+          );
+        }
+      }
     }
   }
 
@@ -298,7 +332,6 @@ async function handleDeposit(data: Record<string, unknown>): Promise<{
         in: [
           DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
           DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING,
-          DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED,
         ],
       },
     },
@@ -307,6 +340,9 @@ async function handleDeposit(data: Record<string, unknown>): Promise<{
     logger.warn({ orderId }, "DepositTransaction not found for order_id");
     return { depositTransactionId: null };
   }
+
+  const user = await prisma().user.findUnique({ where: { id: txn.userId } });
+  const va = await prisma().virtualAccount.findUnique({ where: { id: txn.virtualAccountId } });
 
   const statusMap = mapProcessingUnitDepositStatus(status);
   const oldStatus = txn.status;
@@ -340,19 +376,23 @@ async function handleDeposit(data: Record<string, unknown>): Promise<{
         >,
         depositTransactionUniqueId: txn.uniqueId,
       });
-      const user = await prisma().user.findUnique({ where: { id: txn.userId } });
-      const va = await prisma().virtualAccount.findUnique({ where: { id: txn.virtualAccountId } });
       if (user && va) {
-        void TelegramNotifier.depositReceived({
-          id: updated.uniqueId,
-          user: user.firstName ?? user.email,
-          amount: updated.totalAmount.toString(),
-          currency: va.currency,
-          status: "COMPLETED",
-          created_at: (updated.createdAt || new Date()).toISOString(),
-        }).catch((err) =>
-          logger.warn({ err, txnId: txn.uniqueId }, "Telegram notification failed for completed deposit"),
-        );
+
+
+        const deviceToken = (user as any)?.deviceToken;
+        if (deviceToken) {
+          void pushNotificationService.sendToToken(deviceToken, {
+            title: "Deposit Successful",
+            body: `Your deposit of ${updated.totalAmount.toString()} ${va.currency} has been completed successfully.`,
+            data: {
+              content_unique_id: updated.uniqueId,
+              status: "COMPLETED",
+              type: "deposit"
+            },
+          }).catch((err) =>
+            logger.error({ err, userId: user.id.toString() }, "Failed to send successful deposit push notification")
+          );
+        }
       }
     } else if (
       [
@@ -370,6 +410,21 @@ async function handleDeposit(data: Record<string, unknown>): Promise<{
         >,
         depositTransactionUniqueId: txn.uniqueId,
       });
+
+      const deviceToken = (user as any)?.deviceToken;
+      if (deviceToken) {
+        void pushNotificationService.sendToToken(deviceToken, {
+          title: "Deposit Failed",
+          body: `Your deposit of ${updated.totalAmount.toString()} ${va?.currency ?? ""} has failed.`,
+          data: {
+            content_unique_id: updated.uniqueId,
+            status: "FAILED",
+            type: "deposit",
+          },
+        }).catch((err) =>
+          logger.error({ err, userId: user?.id.toString() }, "Failed to send failed deposit push notification")
+        );
+      }
     }
   }
 
@@ -383,8 +438,6 @@ async function handleDeposit(data: Record<string, unknown>): Promise<{
       },
     });
     if (!existing) {
-      const user = await prisma().user.findUnique({ where: { id: txn.userId } });
-      const va = await prisma().virtualAccount.findUnique({ where: { id: txn.virtualAccountId } });
       if (!user || !va) {
         logger.error({ txnId: txn.uniqueId }, "User or VA not found for deposit ledger record");
         return { depositTransactionId: txn.id };
@@ -426,6 +479,107 @@ async function handleDeposit(data: Record<string, unknown>): Promise<{
   );
 
   return { depositTransactionId: txn.id };
+}
+
+async function handleVerifyBankAccount(data: Record<string, unknown>): Promise<{
+  beneficiaryTransactionId: bigint | null;
+  success: boolean;
+  errorMessage: string | null;
+}> {
+  const accountNumber = (data.account_number as string | undefined) ?? null;
+  const ifscCode = (data.ifsc_code as string | undefined) ?? null;
+
+  if (!accountNumber) {
+    logger.warn({ data }, "Missing account_number in verify_bank_account");
+    return { beneficiaryTransactionId: null, success: true, errorMessage: null };
+  }
+
+  // 1. Check this account number and IFSC code in the beneficiary accounts table. If it does NOT exist, skip.
+  const beneficiaryExists = await prisma().beneficiaryAccount.findFirst({
+    where: {
+      accountNumber,
+      swiftCode: ifscCode,
+      deletedAt: null,
+    },
+  });
+
+  if (!beneficiaryExists) {
+    logger.info({ accountNumber, ifscCode }, "Beneficiary account does not exist. Skipping validation creation.");
+    return { beneficiaryTransactionId: null, success: true, errorMessage: null };
+  }
+
+  // 2. Check if the beneficiary account validation record already exists by accountNumber. If exists, skip.
+  const validationExists = await prisma().beneficiaryAccountValidation.findFirst({
+    where: {
+      accountNumber,
+    },
+  });
+
+  if (validationExists) {
+    logger.info({ accountNumber, ifscCode }, "Validation record already exists. Skipping creation.");
+    return { beneficiaryTransactionId: null, success: true, errorMessage: null };
+  }
+
+  // Find the latest transaction of that account number and IFSC code from the beneficiary transaction table
+  const latestTxn = await prisma().beneficiaryTransaction.findFirst({
+    where: {
+      beneficiaryAccount: {
+        accountNumber,
+        swiftCode: ifscCode,
+      },
+    },
+    orderBy: { id: "desc" },
+  });
+
+  // Resolve user_id for creating the validation record
+  let targetUserId: bigint | null = latestTxn ? latestTxn.userId : null;
+  if (!targetUserId && data.merchant_email) {
+    const matchedUser = await prisma().user.findFirst({
+      where: { email: String(data.merchant_email) }
+    });
+    if (matchedUser) {
+      targetUserId = matchedUser.id;
+    }
+  }
+
+  if (!targetUserId) {
+    const fallbackUser = await prisma().user.findFirst();
+    if (fallbackUser) {
+      targetUserId = fallbackUser.id;
+    } else {
+      logger.warn({ accountNumber }, "No user found in system to associate with validation record");
+      return { beneficiaryTransactionId: null, success: false, errorMessage: "No user found in system" };
+    }
+  }
+
+  // 3. Else, create the validation record
+  await prisma().beneficiaryAccountValidation.create({
+    data: {
+      uniqueId: uniqueId(24),
+      userId: targetUserId,
+      accountName: (data.account_name as string) ?? null,
+      accountNumber: (data.account_number as string) ?? accountNumber,
+      code: (data.ifsc_code as string) ?? ifscCode,
+      validationService: "pu",
+      externalReferenceId: (data.client_id as string) ?? null,
+      externalStatus: (data.status as string) ?? null,
+      externalData: data as never,
+      remarks: (data.message as string) ?? null,
+      isAccountExists:
+        String(data.is_account_exists ?? "NO").toUpperCase() === "YES" ? 1 : 0,
+      isNreAccount:
+        String(data.is_nre_account ?? "NO").toUpperCase() === "YES" ? 1 : 0,
+      status: 1,
+    },
+  });
+
+  logger.info({ accountNumber }, "Beneficiary Account Validation created");
+
+  return {
+    beneficiaryTransactionId: latestTxn ? latestTxn.id : null,
+    success: true,
+    errorMessage: null,
+  };
 }
 
 async function handleCalizaVirtualAccount(data: Record<string, unknown>): Promise<{

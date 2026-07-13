@@ -4,6 +4,7 @@ import { ApiException, ValidationException } from "../helpers/errors";
 import { logger } from "../helpers/logger";
 import { sendError } from "../helpers/response";
 import { env } from "../config/env";
+import { notifyRequestError } from "../services/external/slackAlertService";
 
 /** Catch-all 404. */
 export function notFound(_req: Request, res: Response): void {
@@ -23,15 +24,39 @@ export function errorHandler(
 ): void {
   const reqId = (req as Request & { id?: string }).id;
 
+  if (res.locals) {
+    res.locals.error = {
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    };
+  }
+
+  // Whitelist of critical endpoints that must alert Slack on failure
+  const TARGET_ROUTES = [
+    { method: "POST", path: "/api/user/deposits/store" },
+    { method: "POST", path: "/api/user/beneficiary-transactions/store" },
+    { method: "POST", path: "/api/user/login" },
+  ];
+  const pathWithoutQuery = req.originalUrl.split("?")[0];
+  const isTarget = TARGET_ROUTES.some(
+    (route) => route.method === req.method && pathWithoutQuery === route.path,
+  );
+  if (isTarget) {
+    void notifyRequestError(req, err, "Route Catch Block");
+  }
+
   if (err instanceof ValidationException) {
     logger.warn(
       { reqId, code: err.code, fieldErrors: err.fieldErrors },
       "Validation error",
     );
     const firstField = Object.keys(err.fieldErrors)[0];
-    const firstError = firstField && err.fieldErrors[firstField]
+    let firstError = firstField && err.fieldErrors[firstField]
       ? err.fieldErrors[firstField][0]
       : err.message;
+    if (firstError === "Required" && firstField) {
+      firstError = `${firstField} is required`;
+    }
     res.status(422).json({
       success: false,
       error: firstError,
@@ -42,7 +67,10 @@ export function errorHandler(
 
   if (err instanceof ZodError) {
     const firstIssue = err.issues[0];
-    const errorMessage = firstIssue ? firstIssue.message : "Validation error.";
+    let errorMessage = firstIssue ? firstIssue.message : "Validation error.";
+    if (firstIssue && firstIssue.message === "Required" && firstIssue.path.length > 0) {
+      errorMessage = `${firstIssue.path.join(".")} is required`;
+    }
     logger.warn({ reqId, issues: err.issues }, "Zod validation error");
     res.status(422).json({
       success: false,
@@ -70,7 +98,7 @@ export function errorHandler(
   res.status(500).json({
     status: false,
     code: 500,
-    message: "Internal server error.",
+    message: "Something went wrong.",
     data: env().APP_DEBUG && !env().NODE_ENV.startsWith("prod")
       ? { error: (err as Error).message }
       : null,

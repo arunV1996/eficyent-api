@@ -7,6 +7,7 @@ export interface QuoteDto {
   receiving_amount: string;
   fees: number;
   total_amount: string;
+  raw_fx_rate: string;
   fx_rate: string;
   quote_type: string;
   recipient_type: string;
@@ -23,7 +24,7 @@ export function quoteResource(q: Quote, sourceCurrency?: string, timezone?: stri
   // know the real source currency.
   const effectiveSourceCurrency = sourceCurrency ?? q.receivingCurrency ?? "USD";
   const fxRateString = q.fxRate
-    ? (q.fxRate !== "1"
+    ? (effectiveSourceCurrency !== q.receivingCurrency
       ? `1 ${effectiveSourceCurrency} = ${q.fxRate} ${q.receivingCurrency}`
       : `1 ${effectiveSourceCurrency} = 1 ${effectiveSourceCurrency}`)
     : "";
@@ -35,6 +36,7 @@ export function quoteResource(q: Quote, sourceCurrency?: string, timezone?: stri
     fees: Number(q.commissionAmount.add(q.merchantCommissionAmount ?? 0).add(q.externalCommissionAmount ?? 0)),
     total_amount: (q.totalSendingAmount ?? q.amount).toFixed(2),
     fx_rate: fxRateString,
+    raw_fx_rate: q.fxRate as any,
     quote_type: q.quoteType,
     recipient_type: recipientType,
     recipient_country: q.recipientCountry ?? "",

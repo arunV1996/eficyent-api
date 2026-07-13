@@ -231,6 +231,14 @@ export const depositController = {
       });
       if (!aw) throw new ApiException(202);
       adminWalletId = aw.id;
+
+      if (
+        (currency === "USDT" || currency === "USDC") &&
+        body.from_wallet_address &&
+        body.from_wallet_address.toLowerCase().trim() === aw.wallet_address.toLowerCase().trim()
+      ) {
+        throw new ApiException(422, "From wallet and to wallet cannot be the same.", 422);
+      }
     }
 
     const memo = req.user.memo ?? generateUserMemo(req.user);
@@ -317,7 +325,7 @@ export const depositController = {
   async export(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
     const q = req.query as unknown as DepositListInput;
-    const fileType = String((req.query as { type?: string }).type ?? "pdf").toLowerCase();
+    const fileType = String((req.query as { export_type?: string }).export_type ?? "pdf").toLowerCase();
 
     // Reuse the same filter logic as index() but no pagination.
     let statusFilter: any = undefined;
@@ -377,20 +385,26 @@ export const depositController = {
     let extension: string;
 
     if (fileType === "excel" || fileType === "xlsx") {
-      const exportRows = await Promise.all(rows.map(async (r) => {
+      const toTitleCase = (str: string): string => {
+        if (!str) return "";
+        return str
+          .toLowerCase()
+          .split(/[\s_]+/)
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(" ");
+      };
+
+      const exportRows = await Promise.all(rows.map(async (r, i) => {
         const res = await depositTransactionResource(r);
         return {
-          unique_id: res.unique_id,
-          memo: res.memo,
-          amount: res.amount,
-          fee: res.fee,
-          total_amount: res.total_amount,
-          currency: res.currency,
-          type: res.type,
-          purpose_of_payment: res.purpose_of_payment,
-          source_of_funds: res.source_of_funds,
-          status: res.status,
-          created_at: res.created_at,
+          "S. No.": i + 1,
+          "Transaction ID": res.unique_id || "",
+          "Memo": res.memo || "",
+          "Amount": `${res.amount} ${res.currency}`,
+          "Type": res.type ? toTitleCase(res.type) : "",
+          "Status": toTitleCase(res.status),
+          "Remarks": r.remarks || "",
+          "Date": res.created_at || "",
         };
       }));
 
@@ -515,8 +529,8 @@ export const depositController = {
           depositTransactionId: transaction.id,
           fromStatus: String(transaction.status),
           toStatus: String(DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED),
-          changedBy: req.user!.id.toString(),
-          changedByType: "user",
+          changedBy: req.user ? req.user.id.toString() : transaction.userId.toString(),
+          changedByType: req.user ? "user" : "system",
           changedAt: new Date(),
         },
       });

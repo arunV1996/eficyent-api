@@ -96,11 +96,14 @@ export const walletController = {
     await createAllWallets(req.user);
 
     const status =
-      q.status && q.status in WALLET_STATUS_MAP ? WALLET_STATUS_MAP[q.status] : null;
+      q.status && q.status in WALLET_STATUS_MAP
+        ? WALLET_STATUS_MAP[q.status]
+        : WALLET_STATUS_ACTIVE;
+
     const where: Prisma.WalletWhereInput = {
       userId: req.user.id,
+      status: status,
       ...(q.currency ? { currency: q.currency } : {}),
-      ...(status !== null ? { status } : {}),
       ...(q.search_key ? { currency: { contains: q.search_key } } : {}),
     };
     const rows = await prisma().wallet.findMany({ where });
@@ -141,7 +144,7 @@ export const walletController = {
     if (!q.wallet_id) throw new ApiException(167);
 
     const w = await prisma().wallet.findFirst({
-      where: { userId: req.user.id, uniqueId: q.wallet_id },
+      where: { userId: req.user.id, uniqueId: q.wallet_id, status: WALLET_STATUS_ACTIVE },
     });
     if (!w) throw new ApiException(167);
     const balance = await getWalletBalance(req.user, w);

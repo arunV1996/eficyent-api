@@ -13,10 +13,8 @@ import {
   DEPOSIT_TRANSACTION_COMPLETED,
   DEPOSIT_TRANSACTION_FAILED,
   DEPOSIT_TRANSACTION_REJECTED,
-  BENEFICIARY_TRANSACTION_COMPLETED,
 } from "../../helpers/constants";
 import { logger } from "../../helpers/logger";
-import { TelegramNotifier } from "./telegram";
 import { buildPayoutPayload } from "./processingUnitPayload";
 import { call } from "./httpClient";
 import { Secrets } from "../../config/secrets";
@@ -291,11 +289,7 @@ export const ProcessingUnit = {
               changedAt: new Date(),
             },
           });
-          if (next === BENEFICIARY_TRANSACTION_COMPLETED) {
-            void TelegramNotifier.notifyBeneficiaryTransaction(txn.id).catch((err) =>
-              logger.warn({ err, txnId: txn.uniqueId }, "Telegram notification failed for completed payout in make"),
-            );
-          }
+
         }
         logger.info(
           { txnId: txn.uniqueId, status: response.data?.status, mapped: next },
@@ -322,14 +316,6 @@ export const ProcessingUnit = {
         },
       });
 
-      await TelegramNotifier.processingUnitInitiationFailed({
-        id: txn.uniqueId,
-        user: user.firstName ?? user.email,
-        currency: (payload.from_currency as string) ?? "",
-        status: failureStatus,
-        message: response.message,
-        created_at: txn.createdAt?.toISOString() ?? "",
-      });
     } catch (err) {
       logger.error({ err, txnId: txn.uniqueId }, "ProcessingUnit.make threw");
       const existingAudit = await prisma().externalServiceCall.findFirst({
@@ -364,14 +350,6 @@ export const ProcessingUnit = {
         },
       }).catch(() => undefined);
 
-      await TelegramNotifier.processingUnitInitiationFailed({
-        id: txn.uniqueId,
-        user: user.firstName ?? user.email,
-        currency: "",
-        status: failureStatus,
-        message: err instanceof Error ? err.message : String(err),
-        created_at: txn.createdAt?.toISOString() ?? "",
-      });
     }
   },
 
@@ -428,20 +406,7 @@ export const ProcessingUnit = {
                 >,
                 depositTransactionUniqueId: txn.uniqueId,
               }).catch(() => undefined);
-              const user = await prisma().user.findUnique({ where: { id: txn.userId } });
-              const va = await prisma().virtualAccount.findUnique({ where: { id: txn.virtualAccountId } });
-              if (user && va) {
-                void TelegramNotifier.depositReceived({
-                  id: updated.uniqueId,
-                  user: user.firstName ?? user.email,
-                  amount: updated.totalAmount.toString(),
-                  currency: va.currency,
-                  status: "COMPLETED",
-                  created_at: (updated.createdAt || new Date()).toISOString(),
-                }).catch((err) =>
-                  logger.warn({ err, txnId: txn.uniqueId }, "Telegram notification failed for completed deposit in createDeposit"),
-                );
-              }
+
             } else if (
               [
                 DEPOSIT_TRANSACTION_FAILED,

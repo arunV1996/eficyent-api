@@ -5,7 +5,9 @@ import { lookupsService, relativeTime } from "../../services/lookups/lookupsServ
 import {
   DEPOSIT_PURPOSE,
   DEPOSIT_SOURCE_OF_FUNDS,
+  getFlagUrl,
 } from "../../helpers/lookups";
+import { env } from "../../config/env";
 import { settingGet } from "../../services/settings/settingsService";
 import {
   DepositLookupInput,
@@ -186,11 +188,20 @@ export const lookupsController = {
       });
     }
 
+    const mcc = supported
+      ? await prisma().mobileCountryCode.findFirst({
+          where: { alpha3Code: supported.countryCode },
+          select: { alpha2Code: true },
+        })
+      : null;
+    const flag = getFlagUrl(mcc?.alpha2Code, env().APP_URL);
+
     return sendResponse(res, "", 200, {
       rate: {
         from_currency: cached.fromCurrency,
         to_currency: cached.toCurrency,
         fx_rate: Number(cached.rate).toFixed(4),
+        flag,
         last_updated: relativeTime(
           cached.updatedAt || new Date(),
           req.user.timezone ?? "Asia/Kolkata",

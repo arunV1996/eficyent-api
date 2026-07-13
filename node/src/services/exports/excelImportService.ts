@@ -77,26 +77,44 @@ export async function processExcel<T>(
   const machineRow = sheet.getRow(2);
   const fieldMap: Record<number, string> = {};
 
-  // Prefer the machine row if it carries dotted paths (most reliable).
+  // Prefer the machine row if it carries dotted paths starting with valid sections (most reliable).
   const machineCells = machineRow.values as Array<unknown>;
+  let hasMachineKeys = false;
+  const tempFieldMap: Record<number, string> = {};
   for (let col = 1; col < machineCells.length; col++) {
     const v = machineCells[col];
-    if (typeof v === "string" && v.includes(".")) {
-      fieldMap[col] = v;
+    if (
+      typeof v === "string" &&
+      /^(quote|beneficiary|remitter)\.[a-z_0-9]+$/i.test(v.trim())
+    ) {
+      tempFieldMap[col] = v.trim();
+      hasMachineKeys = true;
     }
   }
 
-  // Fallback: match human header against `Section Field Label` shape.
-  if (Object.keys(fieldMap).length === 0) {
+  let startRow = 3;
+  if (hasMachineKeys) {
+    Object.assign(fieldMap, tempFieldMap);
+  } else {
+    startRow = 2;
+    // Fallback: match human header against `Section Field Label` shape or normalized schema keys.
     const headerCells = headerRow.values as Array<unknown>;
     for (let col = 1; col < headerCells.length; col++) {
       const h = headerCells[col];
       if (typeof h !== "string") continue;
-      const trimmed = h.trim();
+      const normalizedHeader = normaliseHeader(h);
       for (const f of fields) {
-        const expected = `${f.section.charAt(0).toUpperCase()}${f.section.slice(1)} ${f.field_label}`;
-        if (expected === trimmed) {
-          fieldMap[col] = `${f.section}.${f.field_key}`;
+        const expectedDotted = `${f.section}.${f.field_key}`;
+        const expectedUnderscored = `${f.section}_${f.field_key}`;
+        const expectedHuman = `${f.section.charAt(0).toUpperCase()}${f.section.slice(1)} ${f.field_label}`;
+
+        if (
+          normalizedHeader === expectedUnderscored ||
+          normalizedHeader === normaliseHeader(expectedUnderscored) ||
+          normalizedHeader === normaliseHeader(expectedHuman) ||
+          h.trim() === expectedHuman
+        ) {
+          fieldMap[col] = expectedDotted;
           break;
         }
       }
@@ -109,7 +127,7 @@ export async function processExcel<T>(
   const errors: Result<T>["errors"] = [];
 
   const lastRow = sheet.actualRowCount;
-  for (let r = 3; r <= lastRow; r++) {
+  for (let r = startRow; r <= lastRow; r++) {
     const row = sheet.getRow(r);
     const rowNumber = r;
     const cells = row.values as Array<unknown>;
@@ -199,7 +217,9 @@ export async function generateBulkTemplate(
   fields: FlatField[],
   sheetTitle = "Payouts",
 ): Promise<Buffer> {
-  const onlyMandatory = fields.filter((f) => f.is_mandatory);
+  const onlyMandatory = fields.filter(
+    (f) => f.is_mandatory || (f.section === "quote" && f.field_key === "txn_ref_no")
+  );
 
   const wb = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet(sheetTitle);

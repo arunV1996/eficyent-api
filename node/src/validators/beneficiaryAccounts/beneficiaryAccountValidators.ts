@@ -42,15 +42,15 @@ export const BeneficiaryListQuerySchema = z
     recipient_currency: z.string().max(3).optional(),
     search_key: z.string().max(128).optional(),
     skip: z.coerce.number().int().min(0).max(100_000).optional(),
-    take: z.coerce.number().int().min(1).max(200).optional(),
+    take: z.coerce.number().int().min(1).optional(),
   })
   .strict();
 export type BeneficiaryListInput = z.infer<typeof BeneficiaryListQuerySchema>;
 
 export const ValidateAccountSchema = z
   .object({
-    account_number: z.string().regex(/^\d{9,18}$/),
-    ifsc: z.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/),
+    account_number: z.string().regex(/^\d{9,18}$/, { message: "The selected account number is invalid." }),
+    ifsc: z.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, { message: "The selected IFSC is invalid." }),
   })
   .strict();
 export type ValidateAccountInput = z.infer<typeof ValidateAccountSchema>;

@@ -7,10 +7,11 @@ import {
   BeneficiaryTransactionProof,
 } from "@prisma/client";
 import { prisma } from "../../db/prisma";
-import { beneficiaryTransactionStatusLabel } from "../../helpers/constants";
-import { formatDate, findValueByKeySync } from "../../helpers/lookups";
+import { beneficiaryTransactionStatusLabel, LOOKUP_TYPE_ID_TYPE } from "../../helpers/constants";
+import { formatDate, findValueByKeySync, getStateName } from "../../helpers/lookups";
 import { beneficiaryAccountResource, filterEmptyValues } from "../beneficiaryAccounts/beneficiaryResource";
 import { s3Service } from "../storage/s3Service";
+import { lookupsService } from "../lookups/lookupsService";
 
 /**
  * Mirror of App\\Http\\Resources\\BeneficiaryTransactionResource.
@@ -198,10 +199,10 @@ export async function beneficiaryTransactionResource(
       country: s.country ?? "",
       nationality: s.nationality ?? "",
       city: s.city ?? "",
-      state: s.state ?? "",
+      state: s.state ? await getStateName(s.state, s.country) : "",
       postal_code: s.postalCode ?? "",
-      source_of_funds: s.sourceOfFunds ? findValueByKeySync(s.sourceOfFunds) : "",
-      id_type: s.idType ? findValueByKeySync(s.idType) : "",
+      source_of_funds: s.sourceOfFunds ? await lookupsService.findValuebyKey(s.sourceOfFunds) : "",
+      id_type: s.idType ? await lookupsService.findValuebyKey(s.idType, LOOKUP_TYPE_ID_TYPE) : "",
       id_number: s.idNumber ?? "",
       status: remitterStatusLabel(s.status),
       created_at: formatDate(s.createdAt, userTimezone),

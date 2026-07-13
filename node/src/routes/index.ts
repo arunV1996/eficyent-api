@@ -4,13 +4,13 @@ import { payoutPublicRoutes, payoutRoutes, retryExternalServiceRoute } from "./p
 import { settingsRoutes } from "./settings.routes";
 import { staticPagesRoutes } from "./staticPages.routes";
 import {
-  authedLookupsRoutes,
-  publicLookupsRoutes,
+    authedLookupsRoutes,
+    publicLookupsRoutes,
 } from "./lookups.routes";
 import { profileRoutes } from "./profile.routes";
 import {
-  subuserAuthedRoutes,
-  subuserPublicRoutes,
+    subuserAuthedRoutes,
+    subuserPublicRoutes,
 } from "./subuser.routes";
 import { onboardingRoutes } from "./onboarding.routes";
 import { virtualAccountsRoutes } from "./virtualAccounts.routes";
@@ -25,6 +25,7 @@ import { webhookRoutes } from "./webhooks.routes";
 import { dashboardRoutes } from "./dashboard.routes";
 import { teamMemberRoutes } from "./teamMember.routes";
 import { alignRoutes } from "./align.routes";
+import { statementRoutes } from "./statement.routes";
 
 /**
  * Top-level API router. Mirrors Laravel routes/api.php structure.
@@ -41,63 +42,64 @@ import { alignRoutes } from "./align.routes";
  *   /user/beneficiary-transactions/store                    (Phase 1)
  */
 export async function apiRouter(): Promise<Router> {
-  const r = Router();
+    const r = Router();
 
-  r.get("/health", (_req, res) => {
-    res.json({ status: true, code: 200, message: "ok", data: null });
-  });
+    r.get("/health", (_req, res) => {
+        res.json({ status: true, code: 200, message: "ok", data: null });
+    });
 
-  // Auth + email verification
-  r.use("/user", await authRoutes());
+    // Auth + email verification
+    r.use("/user", await authRoutes());
 
-  // Public Phase 2 endpoints (no auth)
-  r.use("/user", settingsRoutes());
-  r.use("/user/static-pages", staticPagesRoutes());
-  r.use("/user/lookups", await publicLookupsRoutes());
-  r.use("/user/subusers", await subuserPublicRoutes());
+    // Public Phase 2 endpoints (no auth)
+    r.use("/user", settingsRoutes());
+    r.use("/user/static-pages", staticPagesRoutes());
+    r.use("/user/lookups", await publicLookupsRoutes());
+    r.use("/user/subusers", await subuserPublicRoutes());
 
-  // Authenticated Phase 2 endpoints
-  r.use("/user", await profileRoutes());
-  r.use("/user/lookups", await authedLookupsRoutes());
-  r.use("/user/subusers", subuserAuthedRoutes());
+    // Authenticated Phase 2 endpoints
+    r.use("/user", await profileRoutes());
+    r.use("/user/lookups", await authedLookupsRoutes());
+    r.use("/user/subusers", subuserAuthedRoutes());
 
-  // Phase 3 endpoints
-  r.use("/user/onboarding", onboardingRoutes());
-  r.use("/user/accounts", virtualAccountsRoutes());
-  r.use("/user/beneficiaries", beneficiaryAccountsRoutes());
+    // Phase 3 endpoints
+    r.use("/user/onboarding", onboardingRoutes());
+    r.use("/user/accounts", virtualAccountsRoutes());
+    r.use("/user/beneficiaries", beneficiaryAccountsRoutes());
 
-  // Phase 4 endpoints
-  r.use("/user/remitters", sendersRoutes());
-  r.use("/user/quotes", await quotesRoutes());
-  r.use("/user/wallets", await walletsRoutes());
-  r.use("/user/team-members", teamMemberRoutes());
+    // Phase 4 endpoints
+    r.use("/user/remitters", sendersRoutes());
+    r.use("/user/quotes", await quotesRoutes());
+    r.use("/user/wallets", await walletsRoutes());
+    r.use("/user/team-members", teamMemberRoutes());
 
-  // Phase 5 endpoints
-  r.use("/user/deposits", await depositsRoutes());
-  r.use("/user/ledgers", await ledgersRoutes());
-  r.use("/user", await retryDepositRoute());
+    // Phase 5 endpoints
+    r.use("/user/deposits", await depositsRoutes());
+    r.use("/user/ledgers", await ledgersRoutes());
+    r.use("/public", await retryDepositRoute());
 
-  // Phase 6 - full BeneficiaryTransaction surface
-  r.use("/user/beneficiary-transactions", await payoutRoutes());
-  r.use("/user", await payoutPublicRoutes());
-  r.use("/public", await retryExternalServiceRoute());
+    // Phase 6 - full BeneficiaryTransaction surface
+    r.use("/user/beneficiary-transactions", await payoutRoutes());
+    r.use("/user", await payoutPublicRoutes());
+    r.use("/public", await retryExternalServiceRoute());
 
-  // Phase 7 - TeamMembers / Corporate
-  // Public endpoints live at /corporate/* and /team/* (no leading prefix
-  // wrapper - the route file handles its own paths to mirror Laravel).
-  r.use("/", await teamPublicRoutes());
-  r.use("/team", await teamAuthedRoutes());
+    // Phase 7 - TeamMembers / Corporate
+    // Public endpoints live at /corporate/* and /team/* (no leading prefix
+    // wrapper - the route file handles its own paths to mirror Laravel).
+    r.use("/", await teamPublicRoutes());
+    r.use("/team", await teamAuthedRoutes());
 
-  // Phase 9 - inbound webhooks. Flat paths mirror Laravel's
-  // /caliza-webhook, /diginine-webhook, /ef-webhook,
-  // /compliance/webhook-callback, /ec-webhook.
-  r.use("/", webhookRoutes());
+    // Phase 9 - inbound webhooks. Flat paths mirror Laravel's
+    // /caliza-webhook, /diginine-webhook, /ef-webhook,
+    // /compliance/webhook-callback, /ec-webhook.
+    r.use("/", webhookRoutes());
 
-  // Phase 10 - dashboards (user-side + team-side already mounted under
-  // /team) and operator-triggered align endpoints. Align routes are
-  // public to mirror Laravel exactly; deploy behind WAF / IP allowlist.
-  r.use("/user/dashboard", await dashboardRoutes());
-  r.use("/", alignRoutes());
+    // Phase 10 - dashboards (user-side + team-side already mounted under
+    // /team) and operator-triggered align endpoints. Align routes are
+    // public to mirror Laravel exactly; deploy behind WAF / IP allowlist.
+    r.use("/user/dashboard", await dashboardRoutes());
+    r.use("/user/statement", statementRoutes());
+    r.use("/", alignRoutes());
 
-  return r;
+    return r;
 }

@@ -82,7 +82,7 @@ export const lookupsService = {
   async serviceBanks(
     countryCode: string,
     currency?: string,
-    externalType = "ed",
+    externalType: string | null = "ed",
   ): Promise<LookupItem[]> {
     const rows = await prisma().serviceBank.findMany({
       where: {
@@ -126,24 +126,30 @@ export const lookupsService = {
       type: string | null;
     }[] = [];
 
+    const providers: string[] = Array.isArray(user.serviceProviders)
+      ? (user.serviceProviders as string[])
+      : [];
+
     if (user.merchantId) {
       // Merchant-scoped country list.
       const merchant = await prisma().merchant.findFirst({
         where: { id: user.merchantId as any },
       });
+      let supportedIds: string[] = [];
       if (merchant) {
         const setting = await prisma().merchantSetting.findFirst({
           where: { merchantId: merchant.id, key: "payout_countries" },
         });
-        if (!setting?.value) return [];
-        let supportedIds: string[] = [];
-        try {
-          supportedIds = JSON.parse(setting.value) as string[];
-        } catch {
-          return [];
+        if (setting?.value) {
+          try {
+            supportedIds = JSON.parse(setting.value) as string[];
+          } catch {
+            supportedIds = [];
+          }
         }
-        if (!Array.isArray(supportedIds) || supportedIds.length === 0) return [];
+      }
 
+      if (Array.isArray(supportedIds) && supportedIds.length > 0) {
         rows = await prisma().supportedCountry.findMany({
           where: {
             status: ACTIVE,
@@ -153,21 +159,37 @@ export const lookupsService = {
           select: { countryName: true, countryCode: true, currency: true, type: true },
           orderBy: { countryName: "asc" },
         });
+      } else {
+        // Fallback to service providers
+        if (providers.length > 0) {
+          rows = await prisma().supportedCountry.findMany({
+            where: {
+              status: ACTIVE,
+              externalType: { in: providers },
+              ...(paymentType ? { OR: [{ type: null }, { type: paymentType }] } : {}),
+            },
+            select: { countryName: true, countryCode: true, currency: true, type: true },
+            orderBy: { countryName: "asc" },
+          });
+        } else {
+          return [];
+        }
       }
     } else {
-      const providers: string[] = Array.isArray(user.serviceProviders)
-        ? (user.serviceProviders as string[])
-        : [];
-
-      rows = await prisma().supportedCountry.findMany({
-        where: {
-          status: ACTIVE,
-          ...(providers.length > 0 ? { externalType: { in: providers } } : {}),
-          ...(paymentType ? { OR: [{ type: null }, { type: paymentType }] } : {}),
-        },
-        select: { countryName: true, countryCode: true, currency: true, type: true },
-        orderBy: { countryName: "asc" },
-      });
+      // Normal User
+      if (providers.length > 0) {
+        rows = await prisma().supportedCountry.findMany({
+          where: {
+            status: ACTIVE,
+            externalType: { in: providers },
+            ...(paymentType ? { OR: [{ type: null }, { type: paymentType }] } : {}),
+          },
+          select: { countryName: true, countryCode: true, currency: true, type: true },
+          orderBy: { countryName: "asc" },
+        });
+      } else {
+        return [];
+      }
     }
 
     const mccRows = await prisma().mobileCountryCode.findMany({
@@ -249,6 +271,7 @@ export const lookupsService = {
             }
           : {}),
       },
+      distinct: ["countryCode", "currency", "countryName"],
       select: { countryCode: true, currency: true },
     });
 
@@ -317,9 +340,13 @@ export const lookupsService = {
     return rows.map((r) => ({ label: r.value, value: r.key }));
   },
 
-  async getLookups(type: string): Promise<LookupItem[]> {
+  async getLookups(type: string, externalType?: string): Promise<LookupItem[]> {
     const rows = await prisma().lookup.findMany({
-      where: { type, status: ACTIVE },
+      where: {
+        type,
+        status: ACTIVE,
+        ...(externalType ? { externalType } : {}),
+      },
       orderBy: { value: "asc" },
     });
     return rows.map((r) => ({ label: r.value, value: r.key }));
@@ -338,7 +365,7 @@ export const lookupsService = {
 };
 
 export function relativeTime(date: Date, _tz: string): string {
-  const sec = Math.floor((Date.now() - date.getTime()) / 1000);
+  const sec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
   if (sec < 60) return `${sec} seconds ago`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min} minute${min === 1 ? "" : "s"} ago`;

@@ -31,7 +31,7 @@ export const SenderListQuerySchema = z
     status: z.string().optional(),
     search_key: z.string().max(128).optional(),
     skip: z.coerce.number().int().min(0).max(100_000).optional(),
-    take: z.coerce.number().int().min(1).max(200).optional(),
+    take: z.coerce.number().int().min(1).optional(),
   })
   .strict();
 export type SenderListInput = z.infer<typeof SenderListQuerySchema>;

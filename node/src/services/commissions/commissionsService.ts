@@ -5,8 +5,10 @@ import {
   FEE_TYPE_FLAT,
   FEE_TYPE_PERCENTAGE,
   FX_FEE,
+  MERCHANT_TYPE_WHITELABEL,
   MORPH_MERCHANT,
   MORPH_USER,
+  MORPH_WALLET,
   QUOTE_TYPE_FORWARD,
   TRANSACTION_FEE,
 } from "../../helpers/constants";
@@ -122,10 +124,12 @@ function calcFlatFee(fee: FeeRow, amount: number): number {
 }
 
 function calcFxFee(
-  _fxRate: number,
+  fxRate: number,
   fee: FeeRow,
 ): { amount: number; isFixed: boolean } {
   const t = parseInt(fee.feeType, 10);
+  if (t === FEE_TYPE_FLAT) return { amount: Number(fee.feeValue), isFixed: false };
+  if (t === FEE_TYPE_PERCENTAGE) return { amount: (fxRate * Number(fee.feeValue)) / 100, isFixed: false };
   if (t === FEE_TYPE_FIXED) return { amount: Number(fee.feeValue), isFixed: true };
   return { amount: 0, isFixed: false };
 }
@@ -175,6 +179,7 @@ export interface CalcFxQuoteInput {
   quoteType: string;
   receivingCurrency: string;
   sourceCurrency: string;
+  sourceId: bigint;
   paymentRail?: string | null;
 }
 
@@ -192,12 +197,24 @@ export interface CalcFxResult {
 export async function calcFxCommissions(
   q: CalcFxQuoteInput,
   ctx: CalcContext,
+  fxRate?: number | null,
 ): Promise<CalcFxResult> {
+  if (fxRate !== undefined && fxRate !== null) {
+    return {
+      commission_value: 0,
+      fx_rate: fxRate,
+      internal_fx_rate: fxRate,
+      receiving_amount: q.amount * fxRate,
+      amount: q.amount,
+    };
+  }
+
   const baseRate = q.fxRate;
-  const c1 = q.sourceCurrency.toUpperCase();
+  const va = await requireVirtualAccount(q.sourceId);
+  const c1 = va.currency.toUpperCase();
   const c2 = q.receivingCurrency.toUpperCase();
 
-  const isWhitelabel = ctx.merchantId !== null && ctx.merchantType === 2;
+  const hasMerchant = ctx.merchantId !== null;
 
   let userCommission = 0;
   let merchantCommission = 0;
@@ -205,14 +222,8 @@ export async function calcFxCommissions(
   let isMerchantFixed = false;
 
   let userFee = null;
-  if (isWhitelabel) {
-    userFee = await findUserFee(ctx.userId, {
-      feeName: FX_FEE,
-      currency1: c1,
-      currency2: c2,
-    });
-  } else {
-    // Direct User or Payout Merchant: check only with user_id, fallback to global
+  if (!hasMerchant) {
+    // Normal User: check only with user_id, fallback to global
     userFee = await findUserFee(ctx.userId, {
       feeName: FX_FEE,
       currency1: c1,
@@ -229,7 +240,7 @@ export async function calcFxCommissions(
     isUserFixed = r.isFixed;
   }
 
-  if (isWhitelabel) {
+  if (hasMerchant) {
     let merchantFee = await findMerchantFee(ctx.merchantId!, {
       feeName: FX_FEE,
       currency1: c1,
@@ -263,11 +274,11 @@ export async function calcFxCommissions(
   let internalFxRate: number;
   let finalFxRate: number;
   let totalCommission: number;
-  if (isWhitelabel && userFee) {
+  if (hasMerchant && userFee) {
     internalFxRate = baseRate - merchantCommission;
     finalFxRate = baseRate - (merchantCommission + userCommission);
     totalCommission = merchantCommission + userCommission;
-  } else if (isWhitelabel) {
+  } else if (hasMerchant) {
     internalFxRate = baseRate - merchantCommission;
     finalFxRate = internalFxRate;
     totalCommission = merchantCommission;
@@ -312,68 +323,87 @@ export async function calcTransactionCommissions(
   ctx: CalcContext,
 ): Promise<CalcTransactionResult> {
   const lookupCurrency = q.receivingCurrency.toUpperCase();
-  const currency2 = q.sourceType === "wallet" ? lookupCurrency : null;
-  const isWhitelabel = ctx.merchantId !== null && ctx.merchantType === 2;
+  const currency2 =
+    q.sourceType === "wallet" || q.sourceType === MORPH_WALLET
+      ? lookupCurrency
+      : null;
+  const mode = lookupCurrency === "USD" ? (q.paymentRail ?? null) : null;
+  const hasMerchant = ctx.merchantId !== null;
 
-  if (isWhitelabel) {
-    const userFee = await findUserFee(ctx.userId, {
+  let userFee = null;
+  if (!hasMerchant) {
+    userFee = await findUserFee(ctx.userId, {
       feeName: TRANSACTION_FEE,
       currency1: lookupCurrency,
       currency2: currency2,
-      mode: q.paymentRail ?? null,
+      mode: mode,
     });
-    let merchantCommissionAmount = 0;
-    if (userFee) {
-      merchantCommissionAmount = calcFlatFee(userFee, q.amount);
-    }
 
-    let merchantFee = await findMerchantFee(ctx.merchantId!, {
-      feeName: TRANSACTION_FEE,
-      currency1: lookupCurrency,
-      currency2: currency2,
-      mode: q.paymentRail ?? null,
-    });
-    if (!merchantFee) {
-      merchantFee = await findGlobalFee({
-        feeName: TRANSACTION_FEE,
-        currency1: lookupCurrency,
-        currency2: currency2,
-        mode: q.paymentRail ?? null,
-      });
-    }
-    let commissionAmount = 0;
-    if (merchantFee) {
-      commissionAmount = calcFlatFee(merchantFee, q.amount);
-    }
-
-    return {
-      commission_amount: commissionAmount,
-      merchant_commission_amount: merchantCommissionAmount,
-    };
-  } else {
-    let userFee = await findUserFee(ctx.userId, {
-      feeName: TRANSACTION_FEE,
-      currency1: lookupCurrency,
-      currency2: currency2,
-      mode: q.paymentRail ?? null,
-    });
     if (!userFee) {
       userFee = await findGlobalFee({
         feeName: TRANSACTION_FEE,
         currency1: lookupCurrency,
         currency2: currency2,
-        mode: q.paymentRail ?? null,
+        mode: mode,
       });
     }
-    let commissionAmount = 0;
-    if (userFee) {
-      commissionAmount = calcFlatFee(userFee, q.amount);
-    }
-    return {
-      commission_amount: commissionAmount,
-      merchant_commission_amount: 0,
-    };
   }
+
+  let merchantCommissionAmount = 0;
+  if (userFee) {
+    merchantCommissionAmount = calcFlatFee(userFee, q.amount);
+  }
+
+  let commissionAmount = 0;
+
+  if (hasMerchant) {
+    const isWhitelabel = ctx.merchantType === MERCHANT_TYPE_WHITELABEL;
+    if (isWhitelabel) {
+      const generalFee = await findGlobalFee({
+        feeName: TRANSACTION_FEE,
+        currency1: lookupCurrency,
+        currency2: currency2,
+        mode: mode,
+      });
+      const merchantFee = await findMerchantFee(ctx.merchantId!, {
+        feeName: TRANSACTION_FEE,
+        currency1: lookupCurrency,
+        currency2: currency2,
+        mode: mode,
+      });
+      const generalFeeAmt = generalFee ? calcFlatFee(generalFee, q.amount) : 0;
+      const merchantFeeAmt = merchantFee ? calcFlatFee(merchantFee, q.amount) : 0;
+      commissionAmount = generalFeeAmt + merchantFeeAmt;
+    } else {
+      let merchantFee = await findMerchantFee(ctx.merchantId!, {
+        feeName: TRANSACTION_FEE,
+        currency1: lookupCurrency,
+        currency2: currency2,
+        mode: mode,
+      });
+      if (!merchantFee) {
+        merchantFee = await findGlobalFee({
+          feeName: TRANSACTION_FEE,
+          currency1: lookupCurrency,
+          currency2: currency2,
+          mode: mode,
+        });
+      }
+      if (merchantFee) {
+        commissionAmount = calcFlatFee(merchantFee, q.amount);
+      }
+    }
+  }
+
+  if (!hasMerchant) {
+    commissionAmount = merchantCommissionAmount + commissionAmount;
+    merchantCommissionAmount = 0;
+  }
+
+  return {
+    commission_amount: commissionAmount,
+    merchant_commission_amount: merchantCommissionAmount,
+  };
 }
 
 /**
@@ -384,47 +414,62 @@ export async function calcDepositCommissions(
   amount: number,
   currency: string,
 ): Promise<CalcTransactionResult> {
-  const out: CalcTransactionResult = {
-    commission_amount: 0,
-    merchant_commission_amount: 0,
-  };
   const cur = currency.toUpperCase();
-  const isWhitelabel = ctx.merchantId !== null && ctx.merchantType === 2;
+  const hasMerchant = ctx.merchantId !== null;
 
-  if (isWhitelabel) {
-    // Whitelabel: Apply BOTH User Fee (no fallback) and Merchant Fee (with global fallback)
-    const userFee = await findUserFee(ctx.userId, {
+  let userFee = null;
+  if (!hasMerchant) {
+    userFee = await findUserFee(ctx.userId, {
       feeName: DEPOSIT_FEE,
       currency1: cur,
     });
-    if (userFee) {
-      out.merchant_commission_amount = calcFlatFee(userFee, amount);
-    }
 
-    let merchantFee = await findMerchantFee(ctx.merchantId!, {
-      feeName: DEPOSIT_FEE,
-      currency1: cur,
-    });
-    if (!merchantFee) {
-      merchantFee = await findGlobalFee({ feeName: DEPOSIT_FEE, currency1: cur });
-    }
-    if (merchantFee) {
-      out.commission_amount = calcFlatFee(merchantFee, amount);
-    }
-  } else {
-    // Direct User or Payout Merchant: check only with user_id, fallback to global
-    let userFee = await findUserFee(ctx.userId, {
-      feeName: DEPOSIT_FEE,
-      currency1: cur,
-    });
     if (!userFee) {
       userFee = await findGlobalFee({ feeName: DEPOSIT_FEE, currency1: cur });
     }
-    if (userFee) {
-      out.commission_amount = calcFlatFee(userFee, amount);
+  }
+
+  let merchantCommissionAmount = 0;
+  if (userFee) {
+    merchantCommissionAmount = calcFlatFee(userFee, amount);
+  }
+
+  let commissionAmount = 0;
+
+  if (hasMerchant) {
+    const isWhitelabel = ctx.merchantType === MERCHANT_TYPE_WHITELABEL;
+    if (isWhitelabel) {
+      const generalFee = await findGlobalFee({ feeName: DEPOSIT_FEE, currency1: cur });
+      const merchantFee = await findMerchantFee(ctx.merchantId!, {
+        feeName: DEPOSIT_FEE,
+        currency1: cur,
+      });
+      const generalFeeAmt = generalFee ? calcFlatFee(generalFee, amount) : 0;
+      const merchantFeeAmt = merchantFee ? calcFlatFee(merchantFee, amount) : 0;
+      commissionAmount = generalFeeAmt + merchantFeeAmt;
+    } else {
+      let merchantFee = await findMerchantFee(ctx.merchantId!, {
+        feeName: DEPOSIT_FEE,
+        currency1: cur,
+      });
+      if (!merchantFee) {
+        merchantFee = await findGlobalFee({ feeName: DEPOSIT_FEE, currency1: cur });
+      }
+      if (merchantFee) {
+        commissionAmount = calcFlatFee(merchantFee, amount);
+      }
     }
   }
-  return out;
+
+  if (!hasMerchant) {
+    commissionAmount = merchantCommissionAmount + commissionAmount;
+    merchantCommissionAmount = 0;
+  }
+
+  return {
+    commission_amount: commissionAmount,
+    merchant_commission_amount: merchantCommissionAmount,
+  };
 }
 
 /**
@@ -441,4 +486,89 @@ export async function requireVirtualAccount(sourceId: bigint): Promise<{
   });
   if (!va) throw new ApiException(116);
   return va;
+}
+
+export interface CalcRateCommissionInput {
+  fxRate: number;
+  fromCurrency: string;
+  toCurrency: string;
+}
+
+/**
+ * Mirror of CommissionsHelper::calculate_rate_commission.
+ */
+export async function calculateRateCommission(
+  rate: CalcRateCommissionInput,
+  ctx: CalcContext,
+): Promise<number> {
+  const baseRate = rate.fxRate;
+  const currency1 = rate.fromCurrency.toUpperCase();
+  const currency2 = rate.toCurrency.toUpperCase();
+  const hasMerchant = ctx.merchantId !== null;
+
+  let userCommission = 0;
+  let merchantCommission = 0;
+  let isUserFixed = false;
+  let isMerchantFixed = false;
+
+  let userFee = null;
+  if (!hasMerchant) {
+    userFee = await findUserFee(ctx.userId, {
+      feeName: FX_FEE,
+      currency1: currency1,
+      currency2: currency2,
+    });
+
+    if (!userFee) {
+      userFee = await findGlobalFee({
+        feeName: FX_FEE,
+        currency1: currency1,
+        currency2: currency2,
+      });
+    }
+  }
+
+  if (userFee) {
+    const r = calcFxFee(baseRate, userFee);
+    userCommission = r.amount;
+    isUserFixed = r.isFixed;
+  }
+
+  if (hasMerchant) {
+    let merchantFee = await findMerchantFee(ctx.merchantId!, {
+      feeName: FX_FEE,
+      currency1: currency1,
+      currency2: currency2,
+    });
+
+    if (!merchantFee) {
+      merchantFee = await findGlobalFee({
+        feeName: FX_FEE,
+        currency1: currency1,
+        currency2: currency2,
+      });
+    }
+
+    if (merchantFee) {
+      const r = calcFxFee(baseRate, merchantFee);
+      merchantCommission = r.amount;
+      isMerchantFixed = r.isFixed;
+    }
+  }
+
+  if (isUserFixed || isMerchantFixed) {
+    return isUserFixed ? userCommission : merchantCommission;
+  }
+
+  let finalFxRate: number;
+
+  if (hasMerchant && userFee) {
+    finalFxRate = baseRate - (merchantCommission + userCommission);
+  } else if (hasMerchant) {
+    finalFxRate = baseRate - merchantCommission;
+  } else {
+    finalFxRate = baseRate - userCommission;
+  }
+
+  return finalFxRate;
 }

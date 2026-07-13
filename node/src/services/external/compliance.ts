@@ -9,8 +9,15 @@ import {
   BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED,
   BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
   EXTERNAL_TYPE_COMPLIANCE,
+  USER_TYPE_BUSINESS,
+  COMPLIANCE_ACCOUNT_TYPE_MAP,
+  COMPLIANCE_ID_TYPE_MAP,
+  COMPLIANCE_SOURCE_OF_FUNDS_MAP,
+  COMPLIANCE_PURPOSE_OF_PAYMENT_MAP,
 } from "../../helpers/constants";
 import { uniqueId } from "../../helpers/uniqueId";
+import { format_processing_unit_fx_rate } from "../../helpers/lookups";
+import { lookupsService } from "../lookups/lookupsService";
 
 /**
  * Mirror of App\\Services\\Compliance + ExternalServices\\Compliance\\ComplianceService.
@@ -147,6 +154,82 @@ async function recordFailedInitiation(
   }
 }
 
+// Helper Mappings
+async function getAlpha2Code(alpha3Code: string | null | undefined): Promise<string> {
+  if (!alpha3Code) return "";
+  const code = await prisma().mobileCountryCode.findFirst({
+    where: { alpha3Code },
+  });
+  return code ? code.alpha2Code : alpha3Code;
+}
+
+function formatDate(d: Date | null | undefined): string {
+  if (!d) return "";
+  try {
+    const parts = d.toISOString().split("T");
+    return parts[0] ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function getMappedValue(map: Record<string, string>, value: string, type: string, defaultValue = ""): string {
+  const normalizedValue = value.toUpperCase().trim();
+  if (map[normalizedValue]) {
+    return map[normalizedValue];
+  }
+  logger.warn({ type, value }, "Compliance mapping missing");
+  return defaultValue || "OTHERS";
+}
+
+function mapAccountType(value: string | null | undefined): string {
+  if (!value) return "OTHER";
+  return getMappedValue(COMPLIANCE_ACCOUNT_TYPE_MAP, value, "Account Type", "OTHER");
+}
+
+function mapIdType(value: string | null | undefined): string {
+  if (!value) return "OTHERS";
+  return getMappedValue(COMPLIANCE_ID_TYPE_MAP, value, "ID_TYPE", "OTHERS");
+}
+
+function mapSourceOfFunds(value: string | null | undefined): string {
+  if (!value) return "OTHER";
+  return getMappedValue(COMPLIANCE_SOURCE_OF_FUNDS_MAP, value, "SOURCE_OF_FUNDS", "OTHER");
+}
+
+function mapPurposeOfPayment(value: string | null | undefined): string {
+  if (!value) return "OTHER";
+  return getMappedValue(COMPLIANCE_PURPOSE_OF_PAYMENT_MAP, value, "PURPOSE_OF_PAYMENT", "OTHER");
+}
+
+function removeEmptyValues(data: any): any {
+  if (data === null || data === undefined || data === '') {
+    return undefined;
+  }
+  if (typeof data === 'object') {
+    if (Array.isArray(data)) {
+      const cleanedArr = data
+        .map(removeEmptyValues)
+        .filter(v => v !== undefined && v !== null && v !== '');
+      return cleanedArr.length > 0 ? cleanedArr : undefined;
+    } else {
+      const res: Record<string, any> = {};
+      for (const [key, val] of Object.entries(data)) {
+        if (key === "metadata") {
+          res[key] = val;
+          continue;
+        }
+        const cleaned = removeEmptyValues(val);
+        if (cleaned !== undefined && cleaned !== null && cleaned !== '') {
+          res[key] = cleaned;
+        }
+      }
+      return Object.keys(res).length > 0 ? res : undefined;
+    }
+  }
+  return data;
+}
+
 /**
  * Mirror of ComplianceService::make. Submits a payout to the compliance
  * gateway; on success the transaction status flips to
@@ -163,88 +246,52 @@ export const Compliance = {
     let payload: unknown = undefined;
     let endpoint: string | undefined = undefined;
     try {
-      // Compliance uses the same payload structure as ProcessingUnit.
-      // Build it through the shared helper there to avoid drift.
-      const { buildPayoutPayload } = await import("./processingUnitPayload");
-      const rawPayload = await buildPayoutPayload(txn, user);
-      if (!rawPayload) {
-        const errorMsg = "Compliance.make - cannot build payload (missing related rows)";
-        logger.warn({ txnId: txn.uniqueId }, errorMsg);
-        await recordFailedInitiation(txn.id, "build_payload", errorMsg, startTime);
-        if (updateStatus) {
-          const next = BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED;
-          await prisma().beneficiaryTransaction.update({
-            where: { id: txn.id },
-            data: { status: next },
-          });
-          await prisma().beneficiaryTransactionStatusHistory.create({
-            data: {
-              uniqueId: uniqueId(24),
-              beneficiaryTransactionId: txn.id,
-              fromStatus: String(txn.status),
-              toStatus: String(next),
-              changedBy: "system",
-              changedByType: "system",
-              changedAt: new Date(),
-            },
-          });
-        }
-        return;
+      const quote = await prisma().quote.findUnique({
+        where: { id: txn.quoteId }
+      });
+      if (!quote) {
+        throw new Error("Compliance.make - Quote not found");
       }
 
-      // Format payload specifically to satisfy Compliance API schema requirements
-      const beneficiaryObj = rawPayload.beneficiary as Record<string, any> | undefined;
-      const remitterObj = rawPayload.remitter as Record<string, any> | undefined;
+      const beneficiaryAccount = await prisma().beneficiaryAccount.findUnique({
+        where: { id: txn.beneficiaryAccountId },
+        include: { additionalDetails: true }
+      });
+      if (!beneficiaryAccount) {
+        throw new Error("Compliance.make - BeneficiaryAccount not found");
+      }
+      const beneficiaryAdditionalDetail = beneficiaryAccount.additionalDetails?.[0] || null;
 
-      // Determine the originator/remitter's full name based on whether it is a Sender or a User (and if it is INDIVIDUAL or BUSINESS)
-      let originatorFullName = "";
-      if (txn.senderId) {
-        const sender = await prisma().sender.findUnique({ where: { id: txn.senderId } });
-        if (sender) {
-          if (Number(sender.type) === 2) { // BUSINESS
-            originatorFullName = sender.firstName ?? "";
-          } else { // INDIVIDUAL
-            originatorFullName = `${sender.firstName || ""} ${sender.lastName || ""}`.trim();
+      const sender = txn.senderId
+        ? await prisma().sender.findUnique({ where: { id: txn.senderId } })
+        : null;
+
+      let ownerUser = user;
+      let merchant = null;
+      if (user.merchantId) {
+        merchant = await prisma().merchant.findUnique({
+          where: { id: user.merchantId },
+          include: { users_merchants_user_idTousers: true }
+        });
+        if (merchant) {
+          const owner = await prisma().user.findUnique({ where: { id: merchant.userId } });
+          if (owner) {
+            ownerUser = owner;
           }
         }
-      } else {
-        const userInformation = await prisma().userInformation.findFirst({
-          where: { userId: user.id }
-        });
-        if (Number(user.userType) === 2 && userInformation) { // BUSINESS
-          originatorFullName = userInformation.businessName ?? "";
-        } else { // INDIVIDUAL
-          originatorFullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
-        }
       }
 
-      payload = {
-        ...rawPayload,
-        "isExternalClient": 1,
-        "externalClient": {
-            "id": process.env.EXTERNAL_CLIENT_ID,
-            "name": process.env.EXTERNAL_CLIENT_NAME,
-            "code": process.env.EXTERNAL_CLIENT_CODE
-        },
-        originator: remitterObj ? {
-          ...remitterObj,
-          fullName: originatorFullName || remitterObj.fullName || 
-            (remitterObj.type === "INDIVIDUAL"
-              ? `${remitterObj.first_name || ""} ${remitterObj.last_name || ""}`.trim()
-              : remitterObj.business_name || remitterObj.first_name || "")
-        } : undefined,
-        amount: rawPayload.amount ? Number(rawPayload.amount) : Number(rawPayload.from_amount),
-        from_amount: rawPayload.from_amount ? Number(rawPayload.from_amount) : Number(rawPayload.amount),
-        currency: rawPayload.receiving_currency || rawPayload.from_currency,
-        paymentMethod: rawPayload.rail || "SWIFT",
-        beneficiary: beneficiaryObj ? {
-          ...beneficiaryObj,
-          fullName: beneficiaryObj.fullName || 
-            (beneficiaryObj.type === "INDIVIDUAL" 
-              ? `${beneficiaryObj.first_name || ""} ${beneficiaryObj.last_name || ""}`.trim()
-              : beneficiaryObj.business_name || beneficiaryObj.first_name || "")
-        } : undefined
-      };
+      let userInformation = await prisma().userInformation.findFirst({
+        where: { userId: ownerUser.id }
+      });
+      if (!userInformation || (!userInformation.idNumber && !userInformation.idType)) {
+        const initiatorUserInfo = await prisma().userInformation.findFirst({
+          where: { userId: user.id }
+        });
+        if (initiatorUserInfo && (initiatorUserInfo.idNumber || initiatorUserInfo.idType)) {
+          userInformation = initiatorUserInfo;
+        }
+      }
 
       let secret: ComplianceSecret;
       try {
@@ -252,9 +299,254 @@ export const Compliance = {
         endpoint = secret.CREATE_TRANSACTION_ENDPOINT;
       } catch (err) {
         const errorMsg = `Failed to load compliance secrets: ${err instanceof Error ? err.message : String(err)}`;
-        await recordFailedInitiation(txn.id, "load_secrets", errorMsg, startTime, payload);
+        await recordFailedInitiation(txn.id, "load_secrets", errorMsg, startTime);
         throw err;
       }
+
+      let senderType = "INDIVIDUAL";
+      let senderName = "";
+
+      if (sender) {
+        senderType = Number(sender.type) === USER_TYPE_BUSINESS ? "BUSINESS" : "INDIVIDUAL";
+        senderName = `${sender.firstName || ""} ${sender.lastName || ""}`.trim();
+      } else {
+        senderType = Number(ownerUser.userType) === USER_TYPE_BUSINESS ? "BUSINESS" : "INDIVIDUAL";
+        senderName = Number(ownerUser.userType) === USER_TYPE_BUSINESS
+          ? (merchant ? merchant.name : (userInformation?.businessName ?? ""))
+          : `${ownerUser.firstName || ""} ${ownerUser.lastName || ""}`.trim();
+      }
+
+      let sourceCountry: string | null = null;
+      let sourceCurrency = "USD";
+      if (quote.sourceId && quote.sourceType) {
+        if (quote.sourceType.includes("VirtualAccount")) {
+          const va = await prisma().virtualAccount.findUnique({
+            where: { id: quote.sourceId }
+          });
+          sourceCountry = va?.country ?? null;
+          sourceCurrency = va?.currency ?? "USD";
+        } else if (quote.sourceType.includes("Wallet")) {
+          const wallet = await prisma().wallet.findUnique({
+            where: { id: quote.sourceId }
+          });
+          sourceCurrency = wallet?.currency ?? "USD";
+        }
+      }
+
+      // Replicate the Laravel logic: combine source country and destination country codes.
+      // If sourceCountry (from virtualAccount) is null, fall back to originator country.
+      const fromCountryRaw = sourceCountry || (sender ? sender.country : userInformation?.country) || null;
+      const fromCountry = fromCountryRaw ? await getAlpha2Code(fromCountryRaw) : "";
+      const toCountry = quote.recipientCountry ? await getAlpha2Code(quote.recipientCountry) : "";
+      const corridor = (fromCountry && toCountry) ? `${fromCountry}-${toCountry}` : null;
+
+      let idTypeRaw = "";
+      if (sender) {
+        idTypeRaw = sender.idType
+          ? await lookupsService.findValuebyKey(sender.idType, "id_types")
+          : "";
+      } else {
+        idTypeRaw = userInformation?.idType
+          ? await lookupsService.findValuebyKey(userInformation.idType, "id_types")
+          : "";
+      }
+      const idTypeMapped = mapIdType(idTypeRaw);
+
+      const dobString = sender
+        ? (sender.dob ? formatDate(sender.dob) : "")
+        : (ownerUser.dob ? formatDate(ownerUser.dob) : "");
+
+      // Replicate the Laravel logic hierarchy: $user->merchant ? $user->merchant->user->compliance_merchant_id : $user->compliance_merchant_id
+      const complianceMerchantId = user.merchantId
+        ? (merchant?.users_merchants_user_idTousers?.complianceMerchantId ?? null)
+        : (user.complianceMerchantId ?? null);
+
+      const beneficiaryType = Number(beneficiaryAccount.type) === USER_TYPE_BUSINESS ? "BUSINESS" : "INDIVIDUAL";
+      const beneficiaryFullName = Number(beneficiaryAccount.type) === USER_TYPE_BUSINESS
+        ? (beneficiaryAccount.businessName ?? "")
+        : `${beneficiaryAccount.firstName || ""} ${beneficiaryAccount.lastName || ""}`.trim();
+
+      const payloadObj: Record<string, any> = {
+        externalId: txn.orderId ? String(txn.orderId) : "",
+        merchantId: complianceMerchantId,
+        transaction_type: "REMITTANCE",
+        transactionSubtype: "INTERNATIONAL",
+        direction: "OUTBOUND",
+        originator: {
+          partyId: sender ? sender.uniqueId : ownerUser.uniqueId,
+          externalId: sender ? sender.uniqueId : ownerUser.uniqueId,
+          partyType: senderType,
+          fullName: senderName,
+          firstName: sender
+            ? (sender.firstName ?? "")
+            : (Number(ownerUser.userType) === USER_TYPE_BUSINESS ? (merchant ? merchant.name : (userInformation?.businessName ?? "")) : (ownerUser.firstName ?? "")),
+          middleName: sender
+            ? (sender.middleName ?? "")
+            : (Number(ownerUser.userType) === USER_TYPE_BUSINESS ? "" : (ownerUser.middleName ?? "")),
+          // Include originator.lastName even for business entities where applicable
+          lastName: sender
+            ? (sender.lastName ?? "")
+            : (ownerUser.lastName || user.lastName || ""),
+          dateOfBirth: dobString,
+          nationality: sender
+            ? (sender.nationality ?? "")
+            : (userInformation?.country ?? ""),
+          countryOfResidence: sender
+            ? (sender.country ?? "")
+            : (userInformation?.country ?? ""),
+          address: {
+            streetLine1: sender
+              ? (sender.address1 ?? "")
+              : (userInformation?.address1 ?? ""),
+            streetLine2: sender
+              ? (sender.address2 ?? "")
+              : (userInformation?.address2 ?? ""),
+            city: sender
+              ? (sender.city ?? "")
+              : (userInformation?.city ?? ""),
+            state: sender
+              ? (sender.state ?? "")
+              : (userInformation?.state ?? ""),
+            postalCode: sender
+              ? (sender.postalCode ?? "")
+              : (userInformation?.postalCode ?? ""),
+            country: sender
+              ? (sender.country ?? "")
+              : (userInformation?.country ?? ""),
+          },
+          identification: {
+            type: idTypeMapped,
+            // Include originator.identification.number with fallback to taxId for business entities
+            number: sender
+              ? (sender.idNumber ?? "")
+              : (userInformation?.idNumber || userInformation?.taxId || ""),
+            issuingCountry: "",
+          },
+          phone: {
+            countryCode: sender
+              ? (sender.mobileCountryCode ?? "")
+              : (ownerUser.mobileCountryCode ?? ""),
+            number: sender
+              ? (sender.mobile ?? "")
+              : (ownerUser.mobile ?? ""),
+          },
+          email: sender
+            ? (sender.email ?? "")
+            : (merchant ? merchant.email : (ownerUser.email ?? "")),
+          occupation: "",
+          employer: "",
+        },
+        beneficiary: {
+          partyType: beneficiaryType,
+          fullName: beneficiaryFullName,
+          firstName: Number(beneficiaryAccount.type) === USER_TYPE_BUSINESS
+            ? (beneficiaryAccount.businessName ?? "")
+            : (beneficiaryAccount.firstName ?? ""),
+          middleName: Number(beneficiaryAccount.type) === USER_TYPE_BUSINESS
+            ? ""
+            : (beneficiaryAccount.middleName ?? ""),
+          lastName: Number(beneficiaryAccount.type) === USER_TYPE_BUSINESS
+            ? ""
+            : (beneficiaryAccount.lastName ?? ""),
+          dateOfBirth: "",
+          relationshipToRemitter: "CLIENT",
+          address: {
+            streetLine1: beneficiaryAdditionalDetail?.addressLine1 ?? "",
+            city: beneficiaryAdditionalDetail?.city ?? "",
+            state: beneficiaryAdditionalDetail?.state ?? "",
+            country: beneficiaryAdditionalDetail?.country ?? "",
+          },
+          phone: {
+            countryCode: beneficiaryAccount.mobileCountryCode ?? ownerUser.mobileCountryCode ?? "",
+            number: beneficiaryAccount.mobile ?? ownerUser.mobile ?? "",
+          },
+          bankDetails: {
+            bankName: beneficiaryAccount.bankName ?? "",
+            bankCode: beneficiaryAccount.swiftCode ?? "",
+            branchName: "",
+            branchCode: "",
+            routingNumber: beneficiaryAccount.routingNumber ?? "",
+            iban: "",
+            accountNumber: beneficiaryAccount.accountNumber ?? "",
+            accountType: mapAccountType(beneficiaryAccount.accountType),
+            accountCurrency: beneficiaryAccount.currency ?? "",
+          },
+          bankName: beneficiaryAccount.bankName ?? "",
+          bankCode: beneficiaryAccount.swiftCode ?? "",
+          accountNumber: beneficiaryAccount.accountNumber ?? "",
+          accountType: mapAccountType(beneficiaryAccount.accountType),
+          walletDetails: {
+            provider: "M-Pesa",
+            walletId: "string",
+            accountName: "string",
+          },
+          pickupDetails: {
+            agentNetwork: "",
+            pickupLocation: "",
+            pickupCountry: "",
+            pickupCity: "",
+            securityQuestion: "",
+            securityAnswer: "",
+          },
+        },
+        amount: Number(txn.amount),
+        currency: sourceCurrency,
+        amountUsd: Number(txn.amount),
+        destinationAmount: Number(txn.recipientAmount),
+        destinationCurrency: txn.receivingCurrency ?? "",
+        exchangeRate: Number(format_processing_unit_fx_rate(quote.fxRate)),
+        paymentMethod: (txn.receivingCurrency ?? "") !== "USD"
+          ? "BANK_TRANSFER"
+          : (beneficiaryAccount.paymentRail
+              ? String(beneficiaryAccount.paymentRail).toUpperCase()
+              : "BANK_TRANSFER"),
+        payoutMethod: "BANK_DEPOSIT",
+        sourceOfFunds: "",
+        purposeOfPayment: "",
+        originatorCountry: sender ? (sender.country ?? "") : (userInformation?.country ?? ""),
+        beneficiaryCountry: beneficiaryAccount.country ?? "",
+        corridor,
+        fees: {
+          serviceFee: 0,
+          fxFee: 0,
+          totalFee: Number(txn.commissionAmount),
+          feeCurrency: "USD",
+        },
+        agent: {
+          agentId: "",
+          agentName: "",
+          agentLocation: "",
+        },
+        isExternalClient: 1,
+        externalClient: {
+          id: String(secret.EXTERNAL_CLIENT_ID ?? secret.EXTERNALCLIENTID ?? process.env.EXTERNAL_CLIENT_ID ?? ""),
+          name: String(secret.EXTERNAL_CLIENT_NAME ?? secret.EXTERNALCLIENTNAME ?? process.env.EXTERNAL_CLIENT_NAME ?? ""),
+          code: String(secret.EXTERNAL_CLIENT_CODE ?? secret.EXTERNALCLIENTCODE ?? process.env.EXTERNAL_CLIENT_CODE ?? ""),
+        },
+        metadata: {},
+      };
+
+      // Resolve sourceOfFunds lookup
+      let sourceOfFundsRaw = "";
+      if (sender) {
+        sourceOfFundsRaw = sender.sourceOfFunds
+          ? await lookupsService.findValuebyKey(sender.sourceOfFunds)
+          : "";
+      } else {
+        sourceOfFundsRaw = userInformation?.sourceOfIncome
+          ? await lookupsService.findValuebyKey(userInformation.sourceOfIncome)
+          : "";
+      }
+      payloadObj.sourceOfFunds = mapSourceOfFunds(sourceOfFundsRaw);
+
+      // Resolve purposeOfPayment lookup
+      let purposeOfPaymentRaw = "";
+      if (beneficiaryAdditionalDetail?.purposeOfTransaction) {
+        purposeOfPaymentRaw = await lookupsService.findValuebyKey(beneficiaryAdditionalDetail.purposeOfTransaction);
+      }
+      payloadObj.purposeOfPayment = mapPurposeOfPayment(purposeOfPaymentRaw);
+
+      payload = removeEmptyValues(payloadObj);
 
       let response;
       try {

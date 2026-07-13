@@ -96,7 +96,12 @@ export async function validateAndNormalizeSender(
   }
   if (fields.length === 0) throw new ApiException(132);
 
-  const result = validateAgainstFields(fields, { ...payload, type });
+  const sanitizedPayload = { ...payload };
+  if (typeof sanitizedPayload.mobile === "string") {
+    sanitizedPayload.mobile = sanitizedPayload.mobile.replace(/^\+/, "");
+  }
+
+  const result = validateAgainstFields(fields, { ...sanitizedPayload, type });
   const validated = ensureNoFieldErrors(result) as NormalizedSender;
   validated.type = type;
 

@@ -109,6 +109,17 @@ export const complianceWebhookController = {
         return res.status(200).json({ status: "not_found" });
       }
 
+      if (
+        txn.status !== BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED &&
+        txn.status !== BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD
+      ) {
+        logger.info(
+          { txnId: txn.id.toString(), status: txn.status },
+          "Transaction compliance already processed, ignoring duplicate webhook",
+        );
+        return res.status(200).json({ status: "success" });
+      }
+
       beneficiaryTransactionId = txn.id;
       externalReferenceId = complianceTransactionId;
 

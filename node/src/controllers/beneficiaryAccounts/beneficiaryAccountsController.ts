@@ -366,10 +366,10 @@ export const beneficiaryAccountsController = {
     if (!req.user) throw new ApiException(102);
     const body = req.body as ValidateAccountInput;
 
-    // Cache hit on the validation table - identical (account_number, ifsc)
-    // pairs reuse the recorded result without re-hitting ProcessingUnit.
+    // Cache hit on the validation table - identical account_number
+    // reuse the recorded result without re-hitting ProcessingUnit.
     const existing = await prisma().beneficiaryAccountValidation.findFirst({
-      where: { accountNumber: body.account_number, code: body.ifsc },
+      where: { accountNumber: body.account_number },
     });
     if (existing) {
       return sendResponse(res, apiSuccess(113), 113, {
@@ -385,8 +385,7 @@ export const beneficiaryAccountsController = {
     );
     const merchant = req.user.merchantId
       ? await prisma().merchant.findFirst({
-// @ts-expect-error - Auto-fixed bigint/string mismatch
-          where: { uniqueId: req.user.merchantId },
+          where: { id: req.user.merchantId },
         })
       : null;
     const result = await ProcessingUnit.validateAccount({
@@ -403,12 +402,24 @@ export const beneficiaryAccountsController = {
       );
     }
     const data = result.data as Record<string, unknown>;
+    const targetAccountNumber = (data.account_number as string) ?? body.account_number;
+    
+    // Prevent unique constraint violation if a record was created concurrently
+    const checkExists = await prisma().beneficiaryAccountValidation.findFirst({
+      where: { accountNumber: targetAccountNumber },
+    });
+    if (checkExists) {
+      return sendResponse(res, apiSuccess(113), 113, {
+        account: shapeValidation(checkExists),
+      });
+    }
+
     const created = await prisma().beneficiaryAccountValidation.create({
       data: {
         uniqueId: uniqueId(24),
         userId: req.user.id,
         accountName: (data.account_name as string) ?? null,
-        accountNumber: (data.account_number as string) ?? body.account_number,
+        accountNumber: targetAccountNumber,
         code: (data.ifsc_code as string) ?? body.ifsc,
         validationService: "pu",
         externalReferenceId: (data.client_id as string) ?? null,

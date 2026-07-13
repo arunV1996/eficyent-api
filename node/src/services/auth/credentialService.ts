@@ -66,4 +66,50 @@ export const credentialService = {
       });
     }
   },
+
+  /**
+   * Generates a new RSA key pair, encrypts them, and updates either a User,
+   * TeamMember, or Merchant record while preserving existing api_key and salt_key.
+   *
+   * @param id - The row ID of the model
+   * @param model - "user" (default), "teamMember", or "merchant"
+   * @param tx - Optional Prisma transaction client
+   */
+  async rotateRsaKeys(
+    id: bigint,
+    model: "user" | "teamMember" | "merchant" = "user",
+    tx?: any,
+  ) {
+    const db = tx || prisma();
+
+    // 1. Generate RSA Key Pair
+    const { publicKey, privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+
+    // 2. Encrypt and Update (using KMS Envelope encryption)
+    const data = {
+      publicKey: await encryptEnvelope(publicKey),
+      privateKey: await encryptEnvelope(privateKey),
+    };
+
+    if (model === "user") {
+      return await db.user.update({
+        where: { id },
+        data,
+      });
+    } else if (model === "merchant") {
+      return await db.merchant.update({
+        where: { id },
+        data,
+      });
+    } else {
+      return await db.teamMember.update({
+        where: { id },
+        data,
+      });
+    }
+  },
 };

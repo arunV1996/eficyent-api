@@ -44,6 +44,7 @@ export function ledgerResource(
     virtualAccount?: any | null;
     users?: { timezone?: string | null } | null;
     refundLedger?: { transaction?: any } | null;
+    walletTransaction?: any;
   },
   options: LedgerResourceOptions = {},
 ): LedgerDto {
@@ -70,6 +71,11 @@ export function ledgerResource(
 
   if (l.transactionType === MORPH_BENEFICIARY_TRANSACTION && tx) {
     paidTo = PAID_TO_BENEFICIARY;
+    if (options.wallet_id && l.walletTransaction) {
+      balanceStr = l.walletTransaction.balanceAfter
+        ? `${parseFloat(l.walletTransaction.balanceAfter.toString()).toFixed(2)} ${currency}`.trim()
+        : balanceStr;
+    }
   }
 
   if (l.transactionType === MORPH_WALLET_TRANSACTION && tx) {

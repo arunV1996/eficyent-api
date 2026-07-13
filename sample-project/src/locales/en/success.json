@@ -1,0 +1,19 @@
+{
+    "3001": "Operation successful",
+    "3002": "User deleted successfully",
+    "3003": "User data retrieved successfully",
+    "3004": "User data updated successfully",
+    "3005": "User created successfully",
+    "3006": "Project created successfully",
+    "3007": "Project list retrieved successfully",
+    "3008": "Project retrieved successfully",
+    "3009": "Project updated successfully",
+    "3010": "Project deleted successfully",
+    "3011": "Login successful",
+    "3012": "Member activated successfully",
+    "3013": "Member deactivated successfully",
+    "3014": "Deposit transaction created successfully",
+    "3015": "Withdraw transaction created successfully",
+    "3100": "Project Merchant created successfully",
+    "3101": "Project Merchant list fetched successfully"
+}

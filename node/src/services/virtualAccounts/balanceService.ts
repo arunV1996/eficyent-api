@@ -122,6 +122,7 @@ export async function getWalletBalance(
         userId: user.id,
         walletId: wallet.id,
         type: TRANSACTION_TYPE_CREDIT,
+        status: WALLET_TRANSACTION_COMPLETED,
       },
       _sum: { totalAmount: true },
     }),

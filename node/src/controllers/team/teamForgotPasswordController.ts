@@ -42,7 +42,7 @@ export const teamForgotPasswordController = {
     const member = await prisma().teamMember.findUnique({
       where: { email: body.email },
     });
-    if (!member) throw new ApiException(102);
+    if (!member || member.deletedAt) throw new ApiException(102);
     if (member.lastPasswordReset) throw new ApiException(161);
 
     const sameAsExisting = await passwordService.verify(
@@ -69,7 +69,7 @@ export const teamForgotPasswordController = {
     const member = await prisma().teamMember.findUnique({
       where: { email: body.email },
     });
-    if (!member) throw new ApiException(102);
+    if (!member || member.deletedAt) throw new ApiException(102);
     const updated = await prisma().teamMember.update({
       where: { id: member.id },
       data: {
@@ -89,7 +89,7 @@ export const teamForgotPasswordController = {
     const member = await prisma().teamMember.findUnique({
       where: { email: body.email },
     });
-    if (!member) throw new ApiException(102);
+    if (!member || member.deletedAt) throw new ApiException(102);
 
     const r = await getRedis();
     const blockedKey = `team_email_blocked:${member.email}`;
@@ -139,7 +139,7 @@ export const teamForgotPasswordController = {
     const member = await prisma().teamMember.findUnique({
       where: { email: reset.email },
     });
-    if (!member) throw new ApiException(102);
+    if (!member || member.deletedAt) throw new ApiException(102);
 
     await prisma().$transaction([
       prisma().teamMember.update({

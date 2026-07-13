@@ -74,12 +74,24 @@ export const profileController = {
     if (!req.user) throw new ApiException(102);
     let user = req.user;
 
-    // Generate if missing (mirror of Laravel's on-demand generation)
+    // Generate if missing (mirror of Laravel's on-demand generation), else rotate RSA keys
     if (!user.apiKey || !user.saltKey || !user.privateKey) {
       user = await credentialService.generateAndStore(user.id, "user");
+    } else {
+      user = await credentialService.rotateRsaKeys(user.id, "user");
     }
 
-    const privateKey = await decryptEnvelope(user.privateKey as string);
+    let privateKey: string;
+    try {
+      privateKey = await decryptEnvelope(user.privateKey as string);
+      if (user.saltKey) {
+        await decryptEnvelope(user.saltKey);
+      }
+    } catch (err) {
+      // Decryption failed (due to APP_KEY mismatch). Automatically regenerate.
+      user = await credentialService.generateAndStore(user.id, "user");
+      privateKey = await decryptEnvelope(user.privateKey as string);
+    }
 
     const dataPayload: Record<string, any> = {
       user: {
@@ -100,7 +112,17 @@ export const profileController = {
           merchant = await credentialService.generateAndStore(merchant.id, "merchant");
         }
         
-        const merchantPrivateKey = await decryptEnvelope(merchant?.privateKey as string);
+        let merchantPrivateKey: string;
+        try {
+          merchantPrivateKey = await decryptEnvelope(merchant!.privateKey as string);
+          if (merchant!.saltKey) {
+            await decryptEnvelope(merchant!.saltKey);
+          }
+        } catch (err) {
+          // Decryption failed (due to APP_KEY mismatch). Automatically regenerate.
+          merchant = await credentialService.generateAndStore(merchant!.id, "merchant");
+          merchantPrivateKey = await decryptEnvelope(merchant!.privateKey as string);
+        }
         
         dataPayload.merchant = {
           unique_id: merchant?.uniqueId || null,

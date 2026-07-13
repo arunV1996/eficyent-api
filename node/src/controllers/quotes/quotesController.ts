@@ -256,6 +256,7 @@ export async function buildResponse(
       quoteType: driverResp.quote_type,
       receivingCurrency: receivingCurrency,
       sourceCurrency: source.row.currency,
+      sourceId: source.row.id,
       paymentRail,
     },
     { userId, merchantId, merchantType },
@@ -348,14 +349,10 @@ export async function persistQuote(
       ? String(response.external_reference_id)
       : null,
     externalData: response.external_data as Prisma.InputJsonValue | undefined,
-    expiresAt: (() => {
-      if (!response.expires_at) return null;
-      const v = response.expires_at;
-      if (typeof v === "number") return new Date(v * 1000);
-      if (typeof v === "string" && /^\d+$/.test(v)) return new Date(Number(v) * 1000);
-      const d = new Date(String(v));
-      return isNaN(d.getTime()) ? null : d;
-    })(),
+    expiresAt:
+      response.expires_at
+        ? new Date(String(response.expires_at))
+        : new Date(Date.now() + 30 * 60 * 1000),
   };
   void ZERO;
   return prisma().quote.create({ data });

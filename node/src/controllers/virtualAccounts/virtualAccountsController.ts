@@ -18,13 +18,10 @@ import {
   computeBankBalance,
 } from "../../services/virtualAccounts/balanceService";
 import { virtualAccountResource } from "../../services/virtualAccounts/virtualAccountResource";
-import { OnboardingFactory } from "../../services/external/onboardingFactory";
-import { VirtualAccountFactory } from "../../services/external/virtualAccountFactory";
 import {
   getVirtualAccountScope,
 } from "../../services/virtualAccounts/virtualAccountService";
 import {
-  ActivateInput,
   VirtualAccountIdInput,
   VirtualAccountListInput,
 } from "../../validators/virtualAccounts/virtualAccountValidators";
@@ -193,31 +190,31 @@ export const virtualAccountsController = {
 
   async activate(req: Request, res: Response): Promise<Response> {
     if (!req.user) throw new ApiException(102);
-    const body = req.body as ActivateInput;
+    // const body = req.body as ActivateInput;
 
-    const userService = await prisma().userService.findFirst({
-      where: { userId: req.user.id, serviceType: body.type },
-    });
-    const baseScope = await getVirtualAccountScope(req.user, req.merchant);
-    const userVa = await prisma().virtualAccount.findFirst({
-      where: { ...baseScope, externalType: body.type },
-    });
-    if (userService && userVa) throw new ApiException(115);
+    // const userService = await prisma().userService.findFirst({
+    //   where: { userId: req.user.id, serviceType: body.type },
+    // });
+    // const baseScope = await getVirtualAccountScope(req.user, req.merchant);
+    // const userVa = await prisma().virtualAccount.findFirst({
+    //   where: { ...baseScope, externalType: body.type },
+    // });
+    // if (userService && userVa) throw new ApiException(115);
 
-    // FvBank update_required gate. We re-use the get_file_update_key concept:
-    // if any required document is missing for FvBank, surface update_required.
-    if (body.type === "ef") {
-      const required = await fvBankFileUpdateRequired(req.user);
-      if (required) {
-        return sendResponse(res, "", 200, { update_required: true });
-      }
-    }
+    // // FvBank update_required gate. We re-use the get_file_update_key concept:
+    // // if any required document is missing for FvBank, surface update_required.
+    // if (body.type === "ef") {
+    //   const required = await fvBankFileUpdateRequired(req.user);
+    //   if (required) {
+    //     return sendResponse(res, "", 200, { update_required: true });
+    //   }
+    // }
 
-    const onboarding = OnboardingFactory.resolve(body.type);
-    await onboarding.make(req.user);
+    // const onboarding = OnboardingFactory.resolve(body.type);
+    // await onboarding.make(req.user);
 
-    const va = VirtualAccountFactory.resolve(body.type);
-    await va.make(req.user);
+    // const va = VirtualAccountFactory.resolve(body.type);
+    // await va.make(req.user);
 
     return sendResponse(res, "Virtual account creation initiated.", 200, []);
   },
@@ -323,17 +320,17 @@ function generateUserMemo(user: User): string {
  * conditions visible in Phase 3 - the deeper merchant-policy branches that
  * depend on UserDocument types land in Phase 8.
  */
-async function fvBankFileUpdateRequired(user: User): Promise<boolean> {
-  const doc = await prisma().userDocument.findFirst({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-  });
-  if (!doc) return true;
-  if (!doc.documentFile || !doc.documentBackFile || !doc.documentExpiryDate) {
-    return true;
-  }
-  const info = await prisma().userInformation.findFirst({ where: { userId: user.id },
-  });
-  if (Number(user.userType) === 2 && !info?.businessVerificationType) return true;
-  return false;
-}
+// async function fvBankFileUpdateRequired(user: User): Promise<boolean> {
+//   const doc = await prisma().userDocument.findFirst({
+//     where: { userId: user.id },
+//     orderBy: { createdAt: "desc" },
+//   });
+//   if (!doc) return true;
+//   if (!doc.documentFile || !doc.documentBackFile || !doc.documentExpiryDate) {
+//     return true;
+//   }
+//   const info = await prisma().userInformation.findFirst({ where: { userId: user.id },
+//   });
+//   if (Number(user.userType) === 2 && !info?.businessVerificationType) return true;
+//   return false;
+// }

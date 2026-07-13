@@ -37,8 +37,8 @@ async function isSupportedUserType(
   merchantId: bigint,
   tx: any,
 ): Promise<boolean> {
-  const setting = await tx.merchantSetting.findUnique({
-    where: { merchantId_key: { merchantId, key: "supported_user_types" } },
+  const setting = await tx.merchantSetting.findFirst({
+    where: { merchantId, key: "supported_user_types" },
   });
   if (!setting?.value) return true;
   if (setting.value === SUPPORTED_USER_BUSINESS && userType !== USER_TYPE_BUSINESS) {
@@ -91,6 +91,7 @@ export const registerController = {
             merchant.type === MERCHANT_TYPE_PAYINCOLLECTION ||
             merchant.type === MERCHANT_TYPE_PAYOUTINTEGRATOR
           ) {
+            console.log("merchant.id----------->", merchant.id);
             const supported = await isSupportedUserType(
               body.user_type ?? USER_TYPE_PENDING,
               merchant.id,

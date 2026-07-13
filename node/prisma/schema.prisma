@@ -49,6 +49,7 @@ model User {
   timezone                               String                              @default("Asia/Kolkata") @db.VarChar(30)
   browserId                              String?                             @map("browser_id") @db.VarChar(255)
   deviceType                             String?                             @map("device_type") @db.VarChar(255)
+  deviceToken                            String?                             @map("device_token") @db.VarChar(255)
   rememberToken                          String?                             @map("remember_token") @db.VarChar(100)
   memo                                   String?                             @db.VarChar(255)
   createdAt                              DateTime?                           @default(now()) @map("created_at") @db.Timestamp(0)
@@ -206,7 +207,7 @@ model Fee {
   feeName   String    @map("fee_name") @db.VarChar(255)
   feeType   String    @default("1") @map("fee_type") @db.VarChar(255)
   mode      String?   @db.VarChar(255)
-  feeValue  Decimal   @map("fee_value") @db.Decimal(15, 6)
+  feeValue  Decimal   @map("fee_value") @db.Decimal(27, 12)
   currency1 String?   @map("currency_1") @db.Char(4)
   currency2 String?   @map("currency_2") @db.Char(4)
   status    Int       @default(1) @db.TinyInt

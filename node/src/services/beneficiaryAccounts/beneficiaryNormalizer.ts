@@ -112,6 +112,9 @@ export async function validateAndNormalize(
   const result = validateAgainstFields(fields, payload);
   const validated = ensureNoFieldErrors(result);
 
+  // SWIFT/BIC fallback.
+  let swiftCode = (validated.swift_code || validated.code) as string | undefined;
+
   // service_bank lookup - convert unique_id back to bank_id, capture bank_name.
   let serviceBankBankId: string | undefined;
   let serviceBankName: string | undefined;
@@ -122,11 +125,13 @@ export async function validateAndNormalize(
     if (bank) {
       serviceBankBankId = bank.bankId;
       serviceBankName = bank.bankName;
+      if (!swiftCode && bank.isoCode) {
+        swiftCode = bank.isoCode;
+      }
     }
   }
 
   // SWIFT/BIC fallback when only bank_name is supplied.
-  let swiftCode = (validated.swift_code || validated.code) as string | undefined;
   if (!swiftCode && validated.bank_name) {
     const bank = await prisma().serviceBank.findFirst({
       where: { bankName: String(validated.bank_name) },

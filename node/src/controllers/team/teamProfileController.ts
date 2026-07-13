@@ -18,58 +18,71 @@ import { getBusinessModel } from "../../services/merchants/merchantService";
  */
 
 export const teamProfileController = {
-  async profile(req: Request, res: Response): Promise<Response> {
-    if (!req.teamMember) throw new ApiException(102);
-    const businessModel = await getBusinessModel(req.user?.merchantId ?? null);
-    return sendResponse(res, "", 200, {
-      user: teamMemberResource(req.teamMember, req.user, undefined, businessModel),
-    });
-  },
+	async profile(req: Request, res: Response): Promise<Response> {
+		if (!req.teamMember) throw new ApiException(102);
+		const businessModel = await getBusinessModel(req.user?.merchantId ?? null);
+		return sendResponse(res, "", 200, {
+			user: teamMemberResource(req.teamMember, req.user, undefined, businessModel),
+		});
+	},
 
-  async getCredentials(req: Request, res: Response): Promise<Response> {
-    if (!req.teamMember) throw new ApiException(102);
-    if (req.teamMember.status === TEAM_MEMBER_INACTIVE) throw new ApiException(160);
+	async getCredentials(req: Request, res: Response): Promise<Response> {
+		if (!req.teamMember) throw new ApiException(102);
+		if (req.teamMember.status === TEAM_MEMBER_INACTIVE) throw new ApiException(160);
 
-    let teamMember = req.teamMember;
+		let teamMember = req.teamMember;
 
-    // Generate if missing
-    if (!teamMember.apiKey || !teamMember.saltKey || !teamMember.privateKey) {
-      teamMember = await credentialService.generateAndStore(teamMember.id, "teamMember");
-    }
+		// Generate if missing, else rotate RSA keys
+		if (!teamMember.apiKey || !teamMember.saltKey || !teamMember.privateKey) {
+			teamMember = await credentialService.generateAndStore(teamMember.id, "teamMember");
+		} else {
+			teamMember = await credentialService.rotateRsaKeys(teamMember.id, "teamMember");
+		}
 
-    const privateKey = await decryptEnvelope(teamMember.privateKey as string);
+		let privateKey: string;
+		let saltKey: string | null = null;
 
-    return sendResponse(res, "", 200, {
-      user: {
-        unique_id: teamMember.uniqueId,
-        api_key: teamMember.apiKey,
-        salt_key: teamMember.saltKey ? await decryptEnvelope(teamMember.saltKey) : null,
-        private_key: privateKey,
-      },
-    });
-  },
+		try {
+			privateKey = await decryptEnvelope(teamMember.privateKey as string);
+			saltKey = teamMember.saltKey ? await decryptEnvelope(teamMember.saltKey) : null;
+		} catch (error: any) {
+			// Catch any decryption failure (legacy prefix, invalid JSON, etc.) and auto-heal
+			teamMember = await credentialService.generateAndStore(teamMember.id, "teamMember");
+			privateKey = await decryptEnvelope(teamMember.privateKey as string);
+			saltKey = teamMember.saltKey ? await decryptEnvelope(teamMember.saltKey) : null;
+		}
 
-  async getAppSettings(req: Request, res: Response): Promise<Response> {
-    return settingsController.getAppSettings(req, res);
-  },
+		return sendResponse(res, "", 200, {
+			user: {
+				unique_id: teamMember.uniqueId,
+				api_key: teamMember.apiKey,
+				salt_key: saltKey,
+				private_key: privateKey,
+			},
+		});
+	},
 
-  async changePassword(req: Request, res: Response): Promise<Response> {
-    if (!req.teamMember || !req.tokenId) throw new ApiException(102);
-    const body = req.body as TeamChangePasswordInput;
-    const oldOk = await passwordService.verify(req.teamMember.password, body.old_password);
-    if (!oldOk) throw new ApiException(125);
-    const sameAsOld = await passwordService.verify(req.teamMember.password, body.password);
-    if (sameAsOld) throw new ApiException(126);
+	async getAppSettings(req: Request, res: Response): Promise<Response> {
+		return settingsController.getAppSettings(req, res);
+	},
 
-    await prisma().teamMember.update({
-      where: { id: req.teamMember.id },
-      data: {
-        password: await passwordService.hash(body.password),
-        lastPasswordReset: new Date(),
-      },
-    });
+	async changePassword(req: Request, res: Response): Promise<Response> {
+		if (!req.teamMember || !req.tokenId) throw new ApiException(102);
+		const body = req.body as TeamChangePasswordInput;
+		const oldOk = await passwordService.verify(req.teamMember.password, body.old_password);
+		if (!oldOk) throw new ApiException(125);
+		const sameAsOld = await passwordService.verify(req.teamMember.password, body.password);
+		if (sameAsOld) throw new ApiException(126);
 
-    await teamTokenService.revoke(req.tokenId, req.teamMember.id);
-    return sendResponse(res, "Password changed successfully.", 200, []);
-  },
+		await prisma().teamMember.update({
+			where: { id: req.teamMember.id },
+			data: {
+				password: await passwordService.hash(body.password),
+				lastPasswordReset: new Date(),
+			},
+		});
+
+		await teamTokenService.revoke(req.tokenId, req.teamMember.id);
+		return sendResponse(res, "Password changed successfully.", 200, []);
+	},
 };

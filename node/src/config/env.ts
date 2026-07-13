@@ -112,6 +112,8 @@ const envSchema = z.object({
   CRON_FETCH_FVBANK_VA: z.string().default("*/15 * * * *"),
   CRON_PAYOUT_JOB_REAPER: z.string().default("*/2 * * * *"),
   CRON_LEADER_HOST: z.string().default(""),
+  SLACK_BASE_URL: z.string().optional(),
+  SLACK_CHANNEL_ID: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

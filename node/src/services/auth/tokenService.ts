@@ -139,4 +139,25 @@ export const tokenService = {
       ...tokens.map((t) => sessionService.end(userId, t.id)),
     ]);
   },
+
+  async revokeAllRegularTokensForUser(userId: bigint): Promise<void> {
+    const tokens = await prisma().personalAccessToken.findMany({
+      where: {
+        tokenableId: userId,
+        tokenableType: "App\\Models\\User",
+        expiresAt: null,
+      },
+      select: { id: true },
+    });
+    await Promise.allSettled([
+      prisma().personalAccessToken.deleteMany({
+        where: {
+          tokenableId: userId,
+          tokenableType: "App\\Models\\User",
+          expiresAt: null,
+        },
+      }),
+      ...tokens.map((t) => sessionService.end(userId, t.id)),
+    ]);
+  },
 };

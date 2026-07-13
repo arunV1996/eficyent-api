@@ -1,0 +1,1 @@
+-- Baseline migration to mark existing schema state as applied.

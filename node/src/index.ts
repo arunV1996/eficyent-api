@@ -20,6 +20,9 @@ import { errorHandler, notFound } from "./middleware/error";
 import { requestId } from "./middleware/requestId";
 import { apiRouter } from "./routes";
 import { preloadLookups } from "./helpers/lookups";
+import { requestLogger } from "./middleware/requestLogger";
+import { requestTracker } from "./middleware/requestTracker";
+import { activeRequests, notifyUnresolvedRequests } from "./services/external/slackAlertService";
 
 async function main(): Promise<void> {
   await bootstrapSecrets();
@@ -72,8 +75,10 @@ async function main(): Promise<void> {
   app.use(express.urlencoded({ extended: false, limit: `${env().REQUEST_BODY_LIMIT_KB}kb` }));
   app.use(multer().any());
   app.use(trimPayloadMiddleware());
+  app.use(requestTracker);
+  app.use(requestLogger);
   app.use(compressionMiddleware());
-  app.use(requestTimeout(30_000));
+  app.use(requestTimeout(120_000));
   const isProduction = __dirname.includes("dist");
   const publicPath = isProduction
     ? path.join(__dirname, "public")
@@ -103,6 +108,13 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     logger.warn({ signal }, "Shutting down");
     server.close();
+
+    if (activeRequests.size > 0) {
+      const pending = Array.from(activeRequests.values());
+      logger.warn({ count: pending.length }, "Reporting unresolved transaction requests to Slack");
+      await notifyUnresolvedRequests(pending, `System Shutdown via ${signal}`);
+    }
+
     await Promise.allSettled([closePrisma(), closeRedis()]);
     process.exit(0);
   };
@@ -113,7 +125,7 @@ async function main(): Promise<void> {
   });
   process.on("uncaughtException", (err) => {
     logger.fatal({ err }, "Uncaught exception");
-    void shutdown("uncaughtException");
+    void shutdown(`uncaughtException: ${err.message}`);
   });
 }
 

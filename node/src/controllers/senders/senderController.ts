@@ -438,19 +438,13 @@ export const senderController = {
 
     const created: { row: number; remitter_id: string }[] = [];
     for (const row of result.validatedRows) {
+      const senderColumns = toPrismaSender(row.sender as Record<string, unknown>);
       const sender = await prisma().sender.create({
         data: {
+          ...(senderColumns as Prisma.SenderUncheckedCreateInput),
           uniqueId: uniqueId(24),
           userId: req.user.id,
           team_member_id: req.teamMember?.id ?? null,
-          firstName: (row.sender.first_name as string) ?? null,
-          lastName: (row.sender.last_name as string) ?? null,
-          email: (row.sender.email as string) ?? null,
-          mobile: (row.sender.mobile as string) ?? null,
-          country: (row.sender.country as string) ?? null,
-          idType: (row.sender.id_type as string) ?? null,
-          idNumber: (row.sender.id_number as string) ?? null,
-          type: row.sender.type,
           status: 1,
         },
       });

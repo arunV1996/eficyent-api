@@ -2,6 +2,7 @@ import {
   BeneficiaryAccount,
   BeneficiaryAdditionalDetail,
   BeneficiaryTransaction,
+  Merchant,
   Quote,
   Sender,
   User,
@@ -51,12 +52,26 @@ interface RelatedRows {
   userInformation: UserInformation | null;
   sourceCurrency: string;
   externalReferenceId: string | null;
+  merchant: Merchant | null;
+  ownerUser: User;
 }
 
 async function loadRelated(
   txn: BeneficiaryTransaction,
   user: User,
 ): Promise<RelatedRows | null> {
+  let effectiveUser = user;
+  let merchant: Merchant | null = null;
+  if (user.merchantId) {
+    merchant = await prisma().merchant.findUnique({ where: { id: user.merchantId } });
+    if (merchant) {
+      const owner = await prisma().user.findUnique({ where: { id: merchant.userId } });
+      if (owner) {
+        effectiveUser = owner;
+      }
+    }
+  }
+
   const [account, additional, sender, quote, userInformation] = await Promise.all([
     txn.beneficiaryAccountId
       ? prisma().beneficiaryAccount.findUnique({ where: { id: txn.beneficiaryAccountId } })
@@ -70,7 +85,7 @@ async function loadRelated(
     txn.quoteId
       ? prisma().quote.findUnique({ where: { id: txn.quoteId } })
       : Promise.resolve(null),
-    prisma().userInformation.findFirst({ where: { userId: user.id } }),
+    prisma().userInformation.findFirst({ where: { userId: effectiveUser.id } }),
   ]);
 
   if (!account || !quote) return null;
@@ -105,29 +120,28 @@ async function loadRelated(
 
   // Resolve externalReferenceId (mirrors Laravel's merchant/userservice logic)
   let externalReferenceId: string | null = null;
-  if (user.merchantId) {
-    const merchant = await prisma().merchant.findUnique({ where: { id: user.merchantId } });
-    if (merchant?.type === MERCHANT_TYPE_PAYOUT) {
+  if (merchant) {
+    if (merchant.type === MERCHANT_TYPE_PAYOUT) {
       const setting = await prisma().merchantSetting.findFirst({
         where: { merchantId: merchant.id, key: "caliza_account_id" },
       });
       if (setting?.value) {
         externalReferenceId = setting.value;
       } else {
-        const va = await prisma().virtualAccount.findFirst({ where: { userId: user.id } });
+        const va = await prisma().virtualAccount.findFirst({ where: { userId: effectiveUser.id } });
         if (va) externalReferenceId = va.externalReferenceId;
       }
     }
   }
   if (!externalReferenceId) {
     const us = await prisma().userService.findFirst({
-      where: { userId: user.id, serviceType: EXTERNAL_TYPE_CALIZA, isActive: 1 },
+      where: { userId: effectiveUser.id, serviceType: EXTERNAL_TYPE_CALIZA, isActive: 1 },
       select: { externalReferenceId: true },
     });
     externalReferenceId = us?.externalReferenceId ?? null;
   }
 
-  return { account, additional, sender, quote, userInformation, sourceCurrency, externalReferenceId };
+  return { account, additional, sender, quote, userInformation, sourceCurrency, externalReferenceId, merchant, ownerUser: effectiveUser };
 }
 
 /**
@@ -140,8 +154,87 @@ async function loadRelated(
 async function remitterFromUser(
   user: User,
   userInformation: UserInformation | null,
+  merchant?: Merchant | null,
 ): Promise<Record<string, unknown>> {
   const sourceFunds = (userInformation?.sourceOfIncome) || "Other";
+
+  if (merchant) {
+    const userDocument = await prisma().userDocument.findFirst({ where: { userId: user.id } });
+
+    let businessPersonIdType = (await lookupsService.findValuebyKey(userInformation?.idType, "id_types")) || "Other";
+    let businessPersonIdNumber = userInformation?.idNumber || "0000";
+
+    let persons: any[] = [];
+    if (userInformation?.businessPersons) {
+      try {
+        persons =
+          typeof userInformation.businessPersons === "string"
+            ? JSON.parse(userInformation.businessPersons)
+            : (userInformation.businessPersons as any[]);
+      } catch {
+        persons = [];
+      }
+      if (Array.isArray(persons) && persons.length > 0) {
+        const ubo = persons.find((p: any) => Number(p.designation_id) === 5) || persons[0];
+        if (ubo) {
+          businessPersonIdType = ubo.id_type
+            ? (await lookupsService.findValuebyKey(ubo.id_type, "id_types")) || "Other"
+            : "Other";
+          businessPersonIdNumber = ubo.id_number || "0000";
+        }
+      }
+    }
+
+    const remitter: Record<string, unknown> = {
+      type: "BUSINESS",
+      business_name: merchant.name,
+      type_of_business:
+        (await lookupsService.findValuebyKey(userInformation?.type_of_business, "business_types")) ||
+        "Company",
+      document_file: userDocument?.documentFile ?? null,
+      document_type: userDocument?.documentType
+        ? (await lookupsService.findValuebyKey(userDocument.documentType, "document_types")) || "Other"
+        : (userDocument?.documentFile ? "Other" : null),
+      email: merchant.email,
+      mobile_country_code: user.mobileCountryCode,
+      mobile: user.mobile,
+      address_1: userInformation?.address1,
+      address_2: userInformation?.address2,
+      city: userInformation?.city,
+      state: userInformation?.state,
+      postal_code: userInformation?.postalCode,
+      id_type: businessPersonIdType,
+      id_number: businessPersonIdNumber,
+      source_of_funds: sourceFunds,
+      country: userInformation?.country,
+    };
+
+    if (persons.length > 0) {
+      const hasUbo = persons.some((p: any) => Number(p.designation_id) === 5);
+      if (!hasUbo && persons[0]) {
+        persons[0].designation_id = 5;
+      }
+      remitter.business_persons = await Promise.all(
+        persons.map(async (person: any) => ({
+          first_name: person.first_name ?? null,
+          last_name: person.last_name ?? null,
+          mobile_country_code: person.mobile_country_code ?? null,
+          mobile: person.mobile ?? null,
+          country: person.country ?? null,
+          id_type: person.id_type
+            ? (await lookupsService.findValuebyKey(person.id_type, "id_types")) || "Other"
+            : "Other",
+          id_number: person.id_number || "0000",
+          designation: person.designation_id
+            ? await lookupsService.findValuebyKey(person.designation_id, "professions")
+            : null,
+        })),
+      );
+    }
+
+    logger.info({ userId: user.id.toString(), remitter }, "[PU_DEBUG] remitterFromUser (Merchant) - Final object");
+    return remitter;
+  }
 
   // Mirror: if ($user->user_type == USER_TYPE_INDIVIDUAL)
   if (Number(user.userType) === USER_TYPE_INDIVIDUAL) {
@@ -169,6 +262,30 @@ async function remitterFromUser(
   // BUSINESS: Mirror: $sender_documents = UserDocument::where('user_id', $user->id)->first();
   const userDocument = await prisma().userDocument.findFirst({ where: { userId: user.id } });
 
+  let businessPersonIdType = (await lookupsService.findValuebyKey(userInformation?.idType, "id_types")) || "Other";
+  let businessPersonIdNumber = userInformation?.idNumber || "0000";
+
+  let persons: any[] = [];
+  if (userInformation?.businessPersons) {
+    try {
+      persons =
+        typeof userInformation.businessPersons === "string"
+          ? JSON.parse(userInformation.businessPersons)
+          : (userInformation.businessPersons as any[]);
+    } catch {
+      persons = [];
+    }
+    if (Array.isArray(persons) && persons.length > 0) {
+      const ubo = persons.find((p: any) => Number(p.designation_id) === 5) || persons[0];
+      if (ubo) {
+        businessPersonIdType = ubo.id_type
+          ? (await lookupsService.findValuebyKey(ubo.id_type, "id_types")) || "Other"
+          : "Other";
+        businessPersonIdNumber = ubo.id_number || "0000";
+      }
+    }
+  }
+
   const remitter: Record<string, unknown> = {
     // Mirror: $user->type == USER_TYPE_INDIVIDUAL ? 'INDIVIDUAL' : 'BUSINESS'
     type: Number(user.userType) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
@@ -188,46 +305,33 @@ async function remitterFromUser(
     city: userInformation?.city,
     state: userInformation?.state,
     postal_code: userInformation?.postalCode,
-    id_type: (await lookupsService.findValuebyKey(userInformation?.idType, "id_types")) || "Other",
-    id_number: userInformation?.idNumber || "0000",
+    id_type: businessPersonIdType,
+    id_number: businessPersonIdNumber,
     source_of_funds: sourceFunds,
     country: userInformation?.country,
   };
 
-  // Mirror: if (!empty($user->userInformation->business_persons))
-  if (userInformation?.businessPersons) {
-    let persons: any[] = [];
-    try {
-      persons =
-        typeof userInformation.businessPersons === "string"
-          ? JSON.parse(userInformation.businessPersons)
-          : (userInformation.businessPersons as any[]);
-    } catch {
-      persons = [];
+  if (persons.length > 0) {
+    const hasUbo = persons.some((p: any) => Number(p.designation_id) === 5);
+    if (!hasUbo && persons[0]) {
+      persons[0].designation_id = 5;
     }
-
-    if (Array.isArray(persons) && persons.length > 0) {
-      const hasUbo = persons.some((p: any) => Number(p.designation_id) === 5);
-      if (!hasUbo && persons[0]) {
-        persons[0].designation_id = 5;
-      }
-      remitter.business_persons = await Promise.all(
-        persons.map(async (person: any) => ({
-          first_name: person.first_name ?? null,
-          last_name: person.last_name ?? null,
-          mobile_country_code: person.mobile_country_code ?? null,
-          mobile: person.mobile ?? null,
-          country: person.country ?? null,
-          id_type: person.id_type
-            ? (await lookupsService.findValuebyKey(person.id_type, "id_types")) || "Other"
-            : "Other",
-          id_number: person.id_number || "0000",
-          designation: person.designation_id
-            ? await lookupsService.findValuebyKey(person.designation_id, "professions")
-            : null,
-        })),
-      );
-    }
+    remitter.business_persons = await Promise.all(
+      persons.map(async (person: any) => ({
+        first_name: person.first_name ?? null,
+        last_name: person.last_name ?? null,
+        mobile_country_code: person.mobile_country_code ?? null,
+        mobile: person.mobile ?? null,
+        country: person.country ?? null,
+        id_type: person.id_type
+          ? (await lookupsService.findValuebyKey(person.id_type, "id_types")) || "Other"
+          : "Other",
+        id_number: person.id_number || "0000",
+        designation: person.designation_id
+          ? await lookupsService.findValuebyKey(person.designation_id, "professions")
+          : null,
+      })),
+    );
   }
 
   logger.info({ userId: user.id.toString(), remitter }, "[PU_DEBUG] remitterFromUser - Final object");
@@ -345,7 +449,7 @@ export async function buildPayoutPayload(
   const related = await loadRelated(txn, user);
   if (!related) return null;
 
-  const { account, additional, sender, quote, userInformation, sourceCurrency, externalReferenceId } = related;
+  const { account, additional, sender, quote, userInformation, sourceCurrency, externalReferenceId, merchant, ownerUser } = related;
 
   const common = {
     order_id: txn.orderId,
@@ -358,15 +462,15 @@ export async function buildPayoutPayload(
     remarks: txn.remarks,
     supporting_document: txn.supportingDocument,
     purpose_of_payment: additional?.purposeOfTransaction ?? null,
-    rail: (account.paymentRail ?? "").toUpperCase(),
+    rail: (account.paymentRail ? account.paymentRail : (account.currency === "USD" ? "SWIFT" : "")).toUpperCase(),
   };
 
-  let beneficiaryMobileCountryCode = account.mobileCountryCode || user.mobileCountryCode;
-  let beneficiaryMobile = account.mobile || user.mobile;
+  let beneficiaryMobileCountryCode = account.mobileCountryCode || ownerUser.mobileCountryCode;
+  let beneficiaryMobile = account.mobile || ownerUser.mobile;
 
   if (account.currency === "INR") {
     beneficiaryMobileCountryCode = account.mobileCountryCode || "91";
-    beneficiaryMobile = account.mobile || user.mobile;
+    beneficiaryMobile = account.mobile || ownerUser.mobile;
 
     if (beneficiaryMobile) {
       beneficiaryMobile = beneficiaryMobile.replace(/\D/g, "");
@@ -382,39 +486,68 @@ export async function buildPayoutPayload(
   const beneficiary = {
     type: Number(account.type) === USER_TYPE_INDIVIDUAL ? "INDIVIDUAL" : "BUSINESS",
     first_name: account.firstName,
-    last_name: account.lastName ?? account.firstName,
+    last_name: account.lastName || account.firstName,
     business_name: account.businessName,
-    address_1: additional?.addressLine1 ?? null,
-    address_2: additional?.addressLine2 ?? null,
-    city: additional?.city ?? userInformation?.city ?? null,
-    state: additional?.state ?? null,
-    postal_code: additional?.postalCode ?? null,
-    country: additional?.country ?? null,
+    address_1: additional?.addressLine1 || null,
+    address_2: additional?.addressLine2 || null,
+    city: additional?.city || userInformation?.city || null,
+    state: additional?.state || null,
+    postal_code: additional?.postalCode || null,
+    country: account.country ? account.country : (additional?.country || null),
     currency: account.currency,
-    bank_name: account.bankName ?? account.swiftCode,
+    bank_name: account.bankName || account.swiftCode,
     account_name: account.accountName,
     account_number: account.accountNumber,
     iban: account.accountNumber,
-    account_type: account.accountType ?? "Checking",
+    account_type: account.accountType || "Checking",
     routing_number: account.routingNumber,
     swift_code: account.swiftCode,
     ifsc_code: account.swiftCode,
     iso_code: account.swiftCode,
-    email: account.email ?? user.email,
+    email: (account.email != null && account.email !== "") ? account.email : ownerUser.email,
     mobile_country_code: beneficiaryMobileCountryCode,
     mobile: beneficiaryMobile,
   };
 
   const remitter = sender
-    ? await remitterFromSender(sender, user, userInformation)
-    : await remitterFromUser(user, userInformation);
+    ? await remitterFromSender(sender, ownerUser, userInformation)
+    : await remitterFromUser(ownerUser, userInformation, merchant);
 
-  // Mirror: $txn->user->merchant ? $txn->user->merchant->name : $txn->user->name
-  const merchantName = user.merchantId
-    ? (await prisma().merchant.findUnique({ where: { id: user.merchantId } }))?.name ??
-      user.firstName ??
-      user.email
-    : user.firstName ?? user.email;
+  const merchantName = merchant
+    ? merchant.name
+    : ownerUser.firstName ?? ownerUser.email;
+  const merchantEmail = merchant
+    ? merchant.email
+    : ownerUser.email;
+
+  let bankAddress: string | null = null;
+  if (additional) {
+    const street1 = (additional.bankAddressLine1 || "").replace(/,/g, "");
+    const street2 = (additional.bankAddressLine2 || "").replace(/,/g, "");
+    const city = (additional.bankCity || "").replace(/,/g, "");
+    const state = (additional.bankState || "").replace(/,/g, "");
+
+    let country = additional.bankCountry || "";
+    if (country) {
+      const mcc = await prisma().mobileCountryCode.findFirst({
+        where: { OR: [{ alpha3Code: country }, { alpha2Code: country }] },
+        select: { alpha2Code: true },
+      });
+      country = mcc?.alpha2Code || country;
+    }
+    country = country.replace(/,/g, "").toUpperCase();
+
+    const postalCode = (additional.bankPostalCode || "0000").replace(/,/g, "");
+
+    bankAddress = [
+      street1,
+      street2,
+      city,
+      state,
+      country,
+      postalCode,
+    ].join(",");
+  }
 
   const payload = {
     ...common,
@@ -422,16 +555,22 @@ export async function buildPayoutPayload(
     remitter,
     merchant: {
       name: merchantName,
-      email: user.email,
-    },
-    meta_data: {
-      user_reference_id: externalReferenceId,
-      beneficiary_reference_id: account.externalReferenceId,
-      search_reference_id: txn.clientReferenceId ?? txn.txnRefNo,
+      email: merchantEmail,
     },
   };
 
-  const finalPayload = removeEmpty(payload as Record<string, unknown>);
+  const finalPayload = {
+    ...removeEmpty(payload as Record<string, unknown>),
+    meta_data: {
+      bank_address: bankAddress ?? null,
+      user_reference_id: externalReferenceId ?? null,
+      beneficiary_reference_id: account.externalReferenceId ?? null,
+      search_reference_id: txn.clientReferenceId ?? txn.txnRefNo ?? null,
+      txn_ref_no: txn.txnRefNo ?? null,
+      txn_unique_id: txn.uniqueId ?? null,
+    },
+  };
+
   logger.info({ orderId: txn.orderId, payload: finalPayload }, "[PU_DEBUG] Final Payout Payload");
   return finalPayload;
 }

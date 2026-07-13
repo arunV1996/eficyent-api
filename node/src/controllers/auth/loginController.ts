@@ -63,7 +63,8 @@ export const loginController = {
       where: { id: user.id },
       data: {
         deviceType: body.device_type ?? null,
-      },
+        deviceToken: body.device_id ?? null,
+      } as any,
     });
 
     // X-Merchant-Id check (mirror of LoginController.merchantHeader).
@@ -97,6 +98,7 @@ export const loginController = {
       return sendResponse(res, apiSuccess(104), 104, { user: shapeUser(user) });
     }
 
+    await tokenService.revokeAllRegularTokensForUser(user.id);
     const issued = await tokenService.issue(user, ["authentication"], null);
     return sendResponse(res, apiSuccess(104), 104, {
       user: shapeUser(user),
@@ -134,6 +136,7 @@ export const loginController = {
     }
     if (!ok) throw new ApiException(139);
 
+    await tokenService.revokeAllRegularTokensForUser(user.id);
     const issued = await tokenService.issue(user, ["authentication"], null);
     return sendResponse(res, apiSuccess(104), 104, {
       user: shapeUser(user),
@@ -146,7 +149,7 @@ export const loginController = {
     await tokenService.revoke(req.tokenId, req.user.id);
     await prisma().user.update({
       where: { id: req.user.id },
-      data: { privateKey: null, publicKey: null },
+      data: { privateKey: null, publicKey: null, deviceToken: null } as any,
     });
     return sendResponse(res, apiSuccess(105), 105, {});
   },

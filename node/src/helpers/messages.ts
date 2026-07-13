@@ -119,7 +119,7 @@ export const ApiErrorMessages: Record<number, string> = {
   409: "Idempotency key conflict: a different request was already processed under this key.",
   422: "Validation error.",
   429: "Too many requests.",
-  500: "Internal server error.",
+  500: "Something went wrong.",
 };
 
 export function apiSuccess(code: number): string {

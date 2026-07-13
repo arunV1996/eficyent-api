@@ -39,7 +39,7 @@ export const VirtualAccountListSchema = z
     account_bank_name: z.string().max(255).optional(),
     status: z.string().max(64).optional(),
     skip: z.coerce.number().int().min(0).max(100_000).optional(),
-    take: z.coerce.number().int().min(1).max(200).optional(),
+    take: z.coerce.number().int().min(1).optional(),
     with_balance: withBalanceField,
   });
 export type VirtualAccountListInput = z.infer<typeof VirtualAccountListSchema>;
