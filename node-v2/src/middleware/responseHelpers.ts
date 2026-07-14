@@ -77,11 +77,14 @@ export const responseHelpers = (
         code: number,
         httpStatus = 400,
     ): void => {
+        // Legacy error contract: the /node error middleware serializes
+        // every ApiException / validation failure as
+        // {success: false, error, error_code} — NOT the success
+        // envelope's {status, code, message, data} shape.
         res.status(httpStatus).json({
-            status: false,
-            code,
-            message,
-            data: null,
+            success: false,
+            error: message,
+            error_code: code,
         });
     };
 
@@ -102,14 +105,16 @@ export const responseHelpers = (
             error instanceof Error ? error.message : String(error);
         // eslint-disable-next-line no-console
         console.error("Unhandled controller error:", error);
+        // Mirror of the legacy unknown-error branch: 500 with
+        // "Something went wrong." and no detail leak in production.
         res.status(500).json({
             status: false,
             code: 500,
-            message:
+            message: "Something went wrong.",
+            data:
                 process.env.NODE_ENV === "production"
-                    ? "An unexpected error occurred."
-                    : errorMessage,
-            data: null,
+                    ? null
+                    : { error: errorMessage },
         });
     };
 

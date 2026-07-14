@@ -20,7 +20,7 @@ import { ACTIVE } from "../utils/constants";
 export const profile = async (req: Request, res: Response): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("1006"), 1006, 401);
+            return res.sendError(res.__("401"), 401, 401);
         }
 
         const userId = req.user.id;
@@ -69,7 +69,7 @@ export const changePassword = async (
 ): Promise<void> => {
     try {
         if (!req.user || !req.personalAccessToken) {
-            return res.sendError(res.__("1006"), 1006, 401);
+            return res.sendError(res.__("401"), 401, 401);
         }
 
         const oldPassword = String(req.body.old_password);
@@ -82,7 +82,7 @@ export const changePassword = async (
         );
 
         if (!userWithPassword) {
-            return res.sendError(res.__("1002"), 1002, 401);
+            return res.sendError(res.__("401"), 401, 401);
         }
 
         const oldPasswordMatches = await comparePassword(
@@ -90,7 +90,7 @@ export const changePassword = async (
             userWithPassword.password,
         );
         if (!oldPasswordMatches) {
-            return res.sendError(res.__("125"), 125, 422);
+            return res.sendError(res.__("125"), 125, 400);
         }
 
         const sameAsCurrent = await comparePassword(
@@ -98,7 +98,7 @@ export const changePassword = async (
             userWithPassword.password,
         );
         if (sameAsCurrent) {
-            return res.sendError(res.__("126"), 126, 422);
+            return res.sendError(res.__("126"), 126, 400);
         }
 
         const newPasswordHash = await hashPassword(newPassword);
@@ -130,11 +130,11 @@ export const updateTourStatus = async (
 ): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("1006"), 1006, 401);
+            return res.sendError(res.__("401"), 401, 401);
         }
 
         if (req.user.tourStatus === ACTIVE) {
-            return res.sendError(res.__("148"), 148, 422);
+            return res.sendError(res.__("148"), 148, 400);
         }
 
         req.user.tourStatus = ACTIVE;

@@ -33,7 +33,7 @@ export const register = async (
             where: { email: emailAddress },
         });
         if (existingUser) {
-            return res.sendError(res.__("1102"), 1102, 422);
+            return res.sendError(res.__("1102"), 422, 422);
         }
 
         const hashedPassword = await hashPassword(plainPassword);
@@ -54,8 +54,8 @@ export const register = async (
 
         return res.sendResponse(
             responseUser ? userToJSON(responseUser, req) : null,
-            res.__("103"),
-            103,
+            res.__("101"),
+            101,
         );
     } catch (error) {
         return res.handleError(error);
@@ -144,7 +144,7 @@ export const logout = async (
 ): Promise<void> => {
     try {
         if (!req.personalAccessToken || !req.user) {
-            return res.sendError(res.__("1006"), 1006, 401);
+            return res.sendError(res.__("401"), 401, 401);
         }
 
         await req.personalAccessToken.destroy();

@@ -41,13 +41,13 @@ export const authSanctum = async (
             !authorizationHeader ||
             !authorizationHeader.startsWith("Bearer ")
         ) {
-            res.sendError(res.__("1006"), 1006, 401);
+            res.sendError(res.__("401"), 401, 401);
             return;
         }
 
         const plaintextToken = authorizationHeader.slice("Bearer ".length).trim();
         if (!plaintextToken) {
-            res.sendError(res.__("1006"), 1006, 401);
+            res.sendError(res.__("401"), 401, 401);
             return;
         }
 
@@ -61,18 +61,18 @@ export const authSanctum = async (
         });
 
         if (!tokenRow) {
-            res.sendError(res.__("1007"), 1007, 401);
+            res.sendError(res.__("401"), 401, 401);
             return;
         }
 
         if (tokenRow.expiresAt && tokenRow.expiresAt.getTime() < Date.now()) {
-            res.sendError(res.__("1007"), 1007, 401);
+            res.sendError(res.__("401"), 401, 401);
             return;
         }
 
         const user = await User.findByPk(tokenRow.tokenableId);
         if (!user) {
-            res.sendError(res.__("1002"), 1002, 401);
+            res.sendError(res.__("401"), 401, 401);
             return;
         }
 

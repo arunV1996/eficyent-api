@@ -22,7 +22,9 @@ export const checkValidationErrors = (
     const errorPayload =
         typeof firstError.msg === "object" && firstError.msg !== null
             ? (firstError.msg as { msg: string; code: number })
-            : { msg: String(firstError.msg), code: 1000 };
+            : { msg: String(firstError.msg), code: 422 };
 
-    res.sendError(errorPayload.msg, errorPayload.code, 422);
+    // Legacy validation contract: every validation failure surfaces as
+    // HTTP 422 with error_code 422 (the message identifies the field).
+    res.sendError(errorPayload.msg, 422, 422);
 };
