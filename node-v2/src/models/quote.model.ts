@@ -1,5 +1,6 @@
 import { DataTypes, Model, Optional } from "sequelize";
 import sequelize from "../config/database";
+import VirtualAccount from "./virtual_account.model";
 
 /**
  * FX quote row (mirror of the legacy `quotes` table). Money columns
@@ -86,6 +87,10 @@ class Quote
 
     public readonly createdAt!: Date | null;
     public readonly updatedAt!: Date | null;
+
+    // Eager-loaded association (alias mirrors the legacy Prisma
+    // include name).
+    public readonly virtual_accounts?: VirtualAccount;
 }
 
 Quote.init(
@@ -230,5 +235,11 @@ Quote.init(
         ],
     },
 );
+
+// Alias mirrors the legacy Prisma include name (quote.virtual_accounts).
+Quote.belongsTo(VirtualAccount, {
+    foreignKey: "virtualAccountId",
+    as: "virtual_accounts",
+});
 
 export default Quote;

@@ -11,6 +11,7 @@ import {
     states as buildStates,
 } from "../helpers/lookup.helper";
 import { settingGet } from "../helpers/setting.helper";
+import AdminWallet from "../models/admin_wallet.model";
 import FxRate from "../models/fx_rate.model";
 import MobileCountryCode from "../models/mobile_country_code.model";
 import SupportedCountry from "../models/supported_country.model";
@@ -29,14 +30,8 @@ import {
  *
  * The legacy controller responds with sendResponse(res, "", "", data),
  * which serializes to {status: true, code: "", message: "", data} —
- * we call res.sendResponse(data,
-            "",
-            "",
-        ) to keep that envelope
+ * we call res.sendResponse(data, "", "") to keep that envelope
  * byte-identical.
- *
- * Deferred: deposit_wallets (legacy returns all active AdminWallet
- * rows) — arrives once the admin_wallets model + migration are ported.
  */
 
 /**
@@ -322,10 +317,34 @@ export const refreshRates = async (
 };
 
 /**
- * Deferred: GET /api/user/lookups/deposit_wallets (legacy returns all
- * active AdminWallet rows). Arrives once the admin_wallets model +
- * migration are ported to node-v2.
+ * GET /api/user/lookups/deposit_wallets — all active platform crypto
+ * wallets a user can deposit into.
  */
+export const depositWallets = async (
+    _req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        const wallets = await AdminWallet.findAll({
+            where: { status: 1 },
+            attributes: ["uniqueId", "walletName", "walletAddress", "network"],
+        });
+        return res.sendResponse(
+            {
+                wallets: wallets.map((wallet) => ({
+                    unique_id: wallet.uniqueId,
+                    wallet_name: wallet.walletName,
+                    wallet_address: wallet.walletAddress,
+                    network: wallet.network,
+                })),
+            },
+            "",
+            "",
+        );
+    } catch (error) {
+        return res.handleError(error);
+    }
+};
 
 /**
  * GET /api/user/lookups/deposit_lookups?type=source_of_funds|purpose_of_transaction

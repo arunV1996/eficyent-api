@@ -1,5 +1,7 @@
 import { DataTypes, Model, Optional } from "sequelize";
 import sequelize from "../config/database";
+import Quote from "./quote.model";
+import Wallet from "./wallet.model";
 
 /**
  * Wallet credit/debit row. Mirror of the legacy `wallet_transactions`
@@ -16,6 +18,7 @@ interface WalletTransactionAttributes {
     amount: string;
     fees: string;
     totalAmount: string;
+    transactionId: string | null;
     type: number;
     balanceBefore: string | null;
     balanceAfter: string | null;
@@ -33,6 +36,7 @@ interface WalletTransactionCreationAttributes
         | "amount"
         | "fees"
         | "totalAmount"
+        | "transactionId"
         | "type"
         | "balanceBefore"
         | "balanceAfter"
@@ -55,6 +59,7 @@ class WalletTransaction
     public amount!: string;
     public fees!: string;
     public totalAmount!: string;
+    public transactionId!: string | null;
     public type!: number;
     public balanceBefore!: string | null;
     public balanceAfter!: string | null;
@@ -62,6 +67,11 @@ class WalletTransaction
 
     public readonly createdAt!: Date | null;
     public readonly updatedAt!: Date | null;
+
+    // Eager-loaded associations (aliases mirror the legacy Prisma
+    // include names).
+    public readonly wallet?: Wallet;
+    public readonly quote?: Quote;
 }
 
 WalletTransaction.init(
@@ -94,6 +104,7 @@ WalletTransaction.init(
             allowNull: false,
             defaultValue: 0,
         },
+        transactionId: { type: DataTypes.STRING(255), allowNull: true },
         type: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
         balanceBefore: { type: DataTypes.DECIMAL(15, 2), allowNull: true },
         balanceAfter: { type: DataTypes.DECIMAL(15, 2), allowNull: true },
@@ -118,5 +129,14 @@ WalletTransaction.init(
         ],
     },
 );
+
+WalletTransaction.belongsTo(Wallet, {
+    foreignKey: "walletId",
+    as: "wallet",
+});
+WalletTransaction.belongsTo(Quote, {
+    foreignKey: "quoteId",
+    as: "quote",
+});
 
 export default WalletTransaction;

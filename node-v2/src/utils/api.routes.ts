@@ -21,6 +21,21 @@ import {
     transactionUpdateStatusBodyValidator,
 } from "../validators/beneficiary_transaction.validator";
 import {
+    DEPOSIT_STORE_ALLOWED_KEYS,
+    depositListQueryValidator,
+    depositQuoteQueryValidator,
+    depositShowQueryValidator,
+    depositStoreBodyValidator,
+} from "../validators/deposit.validator";
+import {
+    WALLET_CONVERT_ALLOWED_KEYS,
+    walletConvertBodyValidator,
+    walletListQueryValidator,
+    walletShowQueryValidator,
+    walletTransactionShowQueryValidator,
+    walletTransactionsQueryValidator,
+} from "../validators/wallet.validator";
+import {
     beneficiaryFormFieldsQueryValidator,
     beneficiaryListQueryValidator,
     beneficiaryShowQueryValidator,
@@ -297,6 +312,106 @@ export const beneficiaryTransactionApiRoutes = {
     },
 };
 
+// Shared stack for the wallets group (mirror of the legacy
+// wallets.routes router-level ordering).
+const walletBaseMiddleware = [
+    authSanctum,
+    validateMerchant,
+    emailShouldBeVerified,
+    onboardingShouldBeCompleted,
+];
+
+export const walletApiRoutes = {
+    LIST: {
+        path: "/list",
+        middleware: [
+            ...walletBaseMiddleware,
+            walletListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    SHOW: {
+        path: "/show",
+        middleware: [
+            ...walletBaseMiddleware,
+            walletShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    CONVERT: {
+        path: "/convert",
+        middleware: [
+            ...walletBaseMiddleware,
+            idempotency(),
+            strictBody(WALLET_CONVERT_ALLOWED_KEYS),
+            walletConvertBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    TRANSACTIONS_LIST: {
+        path: "/transactions/list",
+        middleware: [
+            ...walletBaseMiddleware,
+            walletTransactionsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    TRANSACTIONS_SHOW: {
+        path: "/transactions/show",
+        middleware: [
+            ...walletBaseMiddleware,
+            walletTransactionShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
+// Shared stack for the deposits group (mirror of the legacy
+// deposits.routes router-level ordering).
+const depositBaseMiddleware = [
+    authSanctum,
+    validateMerchant,
+    emailShouldBeVerified,
+    onboardingShouldBeCompleted,
+];
+
+export const depositApiRoutes = {
+    LIST: {
+        path: "/list",
+        middleware: [
+            ...depositBaseMiddleware,
+            depositListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    SHOW: {
+        path: "/show",
+        middleware: [
+            ...depositBaseMiddleware,
+            depositShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    QUOTE: {
+        path: "/quote",
+        middleware: [
+            ...depositBaseMiddleware,
+            depositQuoteQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    STORE: {
+        path: "/store",
+        middleware: [
+            ...depositBaseMiddleware,
+            idempotency(),
+            strictBody(DEPOSIT_STORE_ALLOWED_KEYS),
+            depositStoreBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
 export const lookupApiRoutes = {
     MOBILE_COUNTRY_CODES: {
         path: "/mobile_country_codes",
@@ -317,6 +432,10 @@ export const lookupApiRoutes = {
     DEPOSIT_LOOKUPS: {
         path: "/deposit_lookups",
         middleware: [depositLookupsQueryValidator, checkValidationErrors],
+    },
+    DEPOSIT_WALLETS: {
+        path: "/deposit_wallets",
+        middleware: [],
     },
     BANKS: {
         path: "/banks",

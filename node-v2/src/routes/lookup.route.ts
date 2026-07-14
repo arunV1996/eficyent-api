@@ -3,6 +3,7 @@ import {
     banks,
     countries,
     depositLookups,
+    depositWallets,
     getRates,
     mobileCountryCodes,
     paymentRails,
@@ -42,6 +43,12 @@ router.get(
     lookupApiRoutes.DEPOSIT_LOOKUPS.path,
     ...lookupApiRoutes.DEPOSIT_LOOKUPS.middleware,
     depositLookups,
+);
+
+router.get(
+    lookupApiRoutes.DEPOSIT_WALLETS.path,
+    ...lookupApiRoutes.DEPOSIT_WALLETS.middleware,
+    depositWallets,
 );
 
 router.get(

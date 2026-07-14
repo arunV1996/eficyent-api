@@ -69,6 +69,7 @@ export const ONBOARDING_STEP_MAP: Record<string, number> = {
 
 // Identity verification statuses / providers (subset needed so far)
 export const IDENTITY_VERIFICATION_PENDING = 1;
+export const IDENTITY_VERIFICATION_COMPLETED = 5;
 export const ID_VERIFIED_BY_ADMIN = "ad";
 
 // Onboarding completion gate (mirror of ONBOARDING_STEP_FOUR_COMPLETED)
@@ -129,6 +130,45 @@ export const EXTERNAL_TYPE_MASSIVE = "em";
 
 // Wallets
 export const WALLET_STATUS_ACTIVE = 1;
+export const WALLET_STATUS_INACTIVE = 0;
+
+export const WALLET_STATUS_MAP: Record<string, number> = {
+    ACTIVE: WALLET_STATUS_ACTIVE,
+    INACTIVE: WALLET_STATUS_INACTIVE,
+};
+
+// Wallet transaction statuses (mirror of legacy constants;
+// WALLET_TRANSACTION_COMPLETED lives in the transactions substrate below)
+export const WALLET_TRANSACTION_PENDING = 0;
+export const WALLET_TRANSACTION_FAILED = 2;
+export const WALLET_TRANSACTION_REJECTED = 3;
+export const WALLET_TRANSACTION_CANCELLED = 4;
+
+// Virtual account statuses (mirror of legacy constants)
+export const VIRTUAL_ACCOUNT_STATUS_PENDING = 0;
+export const VIRTUAL_ACCOUNT_STATUS_CREATED = 1;
+export const VIRTUAL_ACCOUNT_STATUS_FAILED = 2;
+
+// Deposit transaction statuses (mirror of legacy constants;
+// DEPOSIT_TRANSACTION_COMPLETED lives in the transactions substrate below)
+export const DEPOSIT_TRANSACTION_PENDING = 0;
+export const DEPOSIT_TRANSACTION_FAILED = 2;
+export const DEPOSIT_TRANSACTION_REJECTED = 3;
+export const DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED = 4;
+export const DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING = 5;
+export const DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED = 6;
+
+// Deposit types (DEPOSIT_TYPE_REFUND lives in the refund substrate below)
+export const DEPOSIT_TYPE_DEPOSIT = "deposit";
+export const DEPOSIT_TYPE_TOPUP = "topup";
+export const DEPOSIT_TYPE_CREDIT = "credit";
+
+// Client-facing deposit type tokens accepted by /deposits/store
+// (mirror of DEPOSIT_TYPE_MAP)
+export const DEPOSIT_TYPE_MAP: Record<string, string> = {
+    CREDIT: DEPOSIT_TYPE_CREDIT,
+    TOPUP: DEPOSIT_TYPE_TOPUP,
+};
 
 // Business models
 export const BUSINESS_MODEL_DEAL_BASED = "DEAL_BASED";

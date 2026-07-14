@@ -10,7 +10,18 @@ import {
     BENEFICIARY_TRANSACTION_FAILED,
     BENEFICIARY_TRANSACTION_REJECTED,
     BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
+    DEPOSIT_TRANSACTION_COMPLETED,
+    DEPOSIT_TRANSACTION_FAILED,
+    DEPOSIT_TRANSACTION_REJECTED,
     DISPOSABLE_EMAIL_DOMAINS,
+    VIRTUAL_ACCOUNT_STATUS_CREATED,
+    VIRTUAL_ACCOUNT_STATUS_FAILED,
+    VIRTUAL_ACCOUNT_STATUS_PENDING,
+    WALLET_STATUS_ACTIVE,
+    WALLET_TRANSACTION_CANCELLED,
+    WALLET_TRANSACTION_COMPLETED,
+    WALLET_TRANSACTION_FAILED,
+    WALLET_TRANSACTION_REJECTED,
 } from "./constants";
 
 /**
@@ -383,6 +394,63 @@ export const beneficiaryTransactionStatusLabel = (
         case BENEFICIARY_TRANSACTION_CORPORATE_INITIATED:
             return "CORPORATE_INITIATED";
 
+        default:
+            return "PROCESSING";
+    }
+};
+
+/**
+ * Wallet status label. Mirror of walletStatusLabel().
+ */
+export const walletStatusLabel = (value: number): string => {
+    return value === WALLET_STATUS_ACTIVE ? "ACTIVE" : "INACTIVE";
+};
+
+/**
+ * Wallet transaction status label. Mirror of
+ * walletTransactionStatusLabel().
+ */
+export const walletTransactionStatusLabel = (value: number): string => {
+    switch (value) {
+        case WALLET_TRANSACTION_COMPLETED:
+            return "COMPLETED";
+        case WALLET_TRANSACTION_FAILED:
+        case WALLET_TRANSACTION_REJECTED:
+        case WALLET_TRANSACTION_CANCELLED:
+            return "FAILED";
+        default:
+            return "PENDING";
+    }
+};
+
+/**
+ * Virtual account status label. Mirror of virtualAccountStatusLabel().
+ */
+export const virtualAccountStatusLabel = (value: number): string => {
+    switch (value) {
+        case VIRTUAL_ACCOUNT_STATUS_PENDING:
+            return "PENDING";
+        case VIRTUAL_ACCOUNT_STATUS_CREATED:
+            return "CREATED";
+        case VIRTUAL_ACCOUNT_STATUS_FAILED:
+            return "FAILED";
+        default:
+            return "PENDING";
+    }
+};
+
+/**
+ * Deposit transaction status label. Mirror of
+ * depositTransactionStatusLabel(): all Processing-Unit states collapse
+ * to "PROCESSING".
+ */
+export const depositTransactionStatusLabel = (value: number): string => {
+    switch (value) {
+        case DEPOSIT_TRANSACTION_COMPLETED:
+            return "COMPLETED";
+        case DEPOSIT_TRANSACTION_FAILED:
+        case DEPOSIT_TRANSACTION_REJECTED:
+            return "FAILED";
         default:
             return "PROCESSING";
     }
