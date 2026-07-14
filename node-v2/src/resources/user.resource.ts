@@ -296,3 +296,38 @@ export const fullUserToJSON = async (
 
     return response;
 };
+
+/**
+ * Compact user snapshot for GET /check_user_status (mirror of
+ * userShaper.shapeStatusUser). Business users show their legal /
+ * business name when available.
+ */
+export const statusUserToJSON = (
+    user: User,
+    isMerchant: boolean,
+    information: UserInformation | null = null,
+    businessModel = "mto",
+): Record<string, unknown> => {
+    let name = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    if (Number(user.userType) === USER_TYPE_BUSINESS && information) {
+        name = information.legalName || information.businessName || name;
+    }
+
+    return {
+        name,
+        email_status: user.emailVerifiedAt ? "VERIFIED" : "NOT_VERIFIED",
+        id_verification: verificationLabel(user.idVerification),
+        is_merchant: yesNo(isMerchant),
+        is_tfa_enabled: yesNo(user.isTfaEnabled),
+        is_tfa_setup_completed: yesNo(user.isTfaSetupCompleted),
+        onboarding_step: onboardingLabel(user.onboardingStep),
+        role: roleLabel(user.userRole),
+        sender_enabled: yesNo(user.enableSender),
+        tour_status: tourLabel(user.tourStatus),
+        user_type:
+            Number(user.userType) === USER_TYPE_BUSINESS
+                ? "BUSINESS"
+                : "PERSONAL",
+        business_model: businessModel.toLowerCase(),
+    };
+};

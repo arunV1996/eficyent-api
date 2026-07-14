@@ -69,8 +69,16 @@ export const ONBOARDING_STEP_MAP: Record<string, number> = {
 
 // Identity verification statuses / providers (subset needed so far)
 export const IDENTITY_VERIFICATION_PENDING = 1;
+export const IDENTITY_VERIFICATION_INITIATED = 2;
+export const IDENTITY_VERIFICATION_PROCESSING = 3;
+export const IDENTITY_VERIFICATION_FAILED = 4;
 export const IDENTITY_VERIFICATION_COMPLETED = 5;
+
+// KYC service tags (mirror of Laravel ID_VERIFIED_BY_*)
 export const ID_VERIFIED_BY_ADMIN = "ad";
+export const ID_VERIFIED_BY_HERALD_SUMSUB = "hs";
+export const ID_VERIFIED_BY_SUREPASS = "sp";
+export const ID_VERIFIED_BY_INCODE = "ic";
 
 // Onboarding completion gate (mirror of ONBOARDING_STEP_FOUR_COMPLETED)
 export const ONBOARDING_STEP_FOUR_COMPLETED = 4;

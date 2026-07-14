@@ -30,6 +30,9 @@ interface UserAttributes {
     userRole: number;
     onboardingStep: number;
     idVerification: number;
+    idVerifiedBy: string | null;
+    idVerificationData: unknown | null;
+    deletedAt: Date | null;
     enableSender: number;
     isTfaEnabled: boolean;
     isTfaSetupCompleted: boolean;
@@ -68,6 +71,9 @@ interface UserCreationAttributes
         | "userRole"
         | "onboardingStep"
         | "idVerification"
+        | "idVerifiedBy"
+        | "idVerificationData"
+        | "deletedAt"
         | "enableSender"
         | "isTfaEnabled"
         | "isTfaSetupCompleted"
@@ -109,6 +115,12 @@ class User
     public userRole!: number;
     public onboardingStep!: number;
     public idVerification!: number;
+    public idVerifiedBy!: string | null;
+    public idVerificationData!: unknown | null;
+    // NOTE: intentionally NOT `paranoid` — the legacy Prisma service
+    // never auto-filtered deleted_at, so queries must see soft-deleted
+    // rows exactly like legacy. delete-account sets this manually.
+    public deletedAt!: Date | null;
     public enableSender!: number;
     public isTfaEnabled!: boolean;
     public isTfaSetupCompleted!: boolean;
@@ -209,6 +221,9 @@ User.init(
             allowNull: false,
             defaultValue: 1,
         },
+        idVerifiedBy: { type: DataTypes.STRING(255), allowNull: true },
+        idVerificationData: { type: DataTypes.JSON, allowNull: true },
+        deletedAt: { type: DataTypes.DATE, allowNull: true },
         enableSender: {
             type: DataTypes.TINYINT,
             allowNull: false,

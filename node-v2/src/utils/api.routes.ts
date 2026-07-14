@@ -81,7 +81,15 @@ import {
     statesQueryValidator,
 } from "../validators/lookup.validator";
 import { statementExportQueryValidator } from "../validators/statement.validator";
-import { changePasswordValidator } from "../validators/profile.validator";
+import {
+    changePasswordValidator,
+    PASSWORD_ONLY_ALLOWED_KEYS,
+    passwordOnlyBodyValidator,
+    passwordVerificationBodyValidator,
+    TFA_STATUS_ALLOWED_KEYS,
+    UPDATE_PROFILE_ALLOWED_KEYS,
+    updateProfileBodyValidator,
+} from "../validators/profile.validator";
 
 /**
  * Central registry of every route's path + middleware chain.
@@ -154,6 +162,58 @@ export const profileApiRoutes = {
     UPDATE_TOUR_STATUS: {
         path: "/update-tour-status",
         middleware: [authSanctum, validateMerchant],
+    },
+    DELETE_ACCOUNT: {
+        path: "/delete-account",
+        middleware: [
+            authSanctum,
+            validateMerchant,
+            strictBody(PASSWORD_ONLY_ALLOWED_KEYS),
+            passwordOnlyBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    CHECK_USER_STATUS: {
+        path: "/check_user_status",
+        middleware: [authSanctum, validateMerchant],
+    },
+    SETUP_TFA: {
+        path: "/setup-tfa",
+        middleware: [authSanctum, validateMerchant],
+    },
+    TFA_STATUS: {
+        path: "/tfa-status",
+        middleware: [
+            authSanctum,
+            validateMerchant,
+            strictBody(TFA_STATUS_ALLOWED_KEYS),
+            passwordVerificationBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    REGENERATE_BACKUP_CODES: {
+        path: "/regenerate-backup-codes",
+        middleware: [
+            authSanctum,
+            validateMerchant,
+            strictBody(PASSWORD_ONLY_ALLOWED_KEYS),
+            passwordOnlyBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    UPDATE_PROFILE_FORM_FIELDS: {
+        path: "/update-profile-form-fields",
+        middleware: [authSanctum, validateMerchant],
+    },
+    UPDATE_PROFILE: {
+        path: "/update-profile",
+        middleware: [
+            authSanctum,
+            validateMerchant,
+            strictBody(UPDATE_PROFILE_ALLOWED_KEYS),
+            updateProfileBodyValidator,
+            checkValidationErrors,
+        ],
     },
 };
 
