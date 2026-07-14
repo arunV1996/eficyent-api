@@ -32,10 +32,8 @@ import {
  * we call res.sendResponse(data, "OK", "") to keep that envelope
  * byte-identical.
  *
- * Endpoints deferred to later tranches (models/providers not yet
- * ported): banks (ServiceBank), deposit_wallets (AdminWallet),
- * receiving_countries / get-rates / refresh-rates (SupportedCountry,
- * FxRate, Massive provider).
+ * Deferred: deposit_wallets (legacy returns all active AdminWallet
+ * rows) — arrives once the admin_wallets model + migration are ported.
  */
 
 /**
@@ -180,6 +178,12 @@ export const receivingCountries = async (
 
 /**
  * GET /api/user/lookups/get-rates?search_key=...
+ *
+ * Note: legacy passes user.timezone ?? "Asia/Kolkata" to relativeTime
+ * for last_updated; both implementations currently ignore the timezone
+ * (the output is purely relative), so node-v2's single-Date signature
+ * is behaviorally identical. Revisit if relative-time formatting ever
+ * becomes timezone-sensitive.
  */
 export const getRates = async (
     req: Request,
@@ -313,6 +317,12 @@ export const refreshRates = async (
         return res.handleError(error);
     }
 };
+
+/**
+ * Deferred: GET /api/user/lookups/deposit_wallets (legacy returns all
+ * active AdminWallet rows). Arrives once the admin_wallets model +
+ * migration are ported to node-v2.
+ */
 
 /**
  * GET /api/user/lookups/deposit_lookups?type=source_of_funds|purpose_of_transaction

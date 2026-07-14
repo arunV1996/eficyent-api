@@ -397,7 +397,7 @@ export const makeQuoteStore = (quoteMode: QuoteMode) => {
     return async (req: Request, res: Response): Promise<void> => {
         try {
             if (!req.user) {
-                return res.sendError(res.__("401"), 401, 401);
+                return res.sendError(res.__("102"), 102, 400);
             }
 
             const payload = (

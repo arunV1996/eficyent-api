@@ -27,13 +27,21 @@ import {
 } from "../utils/constants";
 
 /**
- * Mirror of Api\BeneficiaryAccountsController — read/delete endpoints.
+ * Mirror of Api\BeneficiaryAccountsController.
  *
- * Deferred with their dependencies: store (beneficiary normalizer +
- * Caliza), validate_account (ProcessingUnit), get-form-fields
- * (beneficiaryFormFields builder needs SupportedCountry), bulk/*
- * (Excel import service). Team-member corporate scoping on list
- * arrives with the team module.
+ * Implemented: get-form-fields, list, show, store, validate_account,
+ * delete.
+ *
+ * Deferred until their dependencies are ported to node-v2:
+ *   - Team scoping: corporate-role list scoping (team_member_id filter
+ *     on /list) and writing team_member_id during /store arrive with
+ *     the team module.
+ *   - Caliza background sync: newly created beneficiaries are synced
+ *     to Caliza for users with an active "ec" user_services row in the
+ *     legacy service; this fires once the Caliza provider service and
+ *     user_services model are ported.
+ *   - Bulk import/export: /bulk/template (Excel download) and
+ *     /bulk/store (Excel import) arrive with the ExcelImportService.
  */
 
 /**
@@ -48,7 +56,7 @@ export const getFormFields = async (
 ): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const requestQuery = req.query as Record<string, string | undefined>;
@@ -83,7 +91,7 @@ export const getFormFields = async (
 export const index = async (req: Request, res: Response): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const requestQuery = req.query as Record<string, string | undefined>;
@@ -174,7 +182,7 @@ export const index = async (req: Request, res: Response): Promise<void> => {
 export const show = async (req: Request, res: Response): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const beneficiaryAccountId = String(req.query.beneficiary_account_id);
@@ -311,7 +319,7 @@ const additionalDetailAttributesFromNormalized = (
 export const store = async (req: Request, res: Response): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const normalized = await validateAndNormalizeBeneficiary(
@@ -455,7 +463,7 @@ export const validateAccount = async (
 ): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const accountNumber = String(req.body.account_number);
@@ -549,7 +557,7 @@ export const validateAccount = async (
 export const destroy = async (req: Request, res: Response): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const beneficiaryAccountId = String(req.query.beneficiary_account_id);
