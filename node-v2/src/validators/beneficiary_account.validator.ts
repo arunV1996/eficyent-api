@@ -1,4 +1,4 @@
-import { query, ValidationChain } from "express-validator";
+import { body, query, ValidationChain } from "express-validator";
 import { USER_TYPE_MAP } from "../utils/constants";
 
 const localizedError = (localeKey: string, code: number) => {
@@ -55,6 +55,32 @@ export const beneficiaryShowQueryValidator: ValidationChain[] = [
         .isString()
         .isLength({ min: 1, max: 64 })
         .withMessage(localizedError("1100", 1100)),
+];
+
+/**
+ * express-validator chain for POST /beneficiaries/validate_account
+ * (mirror of ValidateAccountSchema — Indian bank account + IFSC).
+ */
+export const validateAccountBodyValidator: ValidationChain[] = [
+    body("account_number")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .matches(/^\d{9,18}$/)
+        .withMessage(() => ({
+            msg: "The selected account number is invalid.",
+            code: 422,
+        })),
+
+    body("ifsc")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .matches(/^[A-Z]{4}0[A-Z0-9]{6}$/)
+        .withMessage(() => ({
+            msg: "The selected IFSC is invalid.",
+            code: 422,
+        })),
 ];
 
 /**

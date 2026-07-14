@@ -9,6 +9,7 @@ import {
     beneficiaryFormFieldsQueryValidator,
     beneficiaryListQueryValidator,
     beneficiaryShowQueryValidator,
+    validateAccountBodyValidator,
 } from "../validators/beneficiary_account.validator";
 import {
     banksQueryValidator,
@@ -118,6 +119,14 @@ export const beneficiaryApiRoutes = {
         // inside the controller, so no static validator here.
         path: "/store",
         middleware: [...beneficiaryBaseMiddleware],
+    },
+    VALIDATE_ACCOUNT: {
+        path: "/validate_account",
+        middleware: [
+            ...beneficiaryBaseMiddleware,
+            validateAccountBodyValidator,
+            checkValidationErrors,
+        ],
     },
     SHOW: {
         path: "/show",

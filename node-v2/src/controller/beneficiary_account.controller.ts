@@ -10,8 +10,11 @@ import {
     FormFieldsError,
 } from "../helpers/form_fields.helper";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
+import BeneficiaryAccountValidation from "../models/beneficiary_account_validation.model";
 import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
+import Merchant from "../models/merchant.model";
 import { beneficiaryAccountToJSON } from "../resources/beneficiary_account.resource";
+import { validateAccount as processingUnitValidateAccount } from "../services/processing_unit.service";
 import { generateUniqueId } from "../utils/common.utils";
 import {
     BENEFICIARY_ACCOUNT_ACTIVATED,
@@ -416,6 +419,126 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                 error.httpStatus,
             );
         }
+        return res.handleError(error);
+    }
+};
+
+/**
+ * Response shape for a validation row (mirror of the legacy
+ * shapeValidation — account_name only present when known).
+ */
+const validationToJSON = (
+    validationRow: BeneficiaryAccountValidation,
+): Record<string, unknown> => {
+    const data: Record<string, unknown> = {
+        account_number: validationRow.accountNumber ?? "",
+        ifsc: validationRow.code ?? "",
+        is_nre_account: validationRow.isNreAccount === 1,
+    };
+    if (validationRow.accountName) {
+        data.account_name = validationRow.accountName;
+    }
+    return data;
+};
+
+/**
+ * POST /api/user/beneficiaries/validate_account
+ *
+ * Cache-first Indian account verification. Identical account numbers
+ * reuse the recorded result; misses hit Processing Unit and persist
+ * the normalized row for future hits (with a concurrent-create
+ * re-check to avoid the unique-constraint race).
+ */
+export const validateAccount = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("401"), 401, 401);
+        }
+
+        const accountNumber = String(req.body.account_number);
+        const ifscCode = String(req.body.ifsc);
+
+        const cachedValidation = await BeneficiaryAccountValidation.findOne({
+            where: { accountNumber },
+        });
+        if (cachedValidation) {
+            return res.sendResponse(
+                { account: validationToJSON(cachedValidation) },
+                res.__("113"),
+                113,
+            );
+        }
+
+        const merchant = req.user.merchantId
+            ? await Merchant.findByPk(req.user.merchantId)
+            : null;
+
+        const providerResult = await processingUnitValidateAccount({
+            merchant_email: req.user.email,
+            merchant_name:
+                merchant?.name ?? req.user.firstName ?? req.user.email,
+            account_number: accountNumber,
+            ifsc_code: ifscCode,
+        });
+
+        if (!providerResult.success || !providerResult.data) {
+            return res.sendError(
+                providerResult.message || res.__("179"),
+                179,
+                502,
+            );
+        }
+
+        const providerData = providerResult.data as Record<string, unknown>;
+        const targetAccountNumber =
+            (providerData.account_number as string) ?? accountNumber;
+
+        // Concurrent-create guard: another request may have persisted
+        // this account number while the provider call was in flight.
+        const concurrentValidation = await BeneficiaryAccountValidation.findOne(
+            { where: { accountNumber: targetAccountNumber } },
+        );
+        if (concurrentValidation) {
+            return res.sendResponse(
+                { account: validationToJSON(concurrentValidation) },
+                res.__("113"),
+                113,
+            );
+        }
+
+        const createdValidation = await BeneficiaryAccountValidation.create({
+            uniqueId: generateUniqueId(24),
+            userId: req.user.id,
+            accountName: (providerData.account_name as string) ?? null,
+            accountNumber: targetAccountNumber,
+            code: (providerData.ifsc_code as string) ?? ifscCode,
+            validationService: "pu",
+            externalReferenceId: (providerData.client_id as string) ?? null,
+            externalStatus: (providerData.status as string) ?? null,
+            externalData: providerData,
+            remarks: (providerData.message as string) ?? null,
+            isAccountExists:
+                String(providerData.is_account_exists ?? "NO").toUpperCase() ===
+                "YES"
+                    ? 1
+                    : 0,
+            isNreAccount:
+                String(providerData.is_nre_account ?? "NO").toUpperCase() ===
+                "YES"
+                    ? 1
+                    : 0,
+            status: 1,
+        });
+
+        return res.sendResponse(
+            { account: validationToJSON(createdValidation) },
+            res.__("113"),
+            113,
+        );
+    } catch (error) {
         return res.handleError(error);
     }
 };

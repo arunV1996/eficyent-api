@@ -6,6 +6,7 @@
     "117": "Failed to create beneficiary account.",
     "118": "Beneficiary account not found.",
     "158": "Beneficiary account already exists.",
+    "179": "Failed to create account validation record.",
     "195": "C2B (consumer to business) is not supported.",
     "125": "Invalid email or password.",
     "126": "New password cannot be the same as old password.",

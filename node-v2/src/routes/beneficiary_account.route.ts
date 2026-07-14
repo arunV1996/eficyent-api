@@ -5,6 +5,7 @@ import {
     index,
     show,
     store,
+    validateAccount,
 } from "../controller/beneficiary_account.controller";
 import { beneficiaryApiRoutes } from "../utils/api.routes";
 
@@ -32,6 +33,12 @@ router.post(
     beneficiaryApiRoutes.STORE.path,
     ...beneficiaryApiRoutes.STORE.middleware,
     store,
+);
+
+router.post(
+    beneficiaryApiRoutes.VALIDATE_ACCOUNT.path,
+    ...beneficiaryApiRoutes.VALIDATE_ACCOUNT.middleware,
+    validateAccount,
 );
 
 router.delete(

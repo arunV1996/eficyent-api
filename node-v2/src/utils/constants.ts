@@ -105,6 +105,12 @@ export const EXTERNAL_TYPE_DIGININE = "ed";
 export const EXTERNAL_TYPE_USI = "EUSI";
 export const EXTERNAL_TYPE_IME = "EIME";
 export const EXTERNAL_TYPE_MOBI = "EMB";
+export const EXTERNAL_TYPE_PROCESSING_UNIT = "pu";
+
+// Polymorphic morph classes (kept as Laravel FQCNs so audit rows are
+// interchangeable between the legacy and restructured services)
+export const MORPH_BENEFICIARY_TRANSACTION = "App\\Models\\BeneficiaryTransaction";
+export const MORPH_DEPOSIT_TRANSACTION = "App\\Models\\DepositTransaction";
 
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {
