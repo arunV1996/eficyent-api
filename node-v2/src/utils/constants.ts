@@ -139,6 +139,14 @@ export const DEPOSIT_FEE = "deposit_fee";
 export const MORPH_USER = "App\\Models\\User";
 export const MORPH_MERCHANT = "App\\Models\\Merchant";
 
+// Transactions substrate (mirror of legacy constants)
+export const TRANSACTION_TYPE_DEBIT = 1;
+export const TRANSACTION_TYPE_CREDIT = 2;
+export const WALLET_TRANSACTION_COMPLETED = 1;
+export const DEPOSIT_TRANSACTION_COMPLETED = 1;
+export const TEAM_MEMBER_ROLE_CORPORATE = 4;
+export const PAYOUT_JOB_STATUS_PENDING = 0;
+
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {
     PERSONAL: USER_TYPE_PERSONAL,
