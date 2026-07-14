@@ -17,6 +17,11 @@ import {
 } from "../validators/lookup.validator";
 import { getFormFieldsQueryValidator } from "../validators/onboarding.validator";
 import {
+    quoteStoreCrossFieldRules,
+    quoteStoreValidator,
+    refreshRatesBodyValidator,
+} from "../validators/quote.validator";
+import {
     loginValidator,
     registerValidator,
 } from "../validators/auth.validator";
@@ -191,6 +196,44 @@ export const lookupApiRoutes = {
             emailShouldBeVerified,
             validateMerchant,
             onboardingShouldBeCompleted,
+        ],
+    },
+    REFRESH_RATES: {
+        path: "/refresh-rates",
+        middleware: [
+            authSanctum,
+            emailShouldBeVerified,
+            validateMerchant,
+            onboardingShouldBeCompleted,
+            refreshRatesBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
+export const quoteApiRoutes = {
+    STORE: {
+        path: "/store",
+        middleware: [
+            authSanctum,
+            validateMerchant,
+            emailShouldBeVerified,
+            onboardingShouldBeCompleted,
+            quoteStoreValidator,
+            checkValidationErrors,
+            quoteStoreCrossFieldRules,
+        ],
+    },
+    EXCHANGE_RATE: {
+        path: "/exchange-rate",
+        middleware: [
+            authSanctum,
+            validateMerchant,
+            emailShouldBeVerified,
+            onboardingShouldBeCompleted,
+            quoteStoreValidator,
+            checkValidationErrors,
+            quoteStoreCrossFieldRules,
         ],
     },
 };

@@ -1,4 +1,6 @@
 import { Request, Response } from "express";
+import { convertUsdRateToAed } from "../helpers/aed_override.helper";
+import { getFixedRate } from "../helpers/commission.helper";
 import {
     countries as buildCountries,
     formatPaymentType,
@@ -9,6 +11,11 @@ import {
     states as buildStates,
 } from "../helpers/lookup.helper";
 import { settingGet } from "../helpers/setting.helper";
+import FxRate from "../models/fx_rate.model";
+import MobileCountryCode from "../models/mobile_country_code.model";
+import SupportedCountry from "../models/supported_country.model";
+import { getRate as massiveGetRate } from "../services/massive.service";
+import { getFlagUrl, relativeTime } from "../utils/common.utils";
 import {
     DEPOSIT_PURPOSE,
     DEPOSIT_SOURCE_OF_FUNDS,
@@ -189,6 +196,118 @@ export const getRates = async (
             { rates: await buildRates(req.user, searchKey) },
             "OK",
             "",
+        );
+    } catch (error) {
+        return res.handleError(error);
+    }
+};
+
+/**
+ * POST /api/user/lookups/refresh-rates
+ *
+ * Live-refreshes the cached fx_rates row for a currency pair. Massive
+ * only quotes USD as source; AED rates are derived by dividing the USD
+ * rate by env USD_TO_AED. Provider failures fall back to the fees
+ * table's FIXED fx override (User -> Merchant -> global), mirroring
+ * LookupRepository::createFxRate.
+ */
+export const refreshRates = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("401"), 401, 401);
+        }
+
+        const fromCurrency = String(req.body.from_currency).toUpperCase();
+        const toCurrency = String(req.body.to_currency).toUpperCase();
+
+        const supportedCountry = await SupportedCountry.findOne({
+            where: { currency: toCurrency, status: 1 },
+        });
+        if (!supportedCountry) {
+            return res.sendError(res.__("189"), 189, 400);
+        }
+
+        let finalRate: number;
+        let finalFromCurrency: string;
+
+        try {
+            const providerRate = await massiveGetRate({
+                amount: 1,
+                from_currency: "USD",
+                to_currency: toCurrency,
+            });
+            if (!providerRate.success || providerRate.fx_rate === null) {
+                throw new Error("Provider rate empty");
+            }
+            const isAedSource = fromCurrency === "AED";
+            finalRate = isAedSource
+                ? convertUsdRateToAed(providerRate.fx_rate)
+                : providerRate.fx_rate;
+            finalFromCurrency = isAedSource
+                ? "AED"
+                : providerRate.from_currency;
+        } catch {
+            const merchantId = req.user.merchantId;
+            const fallbackRate = await getFixedRate(
+                req.user.id,
+                merchantId,
+                fromCurrency,
+                toCurrency,
+            );
+            if (fallbackRate === null) {
+                return res.sendError(res.__("189"), 189, 400);
+            }
+            finalRate = fallbackRate;
+            finalFromCurrency = fromCurrency;
+        }
+
+        const existingRate = await FxRate.findOne({
+            where: {
+                fromCurrency: finalFromCurrency,
+                toCurrency,
+                provider: "em",
+            },
+        });
+
+        let cachedRate: FxRate;
+        if (existingRate) {
+            existingRate.rate = String(finalRate);
+            cachedRate = await existingRate.save();
+        } else {
+            cachedRate = await FxRate.create({
+                fromCurrency: finalFromCurrency,
+                toCurrency,
+                provider: "em",
+                rate: String(finalRate),
+            });
+        }
+
+        const countryCodeRow = await MobileCountryCode.findOne({
+            where: { alpha3Code: supportedCountry.countryCode },
+            attributes: ["alpha2Code"],
+        });
+        const flag = getFlagUrl(
+            countryCodeRow?.alpha2Code,
+            process.env.APP_URL || "",
+        );
+
+        return res.sendResponse(
+            {
+                rate: {
+                    from_currency: cachedRate.fromCurrency,
+                    to_currency: cachedRate.toCurrency,
+                    fx_rate: Number(cachedRate.rate).toFixed(4),
+                    flag,
+                    last_updated: relativeTime(
+                        cachedRate.updatedAt ?? new Date(),
+                    ),
+                },
+            },
+            "OK",
+            200,
         );
     } catch (error) {
         return res.handleError(error);

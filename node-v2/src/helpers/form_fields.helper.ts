@@ -33,20 +33,17 @@ import {
     USER_TYPE_PERSONAL,
 } from "../utils/constants";
 
+import { CodedError } from "./coded_error.helper";
+
 /**
  * Raised when a form-field builder rejects the requested corridor.
  * Controllers map this to the legacy {success:false, error, error_code}
  * envelope.
  */
-export class FormFieldsError extends Error {
-    public readonly errorCode: number;
-    public readonly httpStatus: number;
-
+export class FormFieldsError extends CodedError {
     constructor(message: string, errorCode = 422, httpStatus = 422) {
-        super(message);
+        super(message, errorCode, httpStatus);
         this.name = "FormFieldsError";
-        this.errorCode = errorCode;
-        this.httpStatus = httpStatus;
     }
 }
 

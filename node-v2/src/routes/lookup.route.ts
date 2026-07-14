@@ -7,6 +7,7 @@ import {
     mobileCountryCodes,
     paymentRails,
     receivingCountries,
+    refreshRates,
     states,
 } from "../controller/lookup.controller";
 import { lookupApiRoutes } from "../utils/api.routes";
@@ -59,6 +60,12 @@ router.get(
     lookupApiRoutes.GET_RATES.path,
     ...lookupApiRoutes.GET_RATES.middleware,
     getRates,
+);
+
+router.post(
+    lookupApiRoutes.REFRESH_RATES.path,
+    ...lookupApiRoutes.REFRESH_RATES.middleware,
+    refreshRates,
 );
 
 export default router;

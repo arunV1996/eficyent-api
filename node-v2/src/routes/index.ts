@@ -4,6 +4,7 @@ import beneficiaryAccountRoutes from "./beneficiary_account.route";
 import lookupRoutes from "./lookup.route";
 import onboardingRoutes from "./onboarding.route";
 import profileRoutes from "./profile.route";
+import quoteRoutes from "./quote.route";
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use("/user", profileRoutes);
 router.use("/user/lookups", lookupRoutes);
 router.use("/user/onboarding", onboardingRoutes);
 router.use("/user/beneficiaries", beneficiaryAccountRoutes);
+router.use("/user/quotes", quoteRoutes);
 
 export default router;

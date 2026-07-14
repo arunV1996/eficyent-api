@@ -128,6 +128,17 @@ export const WALLET_STATUS_ACTIVE = 1;
 // Business models
 export const BUSINESS_MODEL_DEAL_BASED = "DEAL_BASED";
 
+// Fee / commission configuration (mirror of legacy constants)
+export const MERCHANT_TYPE_WHITELABEL = 2;
+export const FEE_TYPE_FLAT = 1;
+export const FEE_TYPE_PERCENTAGE = 2;
+export const FEE_TYPE_FIXED = 3;
+export const TRANSACTION_FEE = "transaction_fee";
+export const FX_FEE = "fx_fee";
+export const DEPOSIT_FEE = "deposit_fee";
+export const MORPH_USER = "App\\Models\\User";
+export const MORPH_MERCHANT = "App\\Models\\Merchant";
+
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {
     PERSONAL: USER_TYPE_PERSONAL,
