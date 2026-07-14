@@ -1,5 +1,10 @@
 import { Request, Response } from "express";
 import { Op, WhereOptions } from "sequelize";
+import sequelize from "../config/database";
+import {
+    NormalizedBeneficiaryPayload,
+    validateAndNormalizeBeneficiary,
+} from "../helpers/beneficiary_normalizer.helper";
 import {
     beneficiaryFormFields,
     FormFieldsError,
@@ -7,8 +12,13 @@ import {
 import BeneficiaryAccount from "../models/beneficiary_account.model";
 import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
 import { beneficiaryAccountToJSON } from "../resources/beneficiary_account.resource";
+import { generateUniqueId } from "../utils/common.utils";
 import {
+    BENEFICIARY_ACCOUNT_ACTIVATED,
     BENEFICIARY_ACCOUNT_STATUS_MAP,
+    PAYMENT_RAIL_ACH,
+    PAYMENT_RAIL_SWIFT,
+    PAYMENT_RAIL_WIRE,
     TAKE_COUNT,
     USER_TYPE_MAP,
 } from "../utils/constants";
@@ -187,6 +197,225 @@ export const show = async (req: Request, res: Response): Promise<void> => {
             "",
         );
     } catch (error) {
+        return res.handleError(error);
+    }
+};
+
+const stringOrNull = (
+    source: Record<string, unknown>,
+    key: string,
+): string | null => {
+    const value = source[key];
+    return typeof value === "string" && value.length > 0 ? value : null;
+};
+
+/**
+ * Maps the normalizer's snake_case payload onto BeneficiaryAccount
+ * model attributes (mirror of the legacy toBeneficiaryInsert).
+ */
+const beneficiaryAttributesFromNormalized = (
+    payload: NormalizedBeneficiaryPayload["beneficiaryAccount"],
+    userId: number,
+): Record<string, unknown> => {
+    return {
+        uniqueId: generateUniqueId(24),
+        userId,
+        type: typeof payload.type === "number" ? payload.type : null,
+        country: String(payload.country ?? "US"),
+        currency: String(payload.currency ?? "USD"),
+        firstName: stringOrNull(payload, "first_name"),
+        middleName: stringOrNull(payload, "middle_name"),
+        lastName: stringOrNull(payload, "last_name"),
+        email: stringOrNull(payload, "email"),
+        mobileCountryCode: stringOrNull(payload, "mobile_country_code"),
+        mobile: stringOrNull(payload, "mobile"),
+        paymentRail: stringOrNull(payload, "payment_rail"),
+        serviceBank: stringOrNull(payload, "service_bank"),
+        bankName: stringOrNull(payload, "bank_name"),
+        routingNumber: stringOrNull(payload, "routing_number"),
+        accountName: stringOrNull(payload, "account_name"),
+        accountNumber: stringOrNull(payload, "account_number"),
+        accountType: stringOrNull(payload, "account_type"),
+        swiftCode: stringOrNull(payload, "swift_code"),
+        iban: stringOrNull(payload, "iban"),
+        intermediaryBankSwiftCode: stringOrNull(
+            payload,
+            "intermediary_bank_swift_code",
+        ),
+        intermediaryBankName: stringOrNull(payload, "intermediary_bank_name"),
+        intermediaryBankAba: stringOrNull(payload, "intermediary_bank_aba"),
+        intermediaryBankAddress: stringOrNull(
+            payload,
+            "intermediary_bank_address",
+        ),
+        intermediaryBankCity: stringOrNull(payload, "intermediary_bank_city"),
+        intermediaryBankState: stringOrNull(payload, "intermediary_bank_state"),
+        intermediaryBankPostalCode: stringOrNull(
+            payload,
+            "intermediary_bank_postal_code",
+        ),
+        intermediaryBankCountry: stringOrNull(
+            payload,
+            "intermediary_bank_country",
+        ),
+        bankCountry: stringOrNull(payload, "bank_country"),
+        businessName: stringOrNull(payload, "business_name"),
+        businessCountry: stringOrNull(payload, "business_country"),
+        status: BENEFICIARY_ACCOUNT_ACTIVATED,
+    };
+};
+
+/**
+ * Maps the normalizer's additional-detail payload onto
+ * BeneficiaryAdditionalDetail attributes (mirror of toAdditionalInsert).
+ */
+const additionalDetailAttributesFromNormalized = (
+    payload: NormalizedBeneficiaryPayload["beneficiaryAccountAdditionalDetail"],
+): Record<string, unknown> => {
+    return {
+        uniqueId: generateUniqueId(24),
+        addressType: stringOrNull(payload, "address_type"),
+        addressLine1: stringOrNull(payload, "address_line1"),
+        addressLine2: stringOrNull(payload, "address_line2"),
+        postalCode: stringOrNull(payload, "postal_code"),
+        city: stringOrNull(payload, "city"),
+        state: stringOrNull(payload, "state"),
+        country: stringOrNull(payload, "country"),
+        paymentType: stringOrNull(payload, "payment_type"),
+        bankAddressLine1: stringOrNull(payload, "bank_address_line1"),
+        bankAddressLine2: stringOrNull(payload, "bank_address_line2"),
+        bankPostalCode: stringOrNull(payload, "bank_postal_code"),
+        bankCity: stringOrNull(payload, "bank_city"),
+        bankState: stringOrNull(payload, "bank_state"),
+        bankCountry: stringOrNull(payload, "bank_country"),
+        purposeOfTransaction: stringOrNull(payload, "purpose_of_transaction"),
+        userSourceOfIncome: stringOrNull(payload, "user_source_of_income"),
+    };
+};
+
+/**
+ * POST /api/user/beneficiaries/store
+ *
+ * Validates the dynamic beneficiary form, guards against duplicate
+ * (account_number, currency) pairs, and persists the account + its
+ * additional-detail row in one transaction. USA/USD accounts without a
+ * SWIFT code fan out into ACH + WIRE rail rows; with a SWIFT code they
+ * become a single SWIFT rail row (mirror of the legacy store).
+ *
+ * Deferred: the Caliza createBeneficiary background sync (needs the
+ * user_services model + Caliza provider service tranche).
+ */
+export const store = async (req: Request, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("401"), 401, 401);
+        }
+
+        const normalized = await validateAndNormalizeBeneficiary(
+            req.body as Record<string, unknown>,
+            req.user,
+        );
+
+        const accountNumber = normalized.beneficiaryAccount.account_number as
+            | string
+            | undefined;
+        if (accountNumber) {
+            const duplicateAccount = await BeneficiaryAccount.findOne({
+                where: {
+                    userId: req.user.id,
+                    accountNumber,
+                    currency: String(
+                        normalized.beneficiaryAccount.currency ?? "",
+                    ),
+                },
+            });
+            if (duplicateAccount) {
+                return res.sendError(res.__("158"), 158, 400);
+            }
+        }
+
+        const authenticatedUserId = req.user.id;
+        const createdAccounts = await sequelize.transaction(
+            async (databaseTransaction) => {
+                const baseAttributes = beneficiaryAttributesFromNormalized(
+                    normalized.beneficiaryAccount,
+                    authenticatedUserId,
+                );
+
+                // USA + USD with no SWIFT -> create both ACH and WIRE rails.
+                const isUsdUsa =
+                    baseAttributes.country === "USA" &&
+                    baseAttributes.currency === "USD";
+                const hasSwiftCode = Boolean(baseAttributes.swiftCode);
+
+                const paymentRails = isUsdUsa
+                    ? hasSwiftCode
+                        ? [PAYMENT_RAIL_SWIFT]
+                        : [PAYMENT_RAIL_ACH, PAYMENT_RAIL_WIRE]
+                    : [(baseAttributes.paymentRail as string | null) ?? null];
+
+                const createdRows: BeneficiaryAccount[] = [];
+                for (const paymentRail of paymentRails) {
+                    const accountRow = await BeneficiaryAccount.create(
+                        {
+                            ...baseAttributes,
+                            uniqueId: generateUniqueId(24),
+                            paymentRail,
+                        } as never,
+                        { transaction: databaseTransaction },
+                    );
+                    await BeneficiaryAdditionalDetail.create(
+                        {
+                            ...additionalDetailAttributesFromNormalized(
+                                normalized.beneficiaryAccountAdditionalDetail,
+                            ),
+                            beneficiaryAccountId: accountRow.id,
+                        } as never,
+                        { transaction: databaseTransaction },
+                    );
+                    createdRows.push(accountRow);
+                }
+                if (createdRows.length === 0) {
+                    throw new FormFieldsError(
+                        res.__("117"),
+                        117,
+                        400,
+                    );
+                }
+                return createdRows;
+            },
+        );
+
+        const lastCreated = createdAccounts[createdAccounts.length - 1];
+        const refreshedAccount = await BeneficiaryAccount.findByPk(
+            lastCreated.id,
+            {
+                include: [
+                    {
+                        model: BeneficiaryAdditionalDetail,
+                        as: "additionalDetails",
+                    },
+                ],
+            },
+        );
+
+        return res.sendResponse(
+            {
+                beneficiary_account: refreshedAccount
+                    ? await beneficiaryAccountToJSON(refreshedAccount)
+                    : null,
+            },
+            "OK",
+            200,
+        );
+    } catch (error) {
+        if (error instanceof FormFieldsError) {
+            return res.sendError(
+                error.message,
+                error.errorCode,
+                error.httpStatus,
+            );
+        }
         return res.handleError(error);
     }
 };

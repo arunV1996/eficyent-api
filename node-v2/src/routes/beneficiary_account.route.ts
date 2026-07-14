@@ -4,6 +4,7 @@ import {
     getFormFields,
     index,
     show,
+    store,
 } from "../controller/beneficiary_account.controller";
 import { beneficiaryApiRoutes } from "../utils/api.routes";
 
@@ -25,6 +26,12 @@ router.get(
     beneficiaryApiRoutes.SHOW.path,
     ...beneficiaryApiRoutes.SHOW.middleware,
     show,
+);
+
+router.post(
+    beneficiaryApiRoutes.STORE.path,
+    ...beneficiaryApiRoutes.STORE.middleware,
+    store,
 );
 
 router.delete(

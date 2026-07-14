@@ -113,6 +113,12 @@ export const beneficiaryApiRoutes = {
             checkValidationErrors,
         ],
     },
+    STORE: {
+        // Body is validated dynamically against beneficiaryFormFields
+        // inside the controller, so no static validator here.
+        path: "/store",
+        middleware: [...beneficiaryBaseMiddleware],
+    },
     SHOW: {
         path: "/show",
         middleware: [
