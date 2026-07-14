@@ -75,7 +75,7 @@ export const changePassword = async (
         const oldPassword = String(req.body.old_password);
         const newPassword = String(req.body.password);
 
-        // We need the argon2 hash for verification; the default scope
+        // We need the bcrypt hash for verification; the default scope
         // strips password, so query again with the withPassword scope.
         const userWithPassword = await User.scope("withPassword").findByPk(
             req.user.id,
