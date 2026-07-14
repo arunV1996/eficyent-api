@@ -14,6 +14,10 @@ import {
     DEPOSIT_TRANSACTION_FAILED,
     DEPOSIT_TRANSACTION_REJECTED,
     DISPOSABLE_EMAIL_DOMAINS,
+    ONBOARDING_STATUS_CREATED,
+    ONBOARDING_STATUS_FAILED,
+    ONBOARDING_STATUS_INITIATED,
+    ONBOARDING_STATUS_PENDING,
     VIRTUAL_ACCOUNT_STATUS_CREATED,
     VIRTUAL_ACCOUNT_STATUS_FAILED,
     VIRTUAL_ACCOUNT_STATUS_PENDING,
@@ -453,5 +457,23 @@ export const depositTransactionStatusLabel = (value: number): string => {
             return "FAILED";
         default:
             return "PROCESSING";
+    }
+};
+
+/**
+ * Provider onboarding status label. Mirror of onboarding_status_label().
+ */
+export const onboardingStatusLabel = (value: number): string => {
+    switch (value) {
+        case ONBOARDING_STATUS_PENDING:
+            return "PENDING";
+        case ONBOARDING_STATUS_INITIATED:
+            return "INITIATED";
+        case ONBOARDING_STATUS_CREATED:
+            return "CREATED";
+        case ONBOARDING_STATUS_FAILED:
+            return "FAILED";
+        default:
+            return "PENDING";
     }
 };

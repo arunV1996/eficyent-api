@@ -1,5 +1,6 @@
 import { DataTypes, Model, Optional } from "sequelize";
 import sequelize from "../config/database";
+import User from "./user.model";
 import type SenderDocument from "./sender_document.model";
 
 /**
@@ -82,8 +83,10 @@ class Sender
     public readonly updatedAt!: Date | null;
     public readonly deletedAt!: Date | null;
 
-    // Eager-loaded association (declared in sender_document.model.ts).
+    // Eager-loaded associations (documents is declared in
+    // sender_document.model.ts).
     public readonly documents?: SenderDocument[];
+    public readonly user?: User;
 }
 
 Sender.init(
@@ -145,5 +148,8 @@ Sender.init(
         ],
     },
 );
+
+// Alias mirrors the legacy Prisma include name (sender.user).
+Sender.belongsTo(User, { foreignKey: "userId", as: "user" });
 
 export default Sender;

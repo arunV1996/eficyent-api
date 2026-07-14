@@ -157,6 +157,20 @@ export const VIRTUAL_ACCOUNT_STATUS_PENDING = 0;
 export const VIRTUAL_ACCOUNT_STATUS_CREATED = 1;
 export const VIRTUAL_ACCOUNT_STATUS_FAILED = 2;
 
+export const VIRTUAL_ACCOUNT_STATUS_MAP: Record<string, number> = {
+    PENDING: VIRTUAL_ACCOUNT_STATUS_PENDING,
+    CREATED: VIRTUAL_ACCOUNT_STATUS_CREATED,
+    FAILED: VIRTUAL_ACCOUNT_STATUS_FAILED,
+};
+
+// Provider onboarding statuses (mirror of ONBOARDING_STATUS_*)
+export const ONBOARDING_STATUS_PENDING = 0;
+export const ONBOARDING_STATUS_INITIATED = 1;
+export const ONBOARDING_STATUS_CREATED = 2;
+export const ONBOARDING_STATUS_FAILED = 3;
+
+export const EXTERNAL_TYPE_FVBANK = "ef";
+
 // Deposit transaction statuses (mirror of legacy constants;
 // DEPOSIT_TRANSACTION_COMPLETED lives in the transactions substrate below)
 export const DEPOSIT_TRANSACTION_PENDING = 0;
@@ -281,8 +295,20 @@ export const CALLBACK_PAYOUT_FAILED = "TRANSACTION_FAILED";
 export const CALLBACK_DEPOSIT_SUCCESS = "DEPOSIT_COMPLETED";
 export const CALLBACK_DEPOSIT_FAILED = "DEPOSIT_REJECTED";
 
-// Senders
+// Senders (mirror of legacy SENDER_STATUS_* + remitter_status_map())
+export const SENDER_STATUS_PENDING = 0;
+export const SENDER_STATUS_APPROVED = 1;
+export const SENDER_STATUS_REJECTED = 2;
+export const SENDER_STATUS_EXPIRED = 3;
 export const SENDER_STATUS_DISABLED = 4;
+
+export const REMITTER_STATUS_MAP: Record<string, number> = {
+    PENDING: SENDER_STATUS_PENDING,
+    APPROVED: SENDER_STATUS_APPROVED,
+    REJECTED: SENDER_STATUS_REJECTED,
+    EXPIRED: SENDER_STATUS_EXPIRED,
+    DISABLED: SENDER_STATUS_DISABLED,
+};
 
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {

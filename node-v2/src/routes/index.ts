@@ -10,7 +10,9 @@ import onboardingRoutes from "./onboarding.route";
 import profileRoutes from "./profile.route";
 import { publicRouter, userPublicRouter } from "./public.route";
 import quoteRoutes from "./quote.route";
+import senderRoutes from "./sender.route";
 import statementRoutes from "./statement.route";
+import virtualAccountRoutes from "./virtual_account.route";
 import walletRoutes from "./wallet.route";
 
 const router = Router();
@@ -22,6 +24,8 @@ router.use("/user", profileRoutes);
 router.use("/user/lookups", lookupRoutes);
 router.use("/user/onboarding", onboardingRoutes);
 router.use("/user/beneficiaries", beneficiaryAccountRoutes);
+router.use("/user/accounts", virtualAccountRoutes);
+router.use("/user/remitters", senderRoutes);
 router.use("/user/beneficiary-transactions", beneficiaryTransactionRoutes);
 router.use("/user/quotes", quoteRoutes);
 router.use("/user/wallets", walletRoutes);

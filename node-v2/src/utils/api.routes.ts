@@ -80,7 +80,19 @@ import {
     depositLookupsQueryValidator,
     statesQueryValidator,
 } from "../validators/lookup.validator";
+import {
+    senderFormFieldsQueryValidator,
+    senderListQueryValidator,
+    senderShowQueryValidator,
+    senderUpdateBodyValidator,
+} from "../validators/sender.validator";
 import { statementExportQueryValidator } from "../validators/statement.validator";
+import {
+    ACTIVATE_ALLOWED_KEYS,
+    activateBodyValidator,
+    virtualAccountIdQueryValidator,
+    virtualAccountListQueryValidator,
+} from "../validators/virtual_account.validator";
 import {
     changePasswordValidator,
     PASSWORD_ONLY_ALLOWED_KEYS,
@@ -523,6 +535,122 @@ export const depositApiRoutes = {
             idempotency(),
             strictBody(DEPOSIT_STORE_ALLOWED_KEYS),
             depositStoreBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
+// Shared stack for the virtual-accounts group (mirror of the legacy
+// virtualAccounts.routes router-level ordering).
+const virtualAccountBaseMiddleware = [
+    authSanctum,
+    validateMerchant,
+    emailShouldBeVerified,
+    onboardingShouldBeCompleted,
+];
+
+export const virtualAccountApiRoutes = {
+    LIST: {
+        path: "/list",
+        middleware: [
+            ...virtualAccountBaseMiddleware,
+            virtualAccountListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    SHOW: {
+        path: "/show",
+        middleware: [
+            ...virtualAccountBaseMiddleware,
+            virtualAccountIdQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    AVAILABLE_BANKS: {
+        path: "/available_banks",
+        middleware: [...virtualAccountBaseMiddleware],
+    },
+    ACTIVATE: {
+        path: "/activate",
+        middleware: [
+            ...virtualAccountBaseMiddleware,
+            strictBody(ACTIVATE_ALLOWED_KEYS),
+            activateBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    GET_ACCOUNT_BALANCE: {
+        path: "/get_account_balance",
+        middleware: [
+            ...virtualAccountBaseMiddleware,
+            virtualAccountIdQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    GET_VIRTUAL_ACCOUNTS: {
+        path: "/get_virtual_Accounts",
+        middleware: [...virtualAccountBaseMiddleware],
+    },
+    BALANCES: {
+        path: "/balances",
+        middleware: [...virtualAccountBaseMiddleware],
+    },
+};
+
+// Shared stack for the remitters group (mirror of the legacy
+// senders.routes router-level ordering).
+const senderBaseMiddleware = [
+    authSanctum,
+    validateMerchant,
+    emailShouldBeVerified,
+    onboardingShouldBeCompleted,
+];
+
+export const senderApiRoutes = {
+    GET_FORM_FIELDS: {
+        path: "/get-form-fields",
+        middleware: [
+            ...senderBaseMiddleware,
+            senderFormFieldsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    LIST: {
+        path: "/list",
+        middleware: [
+            ...senderBaseMiddleware,
+            senderListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    STORE: {
+        // Body is validated dynamically against senderFields inside
+        // the normalizer, so no static validator here (same as the
+        // beneficiary store).
+        path: "/store",
+        middleware: [...senderBaseMiddleware],
+    },
+    UPDATE: {
+        path: "/update",
+        middleware: [
+            ...senderBaseMiddleware,
+            senderUpdateBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    SHOW: {
+        path: "/show",
+        middleware: [
+            ...senderBaseMiddleware,
+            senderShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    DELETE: {
+        path: "/delete",
+        middleware: [
+            ...senderBaseMiddleware,
+            senderShowQueryValidator,
             checkValidationErrors,
         ],
     },
