@@ -64,10 +64,13 @@ export const responseHelpers = (
         code: number | string,
         httpStatus = 200,
     ): void => {
+        // Mirror of the legacy sendResponse envelope (key order matters
+        // to some consumers): {success, message, code, data}. An empty
+        // message passes through as "" — no fallback substitution.
         res.status(httpStatus).json({
-            status: true,
-            code,
+            success: true,
             message,
+            code,
             data: data ?? null,
         });
     };

@@ -72,7 +72,7 @@ export const getFormFields = async (
             merchantId: req.user.merchantId,
         });
 
-        return res.sendResponse({ form_fields: fields }, "OK", 200);
+        return res.sendResponse({ form_fields: fields }, "", 200);
     } catch (error) {
         if (error instanceof FormFieldsError) {
             return res.sendError(
@@ -168,7 +168,7 @@ export const index = async (req: Request, res: Response): Promise<void> => {
                     accountRows.map(beneficiaryAccountToJSON),
                 ),
             },
-            "OK",
+            "",
             "",
         );
     } catch (error) {
@@ -416,7 +416,7 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                     ? await beneficiaryAccountToJSON(refreshedAccount)
                     : null,
             },
-            "OK",
+            "",
             200,
         );
     } catch (error) {

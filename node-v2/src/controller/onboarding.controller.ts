@@ -233,7 +233,7 @@ export const getFormFields = async (
             fields = await prefillFromUser(fields, req.user);
         }
 
-        return res.sendResponse({ form_fields: fields }, "OK", 200);
+        return res.sendResponse({ form_fields: fields }, "", 200);
     } catch (error) {
         return res.handleError(error);
     }

@@ -113,28 +113,41 @@ app.use(
     }),
 );
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(",")
-    : ["http://localhost:3000"];
+// Mirror of the legacy corsMiddleware: comma-separated origin
+// allowlist, identical in every environment (no dev bypass).
+// CORS_ORIGINS matches the legacy setting name; ALLOWED_ORIGINS is
+// kept as a fallback for existing deployments.
+const allowedOrigins = (
+    process.env.CORS_ORIGINS ||
+    process.env.ALLOWED_ORIGINS ||
+    "http://localhost:3000"
+)
+    .split(",")
+    .map((originEntry) => originEntry.trim())
+    .filter(Boolean);
 
 app.use(
     cors({
         origin: (origin, callback) => {
+            // Allow same-origin / non-browser requests (no Origin header).
             if (!origin) {
                 return callback(null, true);
             }
-            if (allowedOrigins.indexOf(origin) !== -1 || !isProduction) {
-                callback(null, true);
-            } else {
-                callback(new Error("Not allowed by CORS"));
-            }
+            callback(null, allowedOrigins.includes(origin));
         },
-        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allowedHeaders: [
             "Content-Type",
             "Authorization",
-            "X-Requested-With",
-            "Language",
+            "X-Request-Id",
+            "X-Merchant-Id",
+            "X-Merchant-Signature",
+            "Idempotency-Key",
+            "X-Api-Key",
+            "X-Api-Timestamp",
+            "X-Api-Signature",
+            "X-Api-Language",
+            "X-Api-Device-Id",
         ],
         credentials: true,
         optionsSuccessStatus: 200,

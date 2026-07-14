@@ -28,8 +28,11 @@ import {
  * Mirror of the legacy Api\LookupsController public endpoints.
  *
  * The legacy controller responds with sendResponse(res, "", "", data),
- * which serializes to {status: true, code: "", message: "OK", data} —
- * we call res.sendResponse(data, "OK", "") to keep that envelope
+ * which serializes to {status: true, code: "", message: "", data} —
+ * we call res.sendResponse(data,
+            "",
+            "",
+        ) to keep that envelope
  * byte-identical.
  *
  * Deferred: deposit_wallets (legacy returns all active AdminWallet
@@ -46,7 +49,7 @@ export const mobileCountryCodes = async (
     try {
         return res.sendResponse(
             { mobile_country_codes: await buildMobileCountryCodes() },
-            "OK",
+            "",
             "",
         );
     } catch (error) {
@@ -62,7 +65,7 @@ export const countries = async (
     res: Response,
 ): Promise<void> => {
     try {
-        return res.sendResponse({ countries: await buildCountries() }, "OK", "");
+        return res.sendResponse({ countries: await buildCountries() }, "", "");
     } catch (error) {
         return res.handleError(error);
     }
@@ -78,7 +81,7 @@ export const states = async (req: Request, res: Response): Promise<void> => {
         };
         return res.sendResponse(
             { states: await buildStates(countryCode) },
-            "OK",
+            "",
             "",
         );
     } catch (error) {
@@ -90,7 +93,7 @@ export const states = async (req: Request, res: Response): Promise<void> => {
  * GET /api/user/lookups/payment_rails
  */
 export const paymentRails = (_req: Request, res: Response): void => {
-    return res.sendResponse({ payment_rails: PAYMENT_RAILS }, "OK", "");
+    return res.sendResponse({ payment_rails: PAYMENT_RAILS }, "", "");
 };
 
 /**
@@ -103,7 +106,7 @@ export const banks = async (req: Request, res: Response): Promise<void> => {
         };
         return res.sendResponse(
             { banks: await serviceBanks(countryCode) },
-            "OK",
+            "",
             "",
         );
     } catch (error) {
@@ -168,7 +171,7 @@ export const receivingCountries = async (
                     amount: Number(defaultAmount),
                 },
             },
-            "OK",
+            "",
             "",
         );
     } catch (error) {
@@ -198,7 +201,7 @@ export const getRates = async (
         };
         return res.sendResponse(
             { rates: await buildRates(req.user, searchKey) },
-            "OK",
+            "",
             "",
         );
     } catch (error) {
@@ -310,7 +313,7 @@ export const refreshRates = async (
                     ),
                 },
             },
-            "OK",
+            "",
             200,
         );
     } catch (error) {
@@ -339,5 +342,5 @@ export const depositLookups = (req: Request, res: Response): void => {
         value,
     }));
 
-    return res.sendResponse({ lookups }, "OK", "");
+    return res.sendResponse({ lookups }, "", "");
 };
