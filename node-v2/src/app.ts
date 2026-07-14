@@ -28,6 +28,7 @@ import "./models/mobile_country_code.model";
 import "./models/payout_job.model";
 import "./models/personal_access_token.model";
 import "./models/quote.model";
+import "./models/sender.model";
 import "./models/setting.model";
 import "./models/state.model";
 import "./models/user.model";

@@ -145,7 +145,17 @@ export const TRANSACTION_TYPE_CREDIT = 2;
 export const WALLET_TRANSACTION_COMPLETED = 1;
 export const DEPOSIT_TRANSACTION_COMPLETED = 1;
 export const TEAM_MEMBER_ROLE_CORPORATE = 4;
+export const TEAM_MEMBER_ROLE_SUPPORT_MEMBER = 3;
 export const PAYOUT_JOB_STATUS_PENDING = 0;
+
+// Beneficiary transaction statuses (subset needed so far)
+export const BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL = 0;
+export const BENEFICIARY_TRANSACTION_APPROVED = 1;
+export const BENEFICIARY_TRANSACTION_INITIATED = 2;
+export const BENEFICIARY_TRANSACTION_CORPORATE_INITIATED = 9;
+
+// Senders
+export const SENDER_STATUS_DISABLED = 4;
 
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {

@@ -133,6 +133,29 @@ export const generateBackupCodes = (): string => {
 };
 
 /**
+ * Transaction reference number: 2-digit scope + UTC timestamp down to
+ * milliseconds + 3 random digits. Mirror of
+ * generateTransactionRefNumber().
+ */
+export const generateTransactionRefNumber = (
+    scopeId: number | string,
+): string => {
+    const scopedId = String(scopeId).padStart(2, "0").slice(-2);
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(now.getUTCDate()).padStart(2, "0");
+    const hours = String(now.getUTCHours()).padStart(2, "0");
+    const minutes = String(now.getUTCMinutes()).padStart(2, "0");
+    const seconds = String(now.getUTCSeconds()).padStart(2, "0");
+    const millis = String(now.getUTCMilliseconds()).padStart(3, "0");
+    const randomDigits = String(
+        randomBytes(2).readUInt16BE(0) % 1000,
+    ).padStart(3, "0");
+    return `${scopedId}${year}${month}${day}${hours}${minutes}${seconds}${millis}${randomDigits}`;
+};
+
+/**
  * ISO timestamp N minutes from now, used as an OTP / email-code expiry.
  * Mirror of generateEmailCodeExpiry().
  */
