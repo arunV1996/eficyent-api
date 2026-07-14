@@ -111,6 +111,22 @@ export const EXTERNAL_TYPE_PROCESSING_UNIT = "pu";
 // interchangeable between the legacy and restructured services)
 export const MORPH_BENEFICIARY_TRANSACTION = "App\\Models\\BeneficiaryTransaction";
 export const MORPH_DEPOSIT_TRANSACTION = "App\\Models\\DepositTransaction";
+export const MORPH_VIRTUAL_ACCOUNT = "App\\Models\\VirtualAccount";
+export const MORPH_WALLET = "App\\Models\\Wallet";
+
+// Quotes
+export const QUOTE_TYPE_FORWARD = "FORWARD";
+export const QUOTE_TYPE_REVERSE = "REVERSE";
+export const QUOTE_MODE_QUOTATION = "quote";
+export const QUOTE_MODE_RATE = "rate";
+export const QUOTE_SUBMITTED = 1;
+export const EXTERNAL_TYPE_MASSIVE = "em";
+
+// Wallets
+export const WALLET_STATUS_ACTIVE = 1;
+
+// Business models
+export const BUSINESS_MODEL_DEAL_BASED = "DEAL_BASED";
 
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {
