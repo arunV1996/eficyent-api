@@ -86,3 +86,22 @@ export const authSanctum = async (
         res.handleError(error);
     }
 };
+
+/**
+ * Equivalent of the Laravel `email_should_be_verified` middleware.
+ * Must run after authSanctum. Legacy contract: HTTP 403 with
+ * error_code 403 "Email not verified."
+ */
+export const emailShouldBeVerified = (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): void => {
+    if (!req.user) {
+        return res.sendError(res.__("401"), 401, 401);
+    }
+    if (!req.user.emailVerifiedAt) {
+        return res.sendError(res.__("403"), 403, 403);
+    }
+    next();
+};

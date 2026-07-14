@@ -36,6 +36,7 @@ interface UserAttributes {
     emailVerifiedAt: Date | null;
     tourStatus: number;
     timezone: string;
+    memo: string | null;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -62,6 +63,7 @@ interface UserCreationAttributes
         | "emailVerifiedAt"
         | "tourStatus"
         | "timezone"
+        | "memo"
     > {}
 
 class User
@@ -91,6 +93,7 @@ class User
     public emailVerifiedAt!: Date | null;
     public tourStatus!: number;
     public timezone!: string;
+    public memo!: string | null;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -201,6 +204,10 @@ User.init(
             type: DataTypes.STRING(30),
             allowNull: false,
             defaultValue: "Asia/Kolkata",
+        },
+        memo: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
         },
     },
     {

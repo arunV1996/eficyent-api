@@ -1,6 +1,7 @@
 import { Router } from "express";
 import authRoutes from "./auth.route";
 import lookupRoutes from "./lookup.route";
+import onboardingRoutes from "./onboarding.route";
 import profileRoutes from "./profile.route";
 
 const router = Router();
@@ -10,5 +11,6 @@ const router = Router();
 router.use("/user", authRoutes);
 router.use("/user", profileRoutes);
 router.use("/user/lookups", lookupRoutes);
+router.use("/user/onboarding", onboardingRoutes);
 
 export default router;

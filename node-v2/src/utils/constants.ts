@@ -38,6 +38,33 @@ export const LOOKUP_TYPE_ID_TYPE = "id_types";
 export const LOOKUP_TYPE_BUSINESS_TYPES = "business_types";
 export const LOOKUP_TYPE_PROFESSIONS = "professions";
 export const LOOKUP_TYPE_SOURCES_OF_INCOMES = "sources_of_incomes";
+export const LOOKUP_TYPE_BUSINESS_VERIFICATION_TYPES =
+    "business_verification_types";
+export const LOOKUP_TYPE_ADDRESS_TYPES = "address_types";
+export const LOOKUP_TYPE_PROOF_OF_ADDRESS = "proof_of_address";
+export const LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS =
+    "purposes_of_transactions";
+export const LOOKUP_TYPE_EEC_PAYMENT_PURPOSE = "eec_payment_purpose";
+export const LOOKUP_TYPE_DOCUMENT_TYPES = "document_types";
+export const LOOKUP_TYPE_COUNTRY_CONFIGURATIONS = "country_configurations";
+
+// Onboarding steps (mirror of legacy constants)
+export const ONBOARDING_STEP_ONE = 1;
+export const ONBOARDING_STEP_TWO = 2;
+export const ONBOARDING_STEP_THREE = 3;
+export const ONBOARDING_STEP_TWO_COMPLETED = 2;
+export const ONBOARDING_STEP_THREE_COMPLETED = 3;
+
+// get-form-fields `type` query value -> numeric step
+export const ONBOARDING_STEP_MAP: Record<string, number> = {
+    REGISTER_USER: ONBOARDING_STEP_ONE,
+    GET_INFORMATION: ONBOARDING_STEP_TWO_COMPLETED,
+    GET_DOCUMENTS: ONBOARDING_STEP_THREE_COMPLETED,
+};
+
+// Identity verification statuses / providers (subset needed so far)
+export const IDENTITY_VERIFICATION_PENDING = 1;
+export const ID_VERIFIED_BY_ADMIN = "ad";
 
 // Default business model when a merchant has no business_model setting
 export const BUSINESS_MODEL_MTO = "mto";

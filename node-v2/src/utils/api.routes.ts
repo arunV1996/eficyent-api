@@ -1,6 +1,7 @@
-import { authSanctum } from "../middleware/auth";
+import { authSanctum, emailShouldBeVerified } from "../middleware/auth";
 import { checkValidationErrors } from "../middleware/checkValidationErrors";
 import { validateMerchant } from "../middleware/validateMerchant";
+import { getFormFieldsQueryValidator } from "../validators/onboarding.validator";
 import {
     loginValidator,
     registerValidator,
@@ -49,6 +50,27 @@ export const profileApiRoutes = {
     UPDATE_TOUR_STATUS: {
         path: "/update-tour-status",
         middleware: [authSanctum],
+    },
+};
+
+export const onboardingApiRoutes = {
+    GET_FORM_FIELDS: {
+        path: "/get-form-fields",
+        middleware: [
+            authSanctum,
+            validateMerchant,
+            emailShouldBeVerified,
+            getFormFieldsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    STEP_TWO: {
+        path: "/stepTwo",
+        middleware: [authSanctum, validateMerchant, emailShouldBeVerified],
+    },
+    STEP_THREE: {
+        path: "/stepThree",
+        middleware: [authSanctum, validateMerchant, emailShouldBeVerified],
     },
 };
 

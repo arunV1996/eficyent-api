@@ -211,6 +211,52 @@ export const userInformationToJSON = async (
 };
 
 /**
+ * Onboarding payload for POST /onboarding/stepTwo (mirror of
+ * userShaper.shapeOnboardingUser).
+ */
+export const onboardingUserToJSON = async (
+    user: User,
+    information: UserInformation | null,
+): Promise<Record<string, unknown>> => {
+    const response: Record<string, unknown> = {
+        unique_id: user.uniqueId,
+        title: user.title,
+        first_name: user.firstName,
+        last_name: user.lastName,
+        email: user.email,
+        mobile_country_code: user.mobileCountryCode ?? "",
+        mobile: user.mobile ?? "",
+        email_status: user.emailVerifiedAt ? "VERIFIED" : "NOT_VERIFIED",
+        user_type:
+            Number(user.userType) === USER_TYPE_BUSINESS
+                ? "BUSINESS"
+                : "PERSONAL",
+        dob: user.dob ? toDateOnlyString(user.dob) : null,
+        onboarding_step: onboardingLabel(user.onboardingStep),
+        id_verification: verificationLabel(user.idVerification),
+    };
+
+    const informationShaped = await userInformationToJSON(user, information);
+    Object.assign(response, informationShaped);
+
+    return response;
+};
+
+/**
+ * Documents payload for POST /onboarding/stepThree (mirror of
+ * userShaper.shapeDocumentsUser).
+ */
+export const documentsUserToJSON = async (
+    user: User,
+    documents: UserDocument[],
+): Promise<Record<string, unknown>> => {
+    return {
+        onboarding_step: onboardingLabel(user.onboardingStep),
+        documents: await Promise.all(documents.map(documentToJSON)),
+    };
+};
+
+/**
  * Full profile payload for GET /api/user/profile (mirror of
  * userShaper.shapeFullUser). Field order and shape are preserved
  * exactly so the frontend sees no change.

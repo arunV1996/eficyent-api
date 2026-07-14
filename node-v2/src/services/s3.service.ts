@@ -1,5 +1,10 @@
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+    GetObjectCommand,
+    PutObjectCommand,
+    S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { randomUUID } from "crypto";
 
 /**
  * S3 storage service (external integration, per the services doctrine).
@@ -61,6 +66,74 @@ const getClient = (): { client: S3Client; bucket: string } => {
     cachedBucket = bucket;
 
     return { client: cachedClient, bucket: cachedBucket };
+};
+
+const mimeToExtension = (mime: string): string => {
+    const extensionMap: Record<string, string> = {
+        "image/jpeg": "jpg",
+        "image/jpg": "jpg",
+        "image/png": "png",
+        "application/pdf": "pdf",
+    };
+    return extensionMap[mime] ?? "bin";
+};
+
+interface UploadInput {
+    buffer: Buffer;
+    contentType: string;
+    extension?: string;
+}
+
+/**
+ * Uploads a binary blob to S3 under `<path>/<uuid>_<timestamp>.<ext>`
+ * and returns the canonical https URL. Mirror of the legacy
+ * s3Service.upload / Helper::uploadToS3.
+ */
+export const upload = async (
+    input: UploadInput,
+    path = "",
+): Promise<string> => {
+    const { client, bucket } = getClient();
+    const extension = input.extension ?? mimeToExtension(input.contentType);
+    const fileName = `${randomUUID().replace(/-/g, "")}_${Date.now()}.${extension}`;
+    const objectKey = `${path.replace(/^\/+|\/+$/g, "")}/${fileName}`;
+
+    await client.send(
+        new PutObjectCommand({
+            Bucket: bucket,
+            Key: objectKey,
+            Body: input.buffer,
+            ContentType: input.contentType,
+            ACL: "private",
+        }),
+    );
+
+    const region =
+        process.env.EXTERNAL_AWS_REGION ||
+        process.env.S3_REGION ||
+        process.env.AWS_REGION ||
+        "us-east-1";
+    return `https://${bucket}.s3.${region}.amazonaws.com/${objectKey}`;
+};
+
+/**
+ * Decodes a base64 data URL and uploads it. Mirror of the legacy
+ * s3Service.uploadBase64 / Helper::uploadBase64ToS3.
+ */
+export const uploadBase64 = async (
+    dataUrl: string,
+    path = "",
+): Promise<string> => {
+    const match = /^data:(.*?);base64,([\s\S]+)$/.exec(dataUrl);
+    if (!match) {
+        throw new Error("Invalid data URL");
+    }
+    const contentType = match[1] || "application/octet-stream";
+    const buffer = Buffer.from(match[2] ?? "", "base64");
+    if (buffer.length === 0) {
+        throw new Error("Empty base64 payload");
+    }
+    return upload({ buffer, contentType }, path);
 };
 
 /**
