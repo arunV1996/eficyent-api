@@ -1,9 +1,12 @@
 import { Router } from "express";
 import {
+    banks,
     countries,
     depositLookups,
+    getRates,
     mobileCountryCodes,
     paymentRails,
+    receivingCountries,
     states,
 } from "../controller/lookup.controller";
 import { lookupApiRoutes } from "../utils/api.routes";
@@ -38,6 +41,24 @@ router.get(
     lookupApiRoutes.DEPOSIT_LOOKUPS.path,
     ...lookupApiRoutes.DEPOSIT_LOOKUPS.middleware,
     depositLookups,
+);
+
+router.get(
+    lookupApiRoutes.BANKS.path,
+    ...lookupApiRoutes.BANKS.middleware,
+    banks,
+);
+
+router.get(
+    lookupApiRoutes.RECEIVING_COUNTRIES.path,
+    ...lookupApiRoutes.RECEIVING_COUNTRIES.middleware,
+    receivingCountries,
+);
+
+router.get(
+    lookupApiRoutes.GET_RATES.path,
+    ...lookupApiRoutes.GET_RATES.middleware,
+    getRates,
 );
 
 export default router;

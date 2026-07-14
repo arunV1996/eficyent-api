@@ -37,6 +37,7 @@ interface UserAttributes {
     tourStatus: number;
     timezone: string;
     memo: string | null;
+    serviceProviders: unknown | null;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -64,6 +65,7 @@ interface UserCreationAttributes
         | "tourStatus"
         | "timezone"
         | "memo"
+        | "serviceProviders"
     > {}
 
 class User
@@ -94,6 +96,7 @@ class User
     public tourStatus!: number;
     public timezone!: string;
     public memo!: string | null;
+    public serviceProviders!: unknown | null;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -207,6 +210,10 @@ User.init(
         },
         memo: {
             type: DataTypes.STRING(255),
+            allowNull: true,
+        },
+        serviceProviders: {
+            type: DataTypes.JSON,
             allowNull: true,
         },
     },

@@ -6,9 +6,14 @@ import {
 import { checkValidationErrors } from "../middleware/checkValidationErrors";
 import { validateMerchant } from "../middleware/validateMerchant";
 import {
+    beneficiaryFormFieldsQueryValidator,
     beneficiaryListQueryValidator,
     beneficiaryShowQueryValidator,
 } from "../validators/beneficiary_account.validator";
+import {
+    banksQueryValidator,
+    receivingCountriesQueryValidator,
+} from "../validators/lookup.validator";
 import { getFormFieldsQueryValidator } from "../validators/onboarding.validator";
 import {
     loginValidator,
@@ -92,6 +97,14 @@ const beneficiaryBaseMiddleware = [
 ];
 
 export const beneficiaryApiRoutes = {
+    GET_FORM_FIELDS: {
+        path: "/get-form-fields",
+        middleware: [
+            ...beneficiaryBaseMiddleware,
+            beneficiaryFormFieldsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
     LIST: {
         path: "/list",
         middleware: [
@@ -138,5 +151,31 @@ export const lookupApiRoutes = {
     DEPOSIT_LOOKUPS: {
         path: "/deposit_lookups",
         middleware: [depositLookupsQueryValidator, checkValidationErrors],
+    },
+    BANKS: {
+        path: "/banks",
+        middleware: [banksQueryValidator, checkValidationErrors],
+    },
+    // Authenticated lookups — the legacy stack orders emailShouldBeVerified
+    // BEFORE validateMerchant here (unlike the beneficiary group).
+    RECEIVING_COUNTRIES: {
+        path: "/receiving_countries",
+        middleware: [
+            authSanctum,
+            emailShouldBeVerified,
+            validateMerchant,
+            onboardingShouldBeCompleted,
+            receivingCountriesQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    GET_RATES: {
+        path: "/get-rates",
+        middleware: [
+            authSanctum,
+            emailShouldBeVerified,
+            validateMerchant,
+            onboardingShouldBeCompleted,
+        ],
     },
 };

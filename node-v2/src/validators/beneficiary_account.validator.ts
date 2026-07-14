@@ -10,6 +10,40 @@ const localizedError = (localeKey: string, code: number) => {
 };
 
 /**
+ * express-validator chain for GET /beneficiaries/get-form-fields
+ * (mirror of FormFieldsQuerySchema: type accepts the numeric user type
+ * or the PERSONAL/BUSINESS labels).
+ */
+export const beneficiaryFormFieldsQueryValidator: ValidationChain[] = [
+    query("type")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .custom((value) => {
+            if (/^[12]$/.test(String(value))) {
+                return true;
+            }
+            return Object.keys(USER_TYPE_MAP).includes(String(value));
+        })
+        .withMessage(localizedError("1100", 1100)),
+
+    query("country")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .isString()
+        .isLength({ min: 2, max: 3 })
+        .withMessage(localizedError("1104", 1104)),
+
+    query("currency")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .matches(/^[A-Za-z]{3}$/)
+        .withMessage(localizedError("1104", 1104)),
+];
+
+/**
  * express-validator chain for GET /beneficiaries/show and
  * DELETE /beneficiaries/delete (mirror of BeneficiaryShowSchema).
  */

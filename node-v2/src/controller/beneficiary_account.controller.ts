@@ -1,5 +1,9 @@
 import { Request, Response } from "express";
 import { Op, WhereOptions } from "sequelize";
+import {
+    beneficiaryFormFields,
+    FormFieldsError,
+} from "../helpers/form_fields.helper";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
 import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
 import { beneficiaryAccountToJSON } from "../resources/beneficiary_account.resource";
@@ -18,6 +22,47 @@ import {
  * (Excel import service). Team-member corporate scoping on list
  * arrives with the team module.
  */
+
+/**
+ * GET /api/user/beneficiaries/get-form-fields?type=..&country=..&currency=..
+ *
+ * Dynamic payout-target form for the requested corridor. Unsupported
+ * corridors respond with the legacy 422 envelope.
+ */
+export const getFormFields = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("401"), 401, 401);
+        }
+
+        const requestQuery = req.query as Record<string, string | undefined>;
+        const rawType = String(requestQuery.type);
+        const recipientType = /^\d+$/.test(rawType)
+            ? Number(rawType)
+            : USER_TYPE_MAP[rawType];
+
+        const fields = await beneficiaryFormFields({
+            country: String(requestQuery.country),
+            currency: String(requestQuery.currency),
+            type: recipientType,
+            merchantId: req.user.merchantId,
+        });
+
+        return res.sendResponse({ form_fields: fields }, "OK", 200);
+    } catch (error) {
+        if (error instanceof FormFieldsError) {
+            return res.sendError(
+                error.message,
+                error.errorCode,
+                error.httpStatus,
+            );
+        }
+        return res.handleError(error);
+    }
+};
 
 /**
  * GET /api/user/beneficiaries/list

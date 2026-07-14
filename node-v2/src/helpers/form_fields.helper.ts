@@ -1,3 +1,6 @@
+import MerchantSetting from "../models/merchant_setting.model";
+import SupportedCountry from "../models/supported_country.model";
+import { Op } from "sequelize";
 import {
     businessTypes,
     businessVerificationTypes,
@@ -5,9 +8,14 @@ import {
     findValueByKey,
     getLookups,
     mobileCountryCodes as buildMobileCountryCodes,
+    serviceBanks,
     states as buildStates,
 } from "./lookup.helper";
 import {
+    EXTERNAL_TYPE_DIGININE,
+    EXTERNAL_TYPE_IME,
+    EXTERNAL_TYPE_MOBI,
+    EXTERNAL_TYPE_USI,
     LOOKUP_TYPE_ADDRESS_TYPES,
     LOOKUP_TYPE_COUNTRY_CONFIGURATIONS,
     LOOKUP_TYPE_DOCUMENT_TYPES,
@@ -24,6 +32,23 @@ import {
     USER_TYPE_BUSINESS,
     USER_TYPE_PERSONAL,
 } from "../utils/constants";
+
+/**
+ * Raised when a form-field builder rejects the requested corridor.
+ * Controllers map this to the legacy {success:false, error, error_code}
+ * envelope.
+ */
+export class FormFieldsError extends Error {
+    public readonly errorCode: number;
+    public readonly httpStatus: number;
+
+    constructor(message: string, errorCode = 422, httpStatus = 422) {
+        super(message);
+        this.name = "FormFieldsError";
+        this.errorCode = errorCode;
+        this.httpStatus = httpStatus;
+    }
+}
 
 /**
  * Onboarding slice of the legacy FieldsHelper / helpers/formFields.ts.
@@ -103,6 +128,38 @@ export const VALIDATION_PRESETS = {
         min_length: 2,
         max_length: 100,
         regex: "/^[A-Za-z0-9 .,&()-]{1,100}$/",
+    },
+    account_name: {
+        min_length: 2,
+        max_length: 100,
+        regex: "/^[A-Za-z .,&()-]{1,100}$/",
+    },
+    swift: {
+        min_length: 8,
+        max_length: 11,
+        regex: "/^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/",
+    },
+    routing: { min_length: 9, max_length: 9, regex: "/^[0-9]{9}$/" },
+    iban: {
+        min_length: 15,
+        max_length: 34,
+        regex: "/^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/",
+    },
+    ifsc: {
+        min_length: 11,
+        max_length: 11,
+        regex: "/^[A-Z]{4}0[A-Z0-9]{6}$/",
+    },
+    aba: { min_length: 9, max_length: 9, regex: "/^[0-9]{9}$/" },
+    generic_account: {
+        min_length: 4,
+        max_length: 34,
+        regex: "/^[A-Za-z0-9]{4,34}$/",
+    },
+    lka_bank: {
+        min_length: 4,
+        max_length: 11,
+        regex: "/^(?:\\d{4}|[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)$/",
     },
     email: {
         min_length: 2,
@@ -224,6 +281,82 @@ const buildContext = async (): Promise<FormBuildContext> => {
         eec_payment_purposes: eecPaymentPurposes,
         document_types: documentTypes,
     };
+};
+
+const addressFields = (
+    prefix: string,
+    context: FormBuildContext,
+): FieldDef[] => {
+    const category =
+        prefix === "receiver"
+            ? "Address"
+            : `${prefix.charAt(0).toUpperCase()}${prefix
+                  .slice(1)
+                  .replace(/_/g, " ")} Address`;
+    return [
+        make(`${prefix}_address_line_1`, `${category} Line 1`, {
+            validation: VALIDATION_PRESETS.address,
+            category,
+        }),
+        make(`${prefix}_address_line_2`, `${category} Line 2`, {
+            mandatory: false,
+            validation: VALIDATION_PRESETS.address,
+            category,
+        }),
+        make(`${prefix}_country`, `${category} Country`, {
+            category,
+            values: context.countries,
+        }),
+        make(`${prefix}_state`, `${category} State`, {
+            category,
+            values: context.states,
+            parent_key: `${prefix}_country`,
+        }),
+        make(`${prefix}_postal_code`, `${category} Postal Code`, {
+            validation: VALIDATION_PRESETS.postal_code,
+            category,
+        }),
+        make(`${prefix}_city`, `${category} City`, {
+            validation: VALIDATION_PRESETS.city,
+            category,
+        }),
+    ];
+};
+
+const baseIndividualFields = (context: FormBuildContext): FieldDef[] => {
+    return [
+        make("first_name", "First Name", {
+            validation: VALIDATION_PRESETS.name,
+        }),
+        make("middle_name", "Middle Name", {
+            mandatory: false,
+            validation: VALIDATION_PRESETS.name,
+        }),
+        make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
+        make("email", "Email", { validation: VALIDATION_PRESETS.email }),
+        make("mobile_country_code", "Mobile Country Code", {
+            values: context.mobile_country_codes,
+        }),
+        make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
+        ...addressFields("receiver", context),
+    ];
+};
+
+const baseBusinessFields = (context: FormBuildContext): FieldDef[] => {
+    return [
+        make("business_name", "Business Name", {
+            validation: VALIDATION_PRESETS.business_name,
+        }),
+        make("business_country", "Business Country", {
+            values: context.countries,
+        }),
+        make("email", "Email", { validation: VALIDATION_PRESETS.email }),
+        make("mobile_country_code", "Mobile Country Code", {
+            values: context.mobile_country_codes,
+        }),
+        make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
+        ...addressFields("receiver", context),
+    ];
 };
 
 const eighteenYearsAgo = (): string => {
@@ -671,4 +804,430 @@ export const onboardingFormFieldsNew = async (
         }
     }
     return onboardingFormFields(userType, Number(payload.type));
+};
+
+/**
+ * Country/currency-specific bank fields for the beneficiary form.
+ * Mirror of the legacy bankFieldsByCountry.
+ */
+const bankFieldsByCountry = (
+    country: string,
+    currency: string,
+    context: FormBuildContext,
+): FieldDef[] => {
+    const accountTypeField = make("account_type", "Account Type", {
+        values: [
+            { label: "Checking", value: "Checking" },
+            { label: "Savings", value: "Savings" },
+            { label: "General Ledger", value: "General Ledger" },
+            { label: "Loan", value: "Loan" },
+        ],
+    });
+
+    const isForeignCurrency = currency === "USD" && country !== "USA";
+
+    const genericAccountNumberField = make("account_number", "Account Number", {
+        validation: VALIDATION_PRESETS.generic_account,
+    });
+    const swiftCodeField = make("code", "SWIFT/BIC", {
+        validation: VALIDATION_PRESETS.swift,
+    });
+
+    switch (country.toUpperCase()) {
+        case "CHN":
+        case "THA":
+        case "IDN":
+        case "MYS":
+            return isForeignCurrency
+                ? [accountTypeField, genericAccountNumberField, swiftCodeField]
+                : [accountTypeField, genericAccountNumberField];
+        case "SAU":
+            return isForeignCurrency
+                ? [accountTypeField, genericAccountNumberField, swiftCodeField]
+                : [
+                      accountTypeField,
+                      genericAccountNumberField,
+                      make("iban", "IBAN", {
+                          validation: VALIDATION_PRESETS.generic_account,
+                      }),
+                  ];
+        case "HKG":
+            return [
+                accountTypeField,
+                make("account_number", "Account Number", {
+                    validation: { regex: "^[A-Za-z0-9]{4,34}$" },
+                }),
+                make("code", isForeignCurrency ? "SWIFT/BIC" : "Branch Code", {
+                    validation: isForeignCurrency
+                        ? VALIDATION_PRESETS.swift
+                        : { regex: "^\\d{3}$" },
+                }),
+            ];
+        case "IND":
+            return [
+                accountTypeField,
+                make("account_number", "Account Number", {
+                    validation: { regex: "^[0-9]{9,18}$" },
+                }),
+                make("code", isForeignCurrency ? "SWIFT/BIC" : "IFSC Code", {
+                    validation: isForeignCurrency
+                        ? VALIDATION_PRESETS.swift
+                        : VALIDATION_PRESETS.ifsc,
+                }),
+            ];
+        case "ARE":
+            return [
+                accountTypeField,
+                make("account_number", "IBAN", {
+                    validation: VALIDATION_PRESETS.iban,
+                }),
+                swiftCodeField,
+            ];
+        case "LKA":
+            return [
+                accountTypeField,
+                make("account_number", "Account Number", {
+                    validation: { regex: "^\\d{6,15}$" },
+                }),
+                make("code", isForeignCurrency ? "SWIFT/BIC" : "Bank Code", {
+                    validation: isForeignCurrency
+                        ? VALIDATION_PRESETS.swift
+                        : VALIDATION_PRESETS.lka_bank,
+                }),
+            ];
+        case "NPL":
+            return [
+                accountTypeField,
+                make("account_number", "Account Number", {
+                    validation: { regex: "^[0-9]{10,18}$" },
+                }),
+                make("code", "SWIFT/BIC", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.swift,
+                }),
+            ];
+        case "PAK":
+            return [
+                accountTypeField,
+                make("account_number", "IBAN", {
+                    validation: {
+                        regex: "^[A-Z]{2}[0-9]{2}[A-Z]{4}[A-Z0-9]{16}$",
+                    },
+                }),
+                make("code", "Code", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.swift,
+                }),
+            ];
+        case "BGD":
+            return [
+                accountTypeField,
+                make("account_number", "Account Number", {
+                    validation: { regex: "^[0-9]{10,17}$" },
+                }),
+                make(
+                    "code",
+                    isForeignCurrency ? "SWIFT/BIC" : "Routing Number",
+                    {
+                        validation: isForeignCurrency
+                            ? VALIDATION_PRESETS.swift
+                            : { regex: "^[0-9]{9}$" },
+                    },
+                ),
+            ];
+        case "PHL":
+            return [
+                accountTypeField,
+                make("account_number", "Account Number", {
+                    validation: { regex: "^\\d{6,18}$" },
+                }),
+                make("code", isForeignCurrency ? "SWIFT/BIC" : "BRSTN", {
+                    validation: isForeignCurrency
+                        ? VALIDATION_PRESETS.swift
+                        : { regex: "^[a-zA-Z0-9]{8,12}$" },
+                }),
+            ];
+        case "USA":
+            return [
+                accountTypeField,
+                make("account_number", "Account Number", {
+                    mandatory: true,
+                    validation: { regex: "/^[A-Za-z0-9]{4,34}$/" },
+                }),
+                make("iban", "IBAN", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.iban,
+                }),
+                make("code", "SWIFT/BIC", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.swift,
+                }),
+                make("routing_number", "Routing Number", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.routing,
+                    required_if_empty_of: "code",
+                }),
+                ...addressFields("bank", context),
+            ];
+        default:
+            return [
+                accountTypeField,
+                make("account_number", "Account Number / IBAN", {
+                    validation: { regex: "/^[A-Za-z0-9]{4,34}$/" },
+                }),
+                make("code", "SWIFT/BIC/Routing Number", {
+                    validation: VALIDATION_PRESETS.swift,
+                }),
+                ...addressFields("bank", context),
+            ];
+    }
+};
+
+/**
+ * Mirror of FieldsHelper::beneficiary_form_fields. Returns the dynamic
+ * payout-target form for (country, currency, type), with merchant
+ * payout_countries scoping and per-merchant optional-field overrides.
+ * Throws FormFieldsError for unsupported corridors.
+ */
+export const beneficiaryFormFields = async (payload: {
+    country: string;
+    currency: string;
+    type: number;
+    merchantId?: number | null;
+}): Promise<FieldDef[]> => {
+    if (payload.merchantId) {
+        const payoutCountriesSetting = await MerchantSetting.findOne({
+            where: { merchantId: payload.merchantId, key: "payout_countries" },
+        });
+        if (payoutCountriesSetting?.value) {
+            let supportedIds: string[] = [];
+            try {
+                supportedIds = JSON.parse(
+                    payoutCountriesSetting.value,
+                ) as string[];
+            } catch {
+                supportedIds = [];
+            }
+
+            if (supportedIds.length > 0) {
+                const merchantCountryMatch = await SupportedCountry.findOne({
+                    where: {
+                        id: { [Op.in]: supportedIds.map((id) => Number(id)) },
+                        countryCode: payload.country,
+                        status: 1,
+                    },
+                });
+                if (!merchantCountryMatch) {
+                    throw new FormFieldsError(
+                        "Country is not supported for this beneficiary type.",
+                    );
+                }
+
+                const merchantCurrencyMatch = await SupportedCountry.findOne({
+                    where: {
+                        id: { [Op.in]: supportedIds.map((id) => Number(id)) },
+                        countryCode: payload.country,
+                        currency: payload.currency,
+                        status: 1,
+                    },
+                });
+                if (!merchantCurrencyMatch) {
+                    throw new FormFieldsError(
+                        "Currency is not supported for the selected country.",
+                    );
+                }
+            }
+        }
+    }
+
+    const countryMatch = await SupportedCountry.findOne({
+        where: { countryCode: payload.country, status: 1 },
+    });
+    if (!countryMatch) {
+        throw new FormFieldsError(
+            "Country is not supported for this beneficiary type.",
+        );
+    }
+
+    const supportedCountry = await SupportedCountry.findOne({
+        where: {
+            countryCode: payload.country,
+            currency: payload.currency,
+            status: 1,
+        },
+    });
+    if (!supportedCountry) {
+        throw new FormFieldsError(
+            "Currency is not supported for the selected country.",
+        );
+    }
+
+    const context = await buildContext();
+    const baseFields =
+        Number(payload.type) === USER_TYPE_BUSINESS
+            ? baseBusinessFields(context)
+            : baseIndividualFields(context);
+
+    baseFields.push(
+        make("account_name", "Account Name", {
+            validation: VALIDATION_PRESETS.account_name,
+        }),
+    );
+
+    const additionalFields = bankFieldsByCountry(
+        supportedCountry.countryCode,
+        supportedCountry.currency,
+        context,
+    );
+
+    if (supportedCountry.currency === "USD") {
+        additionalFields.push(
+            make("intermediary_bank_name", "Intermediary Bank Name", {
+                mandatory: false,
+                validation: VALIDATION_PRESETS.name,
+                required_if: "code",
+            }),
+            make(
+                "intermediary_bank_swift_code",
+                "Intermediary Bank Swift Code",
+                {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.swift,
+                },
+            ),
+            make("intermediary_bank_aba", "Intermediary Bank ABA", {
+                mandatory: false,
+                validation: VALIDATION_PRESETS.aba,
+                required_if: "code",
+            }),
+            make("intermediary_bank_address", "Intermediary Bank Address", {
+                mandatory: false,
+                validation: VALIDATION_PRESETS.address,
+            }),
+            make("intermediary_bank_city", "Intermediary Bank City", {
+                mandatory: false,
+                validation: VALIDATION_PRESETS.city,
+            }),
+            make("intermediary_bank_country", "Intermediary Bank Country", {
+                mandatory: false,
+                values: context.countries,
+            }),
+            make("intermediary_bank_state", "Intermediary Bank State", {
+                mandatory: false,
+                values: context.states,
+                parent_key: "intermediary_bank_country",
+            }),
+            make(
+                "intermediary_bank_postal_code",
+                "Intermediary Bank Postal Code",
+                {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.postal_code,
+                },
+            ),
+        );
+    }
+
+    // Service-bank dropdown vs free-form bank name (legacy conditional).
+    if (
+        supportedCountry.externalType === EXTERNAL_TYPE_DIGININE ||
+        supportedCountry.externalType === EXTERNAL_TYPE_IME ||
+        supportedCountry.externalType === EXTERNAL_TYPE_MOBI ||
+        payload.currency === "CNY" ||
+        payload.currency === "THB"
+    ) {
+        const serviceBankRequired = [
+            "NPL",
+            "PAK",
+            "NGA",
+            "MYS",
+            "IDN",
+            "PHL",
+            "THA",
+            "CHN",
+        ].includes(supportedCountry.countryCode);
+        const serviceBankExternalType = ["CNY", "THB"].includes(
+            payload.currency,
+        )
+            ? null
+            : (supportedCountry.externalType ?? undefined);
+        const banks = await serviceBanks(
+            payload.country,
+            payload.currency,
+            serviceBankExternalType,
+        );
+        additionalFields.push(
+            make("service_bank", "Service Bank", {
+                mandatory: serviceBankRequired,
+                values: banks,
+            }),
+        );
+    } else {
+        additionalFields.push(
+            make("bank_name", "Bank Name", {
+                validation: VALIDATION_PRESETS.name,
+            }),
+        );
+    }
+
+    let purposes: { label: string; value: string }[] = [];
+    if (supportedCountry.externalType === EXTERNAL_TYPE_USI) {
+        purposes = await getLookups(
+            LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS,
+            EXTERNAL_TYPE_USI,
+        );
+    } else if (supportedCountry.currency === "USD") {
+        purposes = await getLookups(LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS);
+    } else {
+        purposes = await getLookups(
+            LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS,
+            EXTERNAL_TYPE_DIGININE,
+        );
+    }
+
+    additionalFields.push(
+        make("purpose_of_transaction", "Purpose of Transactions", {
+            values: purposes,
+        }),
+    );
+
+    let fields = [...baseFields, ...additionalFields];
+
+    if (supportedCountry.currency === "USD") {
+        fields = fields.map((field) => {
+            if (field.field_key === "bank_name") {
+                return { ...field, is_mandatory: true };
+            }
+            return field;
+        });
+    }
+
+    if (payload.merchantId) {
+        const beneficiaryFieldsSetting = await MerchantSetting.findOne({
+            where: {
+                merchantId: payload.merchantId,
+                key: "beneficiary_fields",
+                status: 1,
+            },
+        });
+        if (beneficiaryFieldsSetting?.value) {
+            try {
+                const customOptionalFields: string[] = JSON.parse(
+                    beneficiaryFieldsSetting.value,
+                );
+                if (Array.isArray(customOptionalFields)) {
+                    fields = fields.map((field) => {
+                        const isMandatory =
+                            field.is_mandatory &&
+                            !customOptionalFields.includes(field.field_key);
+                        return { ...field, is_mandatory: isMandatory };
+                    });
+                }
+            } catch {
+                // Malformed merchant setting — leave mandatory flags as-is.
+            }
+        }
+    }
+
+    return fields;
 };

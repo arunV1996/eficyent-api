@@ -1,12 +1,19 @@
 import { Router } from "express";
 import {
     destroy,
+    getFormFields,
     index,
     show,
 } from "../controller/beneficiary_account.controller";
 import { beneficiaryApiRoutes } from "../utils/api.routes";
 
 const router = Router();
+
+router.get(
+    beneficiaryApiRoutes.GET_FORM_FIELDS.path,
+    ...beneficiaryApiRoutes.GET_FORM_FIELDS.middleware,
+    getFormFields,
+);
 
 router.get(
     beneficiaryApiRoutes.LIST.path,

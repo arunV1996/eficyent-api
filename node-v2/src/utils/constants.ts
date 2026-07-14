@@ -99,6 +99,13 @@ export const MERCHANT_TYPE_PAYOUT = 1;
 export const MERCHANT_TYPE_PAYOUTINTEGRATOR = 3;
 export const MERCHANT_TYPE_PAYINCOLLECTION = 4;
 
+// Provider external types (subset needed so far)
+export const EXTERNAL_TYPE_CALIZA = "ec";
+export const EXTERNAL_TYPE_DIGININE = "ed";
+export const EXTERNAL_TYPE_USI = "EUSI";
+export const EXTERNAL_TYPE_IME = "EIME";
+export const EXTERNAL_TYPE_MOBI = "EMB";
+
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {
     PERSONAL: USER_TYPE_PERSONAL,
