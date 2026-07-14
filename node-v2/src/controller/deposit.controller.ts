@@ -11,7 +11,10 @@ import Merchant from "../models/merchant.model";
 import User from "../models/user.model";
 import VirtualAccount from "../models/virtual_account.model";
 import { depositTransactionToJSON } from "../resources/deposit_transaction.resource";
+import { makeDeposit as invoiceMateMakeDeposit } from "../services/invoice_mate.service";
+import { createDeposit as processingUnitCreateDeposit } from "../services/processing_unit.service";
 import { uploadBase64 } from "../services/s3.service";
+import { depositReceived as telegramDepositReceived } from "../services/telegram.service";
 import { generateUniqueId } from "../utils/common.utils";
 import {
     DEPOSIT_TRANSACTION_COMPLETED,
@@ -38,12 +41,6 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  *
  * Deferred (documented):
  *   - GET /deposits/export (puppeteer/EJS PDF + XLSX export)
- *   - public POST /retry_deposit/{trxn} (needs the ProcessingUnit
- *     deposit client)
- *   - the best-effort post-store dispatch fan-out (Telegram notifier,
- *     ProcessingUnit createDeposit, InvoiceMate makeDeposit) — arrives
- *     with the provider-clients tranche; it never affected the HTTP
- *     response (fire-and-forget in legacy).
  *   - team-member token context (req.teamMember) — team module tranche.
  */
 
@@ -409,10 +406,28 @@ export const store = async (req: Request, res: Response): Promise<void> => {
             },
         );
 
-        // Deferred to the provider-clients tranche: the legacy
-        // fire-and-forget dispatch fan-out (TelegramNotifier,
-        // ProcessingUnit.createDeposit, InvoiceMate.makeDeposit) —
-        // it never affected this response.
+        // External-service dispatch (best-effort, non-blocking) —
+        // mirror of the legacy post-store fan-out. Failures are logged
+        // and never affect this response.
+        void Promise.all([
+            telegramDepositReceived({
+                id: created.uniqueId,
+                user: req.user.firstName ?? req.user.email,
+                amount: String(created.totalAmount),
+                currency: virtualAccount.currency,
+                status: "PROCESSING",
+                created_at: (created.createdAt || new Date()).toISOString(),
+            }),
+            processingUnitCreateDeposit(created),
+            invoiceMateMakeDeposit(created),
+        ]).catch((dispatchError) => {
+            // eslint-disable-next-line no-console
+            console.warn(
+                "post-deposit dispatch error:",
+                created.uniqueId,
+                dispatchError,
+            );
+        });
 
         return res.sendEmptyEnvelope(
             {
@@ -420,6 +435,66 @@ export const store = async (req: Request, res: Response): Promise<void> => {
             },
             "Deposit successful.",
         );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/public/retry_deposit/:trxn — public retry hook for
+ * deposits stuck in PU_FAILED: regenerates the unique_id (the PU
+ * order id), resets the status and re-fires the ProcessingUnit
+ * initiation in the background. Any other state is a logged no-op —
+ * the response is the same either way (mirror of the legacy
+ * retryDeposit).
+ */
+export const retryDeposit = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        const transaction = await DepositTransaction.findOne({
+            where: { uniqueId: String(req.params.trxn) },
+        });
+        if (!transaction) {
+            return res.sendError("Transaction not found.", 124, 400);
+        }
+
+        if (
+            transaction.status === DEPOSIT_TRANSACTION_PROCESSING_UNIT_FAILED
+        ) {
+            const previousStatus = transaction.status;
+            transaction.uniqueId = generateUniqueId(24);
+            transaction.status =
+                DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED;
+            const updated = await transaction.save();
+
+            await DepositTransactionStatusHistory.create({
+                uniqueId: generateUniqueId(24),
+                depositTransactionId: transaction.id,
+                fromStatus: String(previousStatus),
+                toStatus: String(
+                    DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
+                ),
+                changedBy: req.user
+                    ? String(req.user.id)
+                    : String(transaction.userId),
+                changedByType: req.user ? "user" : "system",
+                changedAt: new Date(),
+            });
+
+            void processingUnitCreateDeposit(updated).catch(
+                (dispatchError) => {
+                    // eslint-disable-next-line no-console
+                    console.warn(
+                        "ProcessingUnit redispatch failed (background):",
+                        updated.uniqueId,
+                        dispatchError,
+                    );
+                },
+            );
+        }
+        return res.sendResponse([], res.__("s118"), 118);
     } catch (error) {
         return sendCodedError(res, error);
     }

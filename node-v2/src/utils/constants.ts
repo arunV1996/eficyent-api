@@ -192,6 +192,9 @@ export const DEPOSIT_TRANSACTION_COMPLETED = 1;
 export const TEAM_MEMBER_ROLE_CORPORATE = 4;
 export const TEAM_MEMBER_ROLE_SUPPORT_MEMBER = 3;
 export const PAYOUT_JOB_STATUS_PENDING = 0;
+export const PAYOUT_JOB_STATUS_PROCESSING = 1;
+export const PAYOUT_JOB_STATUS_COMPLETED = 2;
+export const PAYOUT_JOB_STATUS_FAILED = 3;
 
 // Beneficiary transaction statuses (mirror of legacy constants)
 export const BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL = 0;
@@ -252,6 +255,13 @@ export const PAYMENT_PROOF_FIRA = "fira";
 // Deposit refund substrate (mirror of legacy constants)
 export const DEPOSIT_TYPE_REFUND = "refund";
 export const MORPH_WALLET_TRANSACTION = "App\\Models\\WalletTransaction";
+
+// Merchant callback event names (mirror of Laravel CALLBACK_* defines)
+export const CALLBACK_PAYOUT_SUCCESS = "TRANSACTION_COMPLETED";
+export const CALLBACK_PAYOUT_REJECTED = "TRANSACTION_REJECTED";
+export const CALLBACK_PAYOUT_FAILED = "TRANSACTION_FAILED";
+export const CALLBACK_DEPOSIT_SUCCESS = "DEPOSIT_COMPLETED";
+export const CALLBACK_DEPOSIT_FAILED = "DEPOSIT_REJECTED";
 
 // Senders
 export const SENDER_STATUS_DISABLED = 4;

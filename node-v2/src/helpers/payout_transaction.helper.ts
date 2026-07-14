@@ -15,6 +15,7 @@ import User from "../models/user.model";
 import VirtualAccount from "../models/virtual_account.model";
 import Wallet from "../models/wallet.model";
 import WalletTransaction from "../models/wallet_transaction.model";
+import { notifyBeneficiaryTransaction } from "../services/telegram.service";
 import { computeBankBalance, getWalletBalance } from "./balance.helper";
 import { transactionIncludes } from "./beneficiary_transaction.helper";
 import { CodedError } from "./coded_error.helper";
@@ -58,9 +59,8 @@ import {
  *     the legacy service
  *   - the queue dispatch fires after commit for APPROVED/INITIATED
  *     states only (CORPORATE_INITIATED waits for checker approval)
- *
- * Deferred to the notifications tranche: the fire-and-forget Telegram
- * notification the legacy service sends after dispatch.
+ *   - the fire-and-forget Telegram ops notification fires after
+ *     dispatch, exactly like the legacy service
  */
 
 export interface PayoutCreatePayload {
@@ -442,6 +442,10 @@ export const createPayoutTransaction = async (
             source: "approval",
         });
     }
+
+    // Fire-and-forget ops notification (mirror of the legacy
+    // TelegramNotifier call — never affects the response).
+    void notifyBeneficiaryTransaction(created.transactionRow.id);
 
     // Reload with the response include tree (mirror of the legacy
     // findUniqueOrThrow reload) so the resource shaper sees the same

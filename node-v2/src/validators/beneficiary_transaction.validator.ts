@@ -1,4 +1,4 @@
-import { body, query, ValidationChain } from "express-validator";
+import { body, param, query, ValidationChain } from "express-validator";
 import { BENEFICIARY_TRANSACTION_APPROVAL_MAP } from "../utils/constants";
 
 /**
@@ -357,4 +357,28 @@ export const payoutFormFieldsQueryValidator: ValidationChain[] = [
         .bail()
         .matches(/^[A-Za-z]{3}$/)
         .withMessage(localizedError("1104", 1104)),
+];
+
+/**
+ * Path-param validators for the public retry/status routes (mirror of
+ * RetryParamSchema / RetryJobParamSchema).
+ */
+export const retryTrxnParamValidator: ValidationChain[] = [
+    param("trxn")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .isString()
+        .isLength({ min: 1, max: 64 })
+        .withMessage(localizedError("1100", 1100)),
+];
+
+export const retryJobParamValidator: ValidationChain[] = [
+    param("jobId")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .isString()
+        .isLength({ min: 1, max: 64 })
+        .withMessage(localizedError("1100", 1100)),
 ];

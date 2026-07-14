@@ -39,6 +39,7 @@ import {
     PAYMENT_PROOF_FIRA,
     PAYMENT_PROOF_REQUESTED,
     PAYMENT_PROOF_SWIFT,
+    PAYOUT_JOB_STATUS_FAILED,
     PAYOUT_JOB_STATUS_PENDING,
     TAKE_COUNT,
 } from "../utils/constants";
@@ -51,12 +52,14 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  * check_status, cancel, update-status, the transaction-proof pair,
  * the form-fields trio, /direct and /instant/store.
  *
+ * The public /retry-job and /check_external_service_status routes live
+ * at the /user mount (no auth — mirror of Laravel).
+ *
  * Deferred (documented per endpoint below where relevant):
  *   - /export, /download (puppeteer/EJS PDF + XLSX exports)
  *   - /bulk/template, /bulk/store (Excel import/export service)
- *   - public /retry-job, /retry_external_service,
- *     /check_external_service_status routes (need the provider
- *     clients + reverseRefund)
+ *   - public /retry_external_service (needs the Compliance + PU payout
+ *     clients and reverseRefund)
  *   - team-member token context (req.teamMember) — the team module is
  *     a later tranche, so creator context is always the user here.
  *
@@ -853,6 +856,77 @@ export const instant = async (req: Request, res: Response): Promise<void> => {
             userId: String(req.user.id),
         });
         return res.sendResponse([], res.__("s112"), 112);
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * GET /api/user/check_external_service_status/:trxn — public status
+ * probe returning the slim callback resource.
+ */
+export const checkExternalServiceStatus = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        const transaction = await BeneficiaryTransaction.findOne({
+            where: { uniqueId: String(req.params.trxn) },
+        });
+        if (!transaction) {
+            return res.sendError("Transaction not found.", 124, 400);
+        }
+        return res.sendResponse(
+            {
+                beneficiary_transaction:
+                    beneficiaryTransactionCallbackToJSON(transaction),
+            },
+            "",
+            200,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/user/retry-job/:jobId — resets a FAILED payout job and
+ * re-dispatches it through the bulk-payout queue.
+ *
+ * Legacy quirk preserved: the route is mounted without auth middleware
+ * but the handler still requires req.user, so unauthenticated calls
+ * (i.e. all of them on this public mount) get the 102 envelope —
+ * byte-identical to the legacy service.
+ */
+export const retryJob = async (req: Request, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const payoutJob = await PayoutJob.findOne({
+            where: { uniqueId: String(req.params.jobId), userId: req.user.id },
+        });
+        if (!payoutJob) {
+            return res.sendError("Payout job not found.", 174, 400);
+        }
+        if (payoutJob.status !== PAYOUT_JOB_STATUS_FAILED) {
+            return res.sendError(
+                "Payout job is not in failed state.",
+                175,
+                400,
+            );
+        }
+
+        payoutJob.status = PAYOUT_JOB_STATUS_PENDING;
+        payoutJob.errorMessage = null;
+        payoutJob.attempts = 0;
+        await payoutJob.save();
+
+        await Dispatch.bulkPayout({
+            payoutJobUniqueId: payoutJob.uniqueId,
+            userId: String(req.user.id),
+        });
+        return res.sendResponse([], res.__("s176"), 176);
     } catch (error) {
         return sendCodedError(res, error);
     }

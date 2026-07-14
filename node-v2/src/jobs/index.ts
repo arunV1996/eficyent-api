@@ -94,6 +94,14 @@ export interface DebitNotificationJobPayload {
     beneficiaryTransactionId: string;
 }
 
+export interface CallbackJobPayload {
+    userId: string;
+    eventType: string;
+    payload: Record<string, unknown>;
+    beneficiaryTransactionUniqueId?: string;
+    depositTransactionUniqueId?: string;
+}
+
 const enqueue = async (
     queueName: QueueName,
     jobName: string,
@@ -105,18 +113,48 @@ const enqueue = async (
     return job.id ?? "";
 };
 
+// Job names and jobId dedup patterns mirror the legacy
+// queues/dispatchers.ts exactly — the legacy workers consume these
+// queues from the shared Redis, so both must stay byte-identical.
 export const Dispatch = {
-    payout(payload: PayoutJobPayload): Promise<string> {
-        return enqueue(QueueNames.Payout, "payout", payload);
+    payout(
+        payload: PayoutJobPayload,
+        options?: JobsOptions,
+    ): Promise<string> {
+        return enqueue(QueueNames.Payout, "ProcessPayout", payload, {
+            jobId: payload.beneficiaryTransactionId
+                ? `payout-${payload.beneficiaryTransactionId}`
+                : `payout-job-${payload.payoutJobUniqueId}`,
+            ...options,
+        });
     },
-    bulkPayout(payload: BulkPayoutJobPayload): Promise<string> {
-        return enqueue(QueueNames.BulkPayout, "bulk-payout", payload);
+    bulkPayout(
+        payload: BulkPayoutJobPayload,
+        options?: JobsOptions,
+    ): Promise<string> {
+        return enqueue(QueueNames.BulkPayout, "ProcessBulkPayout", payload, {
+            jobId: `bulk-${payload.payoutJobUniqueId}`,
+            ...options,
+        });
     },
-    debitNotification(payload: DebitNotificationJobPayload): Promise<string> {
+    callback(
+        payload: CallbackJobPayload,
+        options?: JobsOptions,
+    ): Promise<string> {
+        return enqueue(QueueNames.Callback, "SendCallback", payload, options);
+    },
+    debitNotification(
+        payload: DebitNotificationJobPayload,
+        options?: JobsOptions,
+    ): Promise<string> {
         return enqueue(
             QueueNames.DebitNotification,
-            "debit-notification",
+            "SendDebitNotification",
             payload,
+            {
+                jobId: `debit-${payload.beneficiaryTransactionId}`,
+                ...options,
+            },
         );
     },
 };

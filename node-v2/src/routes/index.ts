@@ -6,6 +6,7 @@ import depositRoutes from "./deposit.route";
 import lookupRoutes from "./lookup.route";
 import onboardingRoutes from "./onboarding.route";
 import profileRoutes from "./profile.route";
+import { publicRouter, userPublicRouter } from "./public.route";
 import quoteRoutes from "./quote.route";
 import walletRoutes from "./wallet.route";
 
@@ -22,5 +23,7 @@ router.use("/user/beneficiary-transactions", beneficiaryTransactionRoutes);
 router.use("/user/quotes", quoteRoutes);
 router.use("/user/wallets", walletRoutes);
 router.use("/user/deposits", depositRoutes);
+router.use("/user", userPublicRouter);
+router.use("/public", publicRouter);
 
 export default router;

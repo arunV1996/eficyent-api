@@ -14,6 +14,7 @@ import TeamMember from "../models/team_member.model";
 import User from "../models/user.model";
 import VirtualAccount from "../models/virtual_account.model";
 import Wallet from "../models/wallet.model";
+import { notifyBeneficiaryTransaction } from "../services/telegram.service";
 import { CodedError } from "./coded_error.helper";
 import { createRefund } from "./refund.helper";
 import { getVirtualAccountScope } from "./virtual_account.helper";
@@ -381,10 +382,9 @@ export const cancelTransactions = async (
  * team members can only move CORPORATE_INITIATED transactions into
  * WAITING_FOR_APPROVAL; everyone else applies APPROVED/REJECTED to
  * transactions waiting on a decision. REJECTED triggers the refund
- * chain; APPROVED re-dispatches through the payout queue.
- *
- * Deferred to the notifications tranche: the fire-and-forget Telegram
- * notification the legacy service sends after each update.
+ * chain; APPROVED re-dispatches through the payout queue. Each
+ * successful update fires the fire-and-forget Telegram notification,
+ * exactly like the legacy service.
  */
 export const updateTransactionStatus = async (
     user: User,
@@ -469,6 +469,7 @@ export const updateTransactionStatus = async (
                     });
                 }
             }
+            void notifyBeneficiaryTransaction(updated.id);
             successTransactions.push({ unique_id: updated.uniqueId });
         } catch (error) {
             const message =

@@ -15,6 +15,8 @@ import {
     PROOF_REQUEST_ALLOWED_KEYS,
     proofGetQueryValidator,
     proofRequestBodyValidator,
+    retryJobParamValidator,
+    retryTrxnParamValidator,
     sendMoneyDirectBodyValidator,
     TRANSACTION_CANCEL_ALLOWED_KEYS,
     TRANSACTION_STORE_ALLOWED_KEYS,
@@ -454,6 +456,23 @@ export const depositApiRoutes = {
             depositStoreBodyValidator,
             checkValidationErrors,
         ],
+    },
+};
+
+// Public retry / status routes (no auth — mirror of the legacy
+// payoutPublicRoutes + retryDepositRoute mounting).
+export const publicApiRoutes = {
+    RETRY_JOB: {
+        path: "/retry-job/:jobId",
+        middleware: [retryJobParamValidator, checkValidationErrors],
+    },
+    CHECK_EXTERNAL_SERVICE_STATUS: {
+        path: "/check_external_service_status/:trxn",
+        middleware: [retryTrxnParamValidator, checkValidationErrors],
+    },
+    RETRY_DEPOSIT: {
+        path: "/retry_deposit/:trxn",
+        middleware: [retryTrxnParamValidator, checkValidationErrors],
     },
 };
 
