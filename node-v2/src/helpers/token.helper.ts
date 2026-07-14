@@ -27,12 +27,16 @@ import { TOKENABLE_TYPE_USER } from "../utils/constants";
 export const TOKEN_NAME_INTERNAL = "internal-api-token";
 export const TOKEN_NAME_EXTERNAL = "external-api-token";
 
+/**
+ * Server-side secret folded into the stored token hash
+ * (sha256(random + pepper)). Mirrors the legacy tokenService.pepper,
+ * which reads TOKEN_PEPPER from the auth secret bundle and tolerates it
+ * being unset — so we default to "" here rather than throwing. When set,
+ * it MUST match the value the legacy /node service uses for tokens to
+ * verify across both services.
+ */
 const pepper = (): string => {
-    const value = process.env.TOKEN_PEPPER;
-    if (!value) {
-        throw new Error("TOKEN_PEPPER is not set - required for token auth.");
-    }
-    return value;
+    return process.env.TOKEN_PEPPER ?? "";
 };
 
 export interface IssuedToken {
