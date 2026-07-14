@@ -461,7 +461,7 @@ export const makeQuoteStore = (quoteMode: QuoteMode) => {
 
             return res.sendResponse(
                 { quote: quoteToJSON(quote, source.currency) },
-                res.__("107"),
+                res.__("s107"),
                 107,
             );
         } catch (error) {

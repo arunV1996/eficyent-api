@@ -1,11 +1,10 @@
 import { NextFunction, Request, Response } from "express";
 import PersonalAccessToken from "../models/personal_access_token.model";
 import User from "../models/user.model";
-import { fingerprintToken } from "../utils/common.utils";
-import { TOKENABLE_TYPE_USER } from "../utils/constants";
+import { authenticateToken } from "../helpers/token.helper";
 
 /**
- * Attach the authenticated user (and the active token row) onto the
+ * Attach the authenticated user (and the active token id) onto the
  * request object for downstream handlers.
  */
 declare global {
@@ -13,22 +12,25 @@ declare global {
     namespace Express {
         interface Request {
             user?: User;
+            tokenId?: number;
             personalAccessToken?: PersonalAccessToken;
         }
     }
 }
 
+const BEARER_PATTERN = /^Bearer\s+(.+)$/i;
+
 /**
- * Sanctum-equivalent bearer authentication middleware.
+ * Express equivalent of `auth:sanctum` (mirror of the legacy
+ * authSanctum):
  *
- * The client presents an opaque token via the `Authorization: Bearer
- * <token>` header. We rebuild the SHA-256 fingerprint, look it up in
- * personal_access_tokens, load the User row, and attach both to req.
+ *   - reads Authorization: Bearer <id>|<random>
+ *   - verifies the peppered token hash against personal_access_tokens
+ *   - touches the Redis session (sliding inactivity TTL); a missing
+ *     session is a forced logout
+ *   - attaches req.user and req.tokenId
  *
- * Error codes match the current /node behavior:
- *   1006 -> No authentication token provided
- *   1007 -> Invalid or expired authentication token
- *   1002 -> User not found
+ * On failure: HTTP 401 with error_code 401, no detail leak.
  */
 export const authSanctum = async (
     req: Request,
@@ -36,51 +38,22 @@ export const authSanctum = async (
     next: NextFunction,
 ): Promise<void> => {
     try {
-        const authorizationHeader = req.headers.authorization;
-        if (
-            !authorizationHeader ||
-            !authorizationHeader.startsWith("Bearer ")
-        ) {
-            res.sendError(res.__("401"), 401, 401);
-            return;
+        const authorizationHeader = req.header("authorization");
+        if (!authorizationHeader) {
+            return res.sendError(res.__("401"), 401, 401);
+        }
+        const bearerMatch = BEARER_PATTERN.exec(authorizationHeader);
+        if (!bearerMatch) {
+            return res.sendError(res.__("401"), 401, 401);
         }
 
-        const plaintextToken = authorizationHeader.slice("Bearer ".length).trim();
-        if (!plaintextToken) {
-            res.sendError(res.__("401"), 401, 401);
-            return;
+        const result = await authenticateToken(bearerMatch[1]);
+        if (!result) {
+            return res.sendError(res.__("401"), 401, 401);
         }
 
-        const tokenFingerprint = fingerprintToken(plaintextToken);
-
-        const tokenRow = await PersonalAccessToken.findOne({
-            where: {
-                token: tokenFingerprint,
-                tokenableType: TOKENABLE_TYPE_USER,
-            },
-        });
-
-        if (!tokenRow) {
-            res.sendError(res.__("401"), 401, 401);
-            return;
-        }
-
-        if (tokenRow.expiresAt && tokenRow.expiresAt.getTime() < Date.now()) {
-            res.sendError(res.__("401"), 401, 401);
-            return;
-        }
-
-        const user = await User.findByPk(tokenRow.tokenableId);
-        if (!user) {
-            res.sendError(res.__("401"), 401, 401);
-            return;
-        }
-
-        tokenRow.lastUsedAt = new Date();
-        await tokenRow.save();
-
-        req.user = user;
-        req.personalAccessToken = tokenRow;
+        req.user = result.user;
+        req.tokenId = result.tokenId;
         next();
     } catch (error) {
         res.handleError(error);

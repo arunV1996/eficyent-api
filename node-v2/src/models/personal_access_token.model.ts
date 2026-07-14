@@ -15,7 +15,7 @@ interface PersonalAccessTokenAttributes {
     tokenableId: number;
     name: string;
     token: string;
-    abilities: string[] | null;
+    abilities: string | null;
     lastUsedAt: Date | null;
     expiresAt: Date | null;
     createdAt?: Date;
@@ -40,7 +40,7 @@ class PersonalAccessToken
     public tokenableId!: number;
     public name!: string;
     public token!: string;
-    public abilities!: string[] | null;
+    public abilities!: string | null;
     public lastUsedAt!: Date | null;
     public expiresAt!: Date | null;
 
@@ -73,7 +73,8 @@ PersonalAccessToken.init(
             unique: true,
         },
         abilities: {
-            type: DataTypes.JSON,
+            // Legacy stores a JSON-stringified array in a TEXT column.
+            type: DataTypes.TEXT,
             allowNull: true,
         },
         lastUsedAt: {

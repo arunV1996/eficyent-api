@@ -1,8 +1,13 @@
 {
-    "101": "Registration successful.",
-    "104": "Login successful.",
-    "105": "Logout successful.",
-    "106": "Submitted successfully.",
-    "107": "Quote created successfully.",
-    "113": "Account validation completed."
+    "s101": "Registration successful.",
+    "s102": "OTP Verified successfully.",
+    "s103": "OTP sent successfully.",
+    "s104": "Login successful.",
+    "s105": "Logout successful.",
+    "s106": "Submitted successfully.",
+    "s107": "Quote created successfully.",
+    "s109": "Mail sent successfully.",
+    "s110": "Code verified successfully.",
+    "s111": "Password reset successfully.",
+    "s113": "Account validation completed."
 }

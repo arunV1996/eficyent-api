@@ -28,7 +28,7 @@ module.exports = {
                 unique: true,
             },
             abilities: {
-                type: Sequelize.JSON,
+                type: Sequelize.TEXT,
                 allowNull: true,
             },
             last_used_at: {

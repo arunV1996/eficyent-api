@@ -25,6 +25,7 @@ import "./models/service_bank.model";
 import "./models/supported_country.model";
 import "./models/merchant_setting.model";
 import "./models/mobile_country_code.model";
+import "./models/password_reset_token.model";
 import "./models/payout_job.model";
 import "./models/personal_access_token.model";
 import "./models/quote.model";

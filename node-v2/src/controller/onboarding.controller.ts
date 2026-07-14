@@ -319,7 +319,7 @@ export const stepTwo = async (req: Request, res: Response): Promise<void> => {
 
         return res.sendResponse(
             { user: await onboardingUserToJSON(updatedUser, information) },
-            res.__("106"),
+            res.__("s106"),
             106,
         );
     } catch (error) {
@@ -487,7 +487,7 @@ export const stepThree = async (
             }
         }
 
-        return res.sendResponse(responseData, res.__("106"), 106);
+        return res.sendResponse(responseData, res.__("s106"), 106);
     } catch (error) {
         return res.handleError(error);
     }

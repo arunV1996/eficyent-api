@@ -22,8 +22,13 @@ import {
     refreshRatesBodyValidator,
 } from "../validators/quote.validator";
 import {
+    emailOnlyValidator,
     loginValidator,
     registerValidator,
+    resetPasswordValidator,
+    tfaLoginValidator,
+    verifyCodeValidator,
+    verifyOtpValidator,
 } from "../validators/auth.validator";
 import {
     depositLookupsQueryValidator,
@@ -43,13 +48,41 @@ export const authApiRoutes = {
         path: "/register",
         middleware: [registerValidator, checkValidationErrors],
     },
+    VERIFY_OTP: {
+        path: "/verify-otp",
+        middleware: [verifyOtpValidator, checkValidationErrors],
+    },
+    RESEND_OTP: {
+        path: "/resend-otp",
+        middleware: [emailOnlyValidator, checkValidationErrors],
+    },
     LOGIN: {
         path: "/login",
         middleware: [loginValidator, checkValidationErrors],
     },
+    TFA_LOGIN: {
+        path: "/tfa-login",
+        middleware: [tfaLoginValidator, checkValidationErrors],
+    },
+    FORGOT_SEND_LINK: {
+        path: "/forgot-password/send-reset-link",
+        middleware: [emailOnlyValidator, checkValidationErrors],
+    },
+    FORGOT_VERIFY_CODE: {
+        path: "/forgot-password/verify-code",
+        middleware: [verifyCodeValidator, checkValidationErrors],
+    },
+    FORGOT_RESET_PASSWORD: {
+        path: "/forgot-password/reset-password",
+        middleware: [resetPasswordValidator, checkValidationErrors],
+    },
     LOGOUT: {
         path: "/logout",
         middleware: [authSanctum],
+    },
+    GET_CREDENTIALS: {
+        path: "/get-credentials",
+        middleware: [authSanctum, emailShouldBeVerified],
     },
 };
 

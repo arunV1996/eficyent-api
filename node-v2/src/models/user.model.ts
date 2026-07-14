@@ -38,6 +38,16 @@ interface UserAttributes {
     timezone: string;
     memo: string | null;
     serviceProviders: unknown | null;
+    emailCode: string | null;
+    emailCodeExpiry: string | null;
+    tfaSecret: string | null;
+    backupCodes: string | null;
+    apiKey: string | null;
+    saltKey: string | null;
+    privateKey: string | null;
+    publicKey: string | null;
+    deviceType: string | null;
+    deviceToken: string | null;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -66,6 +76,16 @@ interface UserCreationAttributes
         | "timezone"
         | "memo"
         | "serviceProviders"
+        | "emailCode"
+        | "emailCodeExpiry"
+        | "tfaSecret"
+        | "backupCodes"
+        | "apiKey"
+        | "saltKey"
+        | "privateKey"
+        | "publicKey"
+        | "deviceType"
+        | "deviceToken"
     > {}
 
 class User
@@ -97,6 +117,16 @@ class User
     public timezone!: string;
     public memo!: string | null;
     public serviceProviders!: unknown | null;
+    public emailCode!: string | null;
+    public emailCodeExpiry!: string | null;
+    public tfaSecret!: string | null;
+    public backupCodes!: string | null;
+    public apiKey!: string | null;
+    public saltKey!: string | null;
+    public privateKey!: string | null;
+    public publicKey!: string | null;
+    public deviceType!: string | null;
+    public deviceToken!: string | null;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -216,6 +246,16 @@ User.init(
             type: DataTypes.JSON,
             allowNull: true,
         },
+        emailCode: { type: DataTypes.STRING(255), allowNull: true },
+        emailCodeExpiry: { type: DataTypes.STRING(255), allowNull: true },
+        tfaSecret: { type: DataTypes.TEXT, allowNull: true },
+        backupCodes: { type: DataTypes.TEXT, allowNull: true },
+        apiKey: { type: DataTypes.TEXT, allowNull: true },
+        saltKey: { type: DataTypes.TEXT, allowNull: true },
+        privateKey: { type: DataTypes.TEXT, allowNull: true },
+        publicKey: { type: DataTypes.TEXT, allowNull: true },
+        deviceType: { type: DataTypes.STRING(255), allowNull: true },
+        deviceToken: { type: DataTypes.STRING(255), allowNull: true },
     },
     {
         sequelize,
@@ -225,11 +265,18 @@ User.init(
         createdAt: "created_at",
         updatedAt: "updated_at",
         defaultScope: {
-            attributes: { exclude: ["password"] },
+            attributes: {
+                exclude: ["password", "tfaSecret", "backupCodes", "saltKey", "privateKey", "emailCode"],
+            },
         },
         scopes: {
             withPassword: {
                 attributes: { include: ["password"] },
+            },
+            // Full row including credential/2FA secrets — use only in
+            // auth flows that verify them.
+            withSecrets: {
+                attributes: { include: [] },
             },
         },
     },

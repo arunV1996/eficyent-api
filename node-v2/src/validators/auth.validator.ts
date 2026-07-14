@@ -12,17 +12,24 @@ const localizedError = (localeKey: string, code: number) => {
     };
 };
 
-/**
- * express-validator chain for POST /api/user/register.
- */
-export const registerValidator: ValidationChain[] = [
+const emailRule = () =>
     body("email")
         .notEmpty()
         .withMessage(localizedError("1100", 1100))
         .bail()
         .isEmail()
-        .withMessage(localizedError("1101", 1101)),
+        .withMessage(localizedError("1101", 1101));
 
+const sixDigitCode = (field: string) =>
+    body(field)
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .matches(/^\d{6}$/)
+        .withMessage(() => ({ msg: "Must be a 6-digit code.", code: 422 }));
+
+export const registerValidator: ValidationChain[] = [
+    emailRule(),
     body("password")
         .notEmpty()
         .withMessage(localizedError("1100", 1100))
@@ -32,18 +39,45 @@ export const registerValidator: ValidationChain[] = [
         .withMessage(localizedError("1103", 1103)),
 ];
 
-/**
- * express-validator chain for POST /api/user/login.
- */
 export const loginValidator: ValidationChain[] = [
-    body("email")
+    emailRule(),
+    body("password").notEmpty().withMessage(localizedError("1100", 1100)),
+];
+
+/** POST /tfa-login */
+export const tfaLoginValidator: ValidationChain[] = [
+    emailRule(),
+    sixDigitCode("verification_code"),
+];
+
+/** POST /verify-otp */
+export const verifyOtpValidator: ValidationChain[] = [
+    emailRule(),
+    sixDigitCode("otp"),
+];
+
+/** POST /resend-otp and /forgot-password/send-reset-link */
+export const emailOnlyValidator: ValidationChain[] = [emailRule()];
+
+/** POST /forgot-password/verify-code */
+export const verifyCodeValidator: ValidationChain[] = [
+    emailRule(),
+    sixDigitCode("verification_code"),
+];
+
+/** POST /forgot-password/reset-password */
+export const resetPasswordValidator: ValidationChain[] = [
+    body("reset_token")
         .notEmpty()
         .withMessage(localizedError("1100", 1100))
         .bail()
-        .isEmail()
-        .withMessage(localizedError("1101", 1101)),
-
+        .isString()
+        .isLength({ min: 20, max: 200 }),
     body("password")
         .notEmpty()
-        .withMessage(localizedError("1100", 1100)),
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .isString()
+        .isLength({ min: 8 })
+        .withMessage(localizedError("1103", 1103)),
 ];
