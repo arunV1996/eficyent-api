@@ -1,6 +1,14 @@
-import { authSanctum, emailShouldBeVerified } from "../middleware/auth";
+import {
+    authSanctum,
+    emailShouldBeVerified,
+    onboardingShouldBeCompleted,
+} from "../middleware/auth";
 import { checkValidationErrors } from "../middleware/checkValidationErrors";
 import { validateMerchant } from "../middleware/validateMerchant";
+import {
+    beneficiaryListQueryValidator,
+    beneficiaryShowQueryValidator,
+} from "../validators/beneficiary_account.validator";
 import { getFormFieldsQueryValidator } from "../validators/onboarding.validator";
 import {
     loginValidator,
@@ -71,6 +79,42 @@ export const onboardingApiRoutes = {
     STEP_THREE: {
         path: "/stepThree",
         middleware: [authSanctum, validateMerchant, emailShouldBeVerified],
+    },
+};
+
+// Shared stack for the beneficiary group (mirror of the legacy
+// router-level middleware ordering).
+const beneficiaryBaseMiddleware = [
+    authSanctum,
+    validateMerchant,
+    emailShouldBeVerified,
+    onboardingShouldBeCompleted,
+];
+
+export const beneficiaryApiRoutes = {
+    LIST: {
+        path: "/list",
+        middleware: [
+            ...beneficiaryBaseMiddleware,
+            beneficiaryListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    SHOW: {
+        path: "/show",
+        middleware: [
+            ...beneficiaryBaseMiddleware,
+            beneficiaryShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    DELETE: {
+        path: "/delete",
+        middleware: [
+            ...beneficiaryBaseMiddleware,
+            beneficiaryShowQueryValidator,
+            checkValidationErrors,
+        ],
     },
 };
 

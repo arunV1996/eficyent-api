@@ -9,6 +9,8 @@ import path from "path";
 import sequelize from "./config/database";
 import { loadLocales } from "./middleware/locales";
 import { responseHelpers } from "./middleware/responseHelpers";
+import "./models/beneficiary_account.model";
+import "./models/beneficiary_additional_detail.model";
 import "./models/lookup.model";
 import "./models/merchant.model";
 import "./models/merchant_setting.model";

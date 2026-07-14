@@ -88,6 +88,26 @@ export const authSanctum = async (
 };
 
 /**
+ * Equivalent of the Laravel onboarding gate: users must have completed
+ * onboarding step 4 before touching business endpoints. Legacy quirk
+ * preserved: the failure responds HTTP 200 with error_code 114.
+ */
+export const onboardingShouldBeCompleted = (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): void => {
+    const ONBOARDING_STEP_FOUR_COMPLETED = 4;
+    if (!req.user) {
+        return res.sendError(res.__("401"), 401, 401);
+    }
+    if (req.user.onboardingStep !== ONBOARDING_STEP_FOUR_COMPLETED) {
+        return res.sendError(res.__("114"), 114, 200);
+    }
+    next();
+};
+
+/**
  * Equivalent of the Laravel `email_should_be_verified` middleware.
  * Must run after authSanctum. Legacy contract: HTTP 403 with
  * error_code 403 "Email not verified."

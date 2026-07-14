@@ -141,6 +141,23 @@ export const generateEmailCodeExpiry = (minutesAhead = 10): string => {
 };
 
 /**
+ * Legacy human date format: "26 Nov 2025 03:41 PM" (2-digit day and
+ * hour, default timezone Asia/Kolkata). Mirror of the
+ * helpers/lookups.formatDate variant used by beneficiary/transaction
+ * resources — distinct from formatDate above, which uses 1-digit
+ * day/hour and defaults to UTC.
+ */
+export const formatDateHuman = (
+    date: Date | string | null | undefined,
+    timezone = "Asia/Kolkata",
+): string => {
+    if (!date) {
+        return "";
+    }
+    return moment.utc(date).tz(timezone).format("DD MMM YYYY hh:mm A");
+};
+
+/**
  * "YES"/"NO" from the tinyint / boolean flags the legacy tables use.
  */
 export const yesNo = (value: number | boolean | null): string => {

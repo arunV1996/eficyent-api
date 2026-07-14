@@ -66,6 +66,31 @@ export const ONBOARDING_STEP_MAP: Record<string, number> = {
 export const IDENTITY_VERIFICATION_PENDING = 1;
 export const ID_VERIFIED_BY_ADMIN = "ad";
 
+// Onboarding completion gate (mirror of ONBOARDING_STEP_FOUR_COMPLETED)
+export const ONBOARDING_STEP_FOUR_COMPLETED = 4;
+
+// Default page size for list endpoints
+export const TAKE_COUNT = 12;
+
+// Payment rails
+export const PAYMENT_RAIL_WIRE = "wire";
+export const PAYMENT_RAIL_SWIFT = "swift";
+export const PAYMENT_RAIL_ACH = "ach";
+
+// Beneficiary account statuses + human-key map (mirror of
+// beneficiary_account_status_map())
+export const BENEFICIARY_ACCOUNT_PENDING = 0;
+export const BENEFICIARY_ACCOUNT_ACTIVATED = 1;
+export const BENEFICIARY_ACCOUNT_DEACTIVATED = 2;
+export const BENEFICIARY_ACCOUNT_BLOCKED = 3;
+
+export const BENEFICIARY_ACCOUNT_STATUS_MAP: Record<string, number> = {
+    PENDING: BENEFICIARY_ACCOUNT_PENDING,
+    ACTIVATED: BENEFICIARY_ACCOUNT_ACTIVATED,
+    DEACTIVATED: BENEFICIARY_ACCOUNT_DEACTIVATED,
+    BLOCKED: BENEFICIARY_ACCOUNT_BLOCKED,
+};
+
 // Default business model when a merchant has no business_model setting
 export const BUSINESS_MODEL_MTO = "mto";
 

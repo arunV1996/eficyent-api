@@ -1,0 +1,57 @@
+import { query, ValidationChain } from "express-validator";
+import { USER_TYPE_MAP } from "../utils/constants";
+
+const localizedError = (localeKey: string, code: number) => {
+    return (_: unknown, meta: { req: unknown }) => {
+        const request = meta.req as { __?: (key: string) => string };
+        const message = request.__ ? request.__(localeKey) : localeKey;
+        return { msg: message, code };
+    };
+};
+
+/**
+ * express-validator chain for GET /beneficiaries/show and
+ * DELETE /beneficiaries/delete (mirror of BeneficiaryShowSchema).
+ */
+export const beneficiaryShowQueryValidator: ValidationChain[] = [
+    query("beneficiary_account_id")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .isString()
+        .isLength({ min: 1, max: 64 })
+        .withMessage(localizedError("1100", 1100)),
+];
+
+/**
+ * express-validator chain for GET /beneficiaries/list (mirror of
+ * BeneficiaryListQuerySchema).
+ */
+export const beneficiaryListQueryValidator: ValidationChain[] = [
+    query("type")
+        .optional()
+        .isIn(Object.keys(USER_TYPE_MAP))
+        .withMessage(localizedError("1100", 1100)),
+
+    query("payment_rail").optional().isString(),
+
+    query("status").optional().isString(),
+
+    query("recipient_country")
+        .optional()
+        .isString()
+        .isLength({ max: 3 })
+        .withMessage(localizedError("1104", 1104)),
+
+    query("recipient_currency")
+        .optional()
+        .isString()
+        .isLength({ max: 3 })
+        .withMessage(localizedError("1104", 1104)),
+
+    query("search_key").optional().isString().isLength({ max: 128 }),
+
+    query("skip").optional().isInt({ min: 0, max: 100_000 }).toInt(),
+
+    query("take").optional().isInt({ min: 1 }).toInt(),
+];

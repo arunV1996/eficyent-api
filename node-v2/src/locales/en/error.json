@@ -2,6 +2,8 @@
     "102": "User not found.",
     "108": "Invalid onboarding step.",
     "109": "File upload failed.",
+    "114": "Onboarding not completed.",
+    "118": "Beneficiary account not found.",
     "125": "Invalid email or password.",
     "126": "New password cannot be the same as old password.",
     "148": "Tour status already updated.",
