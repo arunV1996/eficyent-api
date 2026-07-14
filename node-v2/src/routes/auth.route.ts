@@ -1,6 +1,5 @@
 import { Router } from "express";
 import {
-    getCredentials,
     login,
     logout,
     register,
@@ -68,12 +67,6 @@ router.post(
     authApiRoutes.LOGOUT.path,
     ...authApiRoutes.LOGOUT.middleware,
     logout,
-);
-
-router.get(
-    authApiRoutes.GET_CREDENTIALS.path,
-    ...authApiRoutes.GET_CREDENTIALS.middleware,
-    getCredentials,
 );
 
 export default router;

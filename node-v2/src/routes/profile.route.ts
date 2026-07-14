@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getCredentials } from "../controller/auth.controller";
 import {
     changePassword,
     profile,
@@ -12,6 +13,15 @@ router.get(
     profileApiRoutes.PROFILE.path,
     ...profileApiRoutes.PROFILE.middleware,
     profile,
+);
+
+// Moved from auth.route.ts to match the legacy grouping; the full path
+// (/api/user/get-credentials) is unchanged because both routers mount
+// under /user.
+router.get(
+    profileApiRoutes.GET_CREDENTIALS.path,
+    ...profileApiRoutes.GET_CREDENTIALS.middleware,
+    getCredentials,
 );
 
 router.post(

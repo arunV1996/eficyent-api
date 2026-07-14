@@ -1,6 +1,11 @@
 // User account types (mirrors USER_TYPE_* in node/src/helpers/constants.ts)
+export const USER_TYPE_PENDING = 0;
 export const USER_TYPE_PERSONAL = 1;
 export const USER_TYPE_BUSINESS = 2;
+
+// merchant_settings.supported_user_types values
+export const SUPPORTED_USER_INDIVIDUAL = "individual";
+export const SUPPORTED_USER_BUSINESS = "business";
 
 export const USER_TYPES = [USER_TYPE_PERSONAL, USER_TYPE_BUSINESS] as const;
 

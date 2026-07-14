@@ -32,7 +32,7 @@ export const verifyOtp = async (
             where: { email },
         });
         if (!user) {
-            return res.sendError(res.__("s102"), 102, 400);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         if (!isSandbox()) {
@@ -84,7 +84,7 @@ export const resendOtp = async (
         const email = String(req.body.email).toLowerCase().trim();
         const user = await User.findOne({ where: { email } });
         if (!user) {
-            return res.sendError(res.__("s102"), 102, 400);
+            return res.sendError(res.__("102"), 102, 400);
         }
         if (user.emailVerifiedAt) {
             return res.sendError(res.__("106"), 106, 400);

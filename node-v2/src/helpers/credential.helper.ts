@@ -1,4 +1,5 @@
 import { generateKeyPairSync, randomBytes } from "crypto";
+import { Transaction } from "sequelize";
 import Merchant from "../models/merchant.model";
 import User from "../models/user.model";
 import { encryptEnvelope } from "./crypto.helper";
@@ -28,6 +29,7 @@ const generateRsaKeyPair = (): { publicKey: string; privateKey: string } => {
 export const generateAndStoreCredentials = async (
     userOrMerchantId: number,
     model: "user" | "merchant" = "user",
+    options: { transaction?: Transaction } = {},
 ): Promise<User | Merchant> => {
     const issued = await issueToken(
         { id: userOrMerchantId },
@@ -46,20 +48,24 @@ export const generateAndStoreCredentials = async (
     };
 
     if (model === "merchant") {
-        const merchant = await Merchant.unscoped().findByPk(
-            userOrMerchantId,
-        );
+        const merchant = await Merchant.unscoped().findByPk(userOrMerchantId, {
+            transaction: options.transaction,
+        });
         if (!merchant) {
             throw new Error("Merchant not found for credential generation");
         }
-        return merchant.update(credentialData);
+        return merchant.update(credentialData, {
+            transaction: options.transaction,
+        });
     }
 
-    const user = await User.unscoped().findByPk(userOrMerchantId);
+    const user = await User.unscoped().findByPk(userOrMerchantId, {
+        transaction: options.transaction,
+    });
     if (!user) {
         throw new Error("User not found for credential generation");
     }
-    return user.update(credentialData);
+    return user.update(credentialData, { transaction: options.transaction });
 };
 
 export const rotateRsaKeys = async (

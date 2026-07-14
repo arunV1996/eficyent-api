@@ -1,21 +1,22 @@
-import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
+import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "crypto";
 import moment from "moment-timezone";
 import { ALPHA3_TO_ALPHA2, DISPOSABLE_EMAIL_DOMAINS } from "./constants";
 
 /**
- * Hashes a plain text password using argon2id.
- * Matches the algorithm used by the existing node/ project so existing
- * password hashes stored in the users table remain verifiable.
+ * Standard Bcrypt password hashing (10 rounds) — matches Laravel's
+ * default and the legacy /node passwordService, so hashes written by
+ * any of the three services verify on all of them.
  */
 export const hashPassword = async (password: string): Promise<string> => {
-    return argonHash(password);
+    const salt = await bcrypt.genSalt(10);
+    return bcrypt.hash(password, salt);
 };
 
 /**
- * Compares a plain text password with an argon2id hash.
- * Returns false if the stored hash cannot be parsed (invalid format,
- * legacy bcrypt hash, etc.) rather than throwing.
+ * Verifies a plaintext password against a stored Bcrypt hash. Supports
+ * both the Laravel format ($2y$) and the JS format ($2a$/$2b$).
+ * Returns false (never throws) on malformed hashes.
  */
 export const comparePassword = async (
     password: string,
@@ -25,10 +26,25 @@ export const comparePassword = async (
         return false;
     }
     try {
-        return await argonVerify(storedHash, password);
+        const normalizedHash = storedHash.replace(/^\$2y\$/, "$2a$");
+        return await bcrypt.compare(password, normalizedHash);
     } catch {
         return false;
     }
+};
+
+/**
+ * Verify + optional upgrade (mirror of the legacy
+ * passwordService.verifyAndUpgrade). When the hashing configuration is
+ * upgraded in the future, `rehash` carries the new hash for the caller
+ * to persist; today it never rehashes — identical to legacy.
+ */
+export const verifyAndUpgradePassword = async (
+    storedHash: string,
+    password: string,
+): Promise<{ valid: boolean; rehash?: string }> => {
+    const valid = await comparePassword(password, storedHash);
+    return { valid };
 };
 
 /**

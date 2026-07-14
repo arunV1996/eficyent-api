@@ -4,6 +4,7 @@ import {
     onboardingShouldBeCompleted,
 } from "../middleware/auth";
 import { checkValidationErrors } from "../middleware/checkValidationErrors";
+import { strictBody } from "../middleware/strictBody";
 import { validateMerchant } from "../middleware/validateMerchant";
 import {
     beneficiaryFormFieldsQueryValidator,
@@ -24,6 +25,7 @@ import {
 import {
     emailOnlyValidator,
     loginValidator,
+    REGISTER_ALLOWED_KEYS,
     registerValidator,
     resetPasswordValidator,
     tfaLoginValidator,
@@ -46,7 +48,11 @@ import { changePasswordValidator } from "../validators/profile.validator";
 export const authApiRoutes = {
     REGISTER: {
         path: "/register",
-        middleware: [registerValidator, checkValidationErrors],
+        middleware: [
+            strictBody(REGISTER_ALLOWED_KEYS),
+            registerValidator,
+            checkValidationErrors,
+        ],
     },
     VERIFY_OTP: {
         path: "/verify-otp",
@@ -80,16 +86,16 @@ export const authApiRoutes = {
         path: "/logout",
         middleware: [authSanctum],
     },
-    GET_CREDENTIALS: {
-        path: "/get-credentials",
-        middleware: [authSanctum, emailShouldBeVerified],
-    },
 };
 
 export const profileApiRoutes = {
     PROFILE: {
         path: "/profile",
         middleware: [authSanctum, validateMerchant],
+    },
+    GET_CREDENTIALS: {
+        path: "/get-credentials",
+        middleware: [authSanctum, emailShouldBeVerified],
     },
     CHANGE_PASSWORD: {
         path: "/change-password",

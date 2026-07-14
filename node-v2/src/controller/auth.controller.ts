@@ -1,4 +1,6 @@
 import { Request, Response } from "express";
+import { Op } from "sequelize";
+import sequelize from "../config/database";
 import { decryptEnvelope, encryptEnvelope } from "../helpers/crypto.helper";
 import {
     generateAndStoreCredentials,
@@ -12,25 +14,34 @@ import {
 } from "../helpers/token.helper";
 import { checkBackupCode, verifyTotp } from "../helpers/totp.helper";
 import Merchant from "../models/merchant.model";
+import MerchantSetting from "../models/merchant_setting.model";
 import User from "../models/user.model";
-import { userToJSON } from "../resources/user.resource";
+import UserInformation from "../models/user_information.model";
 import {
     comparePassword,
+    generateEmailCodeExpiry,
     generateUniqueId,
     hashPassword,
+    roleLabel,
+    verifyAndUpgradePassword,
 } from "../utils/common.utils";
+import { generateEmailCode } from "../helpers/user_auth_email.helper";
+import { CodedError } from "../helpers/coded_error.helper";
 import {
+    MERCHANT_TYPE_PAYINCOLLECTION,
+    MERCHANT_TYPE_PAYOUT,
+    MERCHANT_TYPE_PAYOUTINTEGRATOR,
+    MERCHANT_TYPE_WHITELABEL,
+    SUPPORTED_USER_BUSINESS,
+    SUPPORTED_USER_INDIVIDUAL,
     TOKEN_ABILITY_AUTHENTICATION,
     USER_TYPE_BUSINESS,
-    USER_TYPE_PERSONAL,
+    USER_TYPE_PENDING,
 } from "../utils/constants";
-
-const MERCHANT_TYPE_PAYOUT = 1;
-const MERCHANT_TYPE_PAYINCOLLECTION = 4;
 
 /**
  * Shapes the login/tfa user object exactly as the legacy
- * LoginController does.
+ * LoginController does (includes the resolved role label).
  */
 const shapeLoginUser = (user: User): Record<string, unknown> => ({
     unique_id: user.uniqueId,
@@ -42,10 +53,57 @@ const shapeLoginUser = (user: User): Record<string, unknown> => ({
         Number(user.userType) === USER_TYPE_BUSINESS ? "BUSINESS" : "PERSONAL",
     is_tfa_setup_completed: user.isTfaSetupCompleted ? "YES" : "NO",
     is_tfa_enabled: user.isTfaEnabled ? "YES" : "NO",
+    role: roleLabel(user.userRole),
 });
 
 /**
+ * A VALID bcrypt hash of a throwaway value. Verifying against it when
+ * no user is found keeps login timing constant, preventing account
+ * enumeration. Must be a well-formed hash so bcrypt does the full work
+ * rather than bailing early on a malformed string.
+ */
+const DUMMY_BCRYPT_HASH =
+    "$2b$10$IPZqH0e./YLGtX60HTlA2uddZW8iX.IB0rvJl5/Ywrb5uu0/UWXP.";
+
+/**
+ * Whether the merchant supports the given user type per its
+ * supported_user_types setting. Mirror of isSupportedUserType.
+ */
+const isSupportedUserType = async (
+    userType: number,
+    merchantId: number,
+    transaction: import("sequelize").Transaction,
+): Promise<boolean> => {
+    const setting = await MerchantSetting.findOne({
+        where: { merchantId, key: "supported_user_types" },
+        transaction,
+    });
+    if (!setting?.value) {
+        return true;
+    }
+    if (
+        setting.value === SUPPORTED_USER_BUSINESS &&
+        userType !== USER_TYPE_BUSINESS
+    ) {
+        return false;
+    }
+    if (
+        setting.value === SUPPORTED_USER_INDIVIDUAL &&
+        userType !== USER_TYPE_PENDING
+    ) {
+        return false;
+    }
+    return true;
+};
+
+/**
  * POST /api/user/register
+ *
+ * Full parity with the legacy RegisterController: one transaction,
+ * email+mobile uniqueness (field-specific 422), X-Merchant-Id email
+ * verification flow, optional user_information, eager credential
+ * generation, and the register-specific response shape (role ADMIN,
+ * no TFA flags).
  */
 export const register = async (
     req: Request,
@@ -54,34 +112,148 @@ export const register = async (
     try {
         const emailAddress = String(req.body.email).toLowerCase().trim();
         const plainPassword = String(req.body.password);
+        const mobile = req.body.mobile ? String(req.body.mobile) : null;
+        const requestedUserType =
+            req.body.user_type !== undefined
+                ? Number(req.body.user_type)
+                : USER_TYPE_PENDING;
+        const merchantHeader = req.header("x-merchant-id");
 
-        const existingUser = await User.findOne({
-            where: { email: emailAddress },
+        const passwordHash = await hashPassword(plainPassword);
+
+        const user = await sequelize.transaction(async (databaseTransaction) => {
+            // Uniqueness across email + mobile (field-specific errors).
+            const existing = await User.unscoped().findOne({
+                where: {
+                    [Op.or]: [
+                        { email: emailAddress },
+                        ...(mobile ? [{ mobile }] : []),
+                    ],
+                },
+                transaction: databaseTransaction,
+            });
+            if (existing) {
+                const fieldErrors: Record<string, string[]> = {};
+                if (existing.email === emailAddress) {
+                    fieldErrors.email = ["The email has already been taken."];
+                }
+                if (mobile && existing.mobile === mobile) {
+                    fieldErrors.mobile = ["The mobile has already been taken."];
+                }
+                if (Object.keys(fieldErrors).length > 0) {
+                    // First field error carries the message; 422 status.
+                    const firstKey = Object.keys(fieldErrors)[0];
+                    throw new CodedError(fieldErrors[firstKey][0], 422, 422);
+                }
+            }
+
+            let sendEmail = !merchantHeader;
+            let merchantRowId: number | null = null;
+
+            if (merchantHeader) {
+                const merchant = await Merchant.findOne({
+                    where: { uniqueId: merchantHeader },
+                    transaction: databaseTransaction,
+                });
+                if (merchant) {
+                    merchantRowId = merchant.id;
+                    if (merchant.type === MERCHANT_TYPE_WHITELABEL) {
+                        sendEmail = true;
+                    }
+                    if (
+                        merchant.type === MERCHANT_TYPE_PAYINCOLLECTION ||
+                        merchant.type === MERCHANT_TYPE_PAYOUTINTEGRATOR
+                    ) {
+                        const supported = await isSupportedUserType(
+                            requestedUserType,
+                            merchant.id,
+                            databaseTransaction,
+                        );
+                        if (!supported) {
+                            throw new CodedError(
+                                "User type not supported by merchant.",
+                                194,
+                                400,
+                            );
+                        }
+                        sendEmail = false;
+                    }
+                }
+            }
+
+            const createdUser = await User.create(
+                {
+                    uniqueId: generateUniqueId(24),
+                    merchantId: merchantRowId,
+                    title: req.body.title ?? null,
+                    firstName: req.body.first_name ?? null,
+                    middleName: req.body.middle_name ?? null,
+                    lastName: req.body.last_name ?? null,
+                    email: emailAddress,
+                    mobileCountryCode: req.body.mobile_country_code ?? null,
+                    mobile,
+                    password: passwordHash,
+                    userType: requestedUserType,
+                    timezone: req.body.timezone ?? "Asia/Kolkata",
+                    emailCode: sendEmail ? generateEmailCode() : null,
+                    emailCodeExpiry: sendEmail
+                        ? generateEmailCodeExpiry(10)
+                        : null,
+                    emailVerifiedAt: sendEmail ? null : new Date(),
+                },
+                { transaction: databaseTransaction },
+            );
+
+            if (req.body.country) {
+                await UserInformation.create(
+                    {
+                        uniqueId: generateUniqueId(24),
+                        userId: createdUser.id,
+                        country: String(req.body.country),
+                    } as never,
+                    { transaction: databaseTransaction },
+                );
+            }
+
+            await generateAndStoreCredentials(createdUser.id, "user", {
+                transaction: databaseTransaction,
+            });
+
+            return createdUser;
         });
-        if (existingUser) {
-            return res.sendError(res.__("1102"), 422, 422);
+
+        if (!user.emailVerifiedAt) {
+            await UserAuthEmail.registered(user);
         }
 
-        const hashedPassword = await hashPassword(plainPassword);
-        const createdUser = await User.create({
-            uniqueId: generateUniqueId(24),
-            email: emailAddress,
-            password: hashedPassword,
-            mobileCountryCode: req.body.mobile_country_code ?? null,
-            mobile: req.body.mobile ?? null,
-            userType: Number(req.body.user_type) || USER_TYPE_PERSONAL,
-        });
-
-        // Send the verification OTP (writes email_code on the row).
-        await UserAuthEmail.registered(createdUser);
-
-        const responseUser = await User.findByPk(createdUser.id);
         return res.sendResponse(
-            responseUser ? userToJSON(responseUser, req) : null,
+            {
+                user: {
+                    unique_id: user.uniqueId,
+                    email: user.email,
+                    mobile_country_code: user.mobileCountryCode,
+                    mobile: user.mobile,
+                    email_status: user.emailVerifiedAt
+                        ? "VERIFIED"
+                        : "NOT_VERIFIED",
+                    user_type:
+                        Number(user.userType) === USER_TYPE_BUSINESS
+                            ? "BUSINESS"
+                            : "PERSONAL",
+                    role: "ADMIN",
+                },
+            },
             res.__("s101"),
             101,
         );
     } catch (error) {
+        if (error instanceof CodedError) {
+            return res.sendError(
+                error.message,
+                error.errorCode,
+                error.httpStatus,
+            );
+        }
         return res.handleError(error);
     }
 };
@@ -102,16 +274,24 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         const user = await User.scope("withPassword").findOne({
             where: { email: emailAddress },
         });
-        if (!user) {
+
+        // Constant-time path: always run a verify even when the user is
+        // missing, so response timing can't be used to enumerate
+        // accounts. verifyAndUpgrade also surfaces a rehash when the
+        // hashing config is upgraded.
+        const verification = user
+            ? await verifyAndUpgradePassword(user.password, plainPassword)
+            : ((await comparePassword(plainPassword, DUMMY_BCRYPT_HASH)) &&
+                  false) ||
+              { valid: false as boolean };
+
+        if (!user || !verification.valid) {
             return res.sendError(res.__("125"), 125, 422);
         }
 
-        const passwordMatches = await comparePassword(
-            plainPassword,
-            user.password,
-        );
-        if (!passwordMatches) {
-            return res.sendError(res.__("125"), 125, 422);
+        // Persist an upgraded hash if the verifier produced one.
+        if (verification.rehash) {
+            await user.update({ password: verification.rehash });
         }
 
         // Persist device fields exactly as the legacy service did.
@@ -256,7 +436,7 @@ export const logout = async (
 ): Promise<void> => {
     try {
         if (!req.user || !req.tokenId) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
         await revokeToken(req.tokenId, req.user.id);
         await User.update(
