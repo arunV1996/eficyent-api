@@ -81,7 +81,12 @@ export interface CreatorContext {
     senderId?: number | null;
 }
 
-const isRemitterDepositEnabled = async (
+/**
+ * Mirror of Helper::is_remitter_deposit_enabled — true only for
+ * PAYOUT-type merchants with the 'enable_remitter_deposit' setting set
+ * to '1'. Exported for the /direct flow and the sender form fields.
+ */
+export const isRemitterDepositEnabled = async (
     merchantId: number | null,
 ): Promise<boolean> => {
     if (!merchantId) {

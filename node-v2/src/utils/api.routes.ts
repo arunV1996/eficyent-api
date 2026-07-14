@@ -8,9 +8,14 @@ import { idempotency } from "../middleware/idempotency";
 import { strictBody } from "../middleware/strictBody";
 import { validateMerchant } from "../middleware/validateMerchant";
 import {
+    DIRECT_ALLOWED_KEYS,
+    INSTANT_ALLOWED_KEYS,
+    instantPayoutBodyValidator,
+    payoutFormFieldsQueryValidator,
     PROOF_REQUEST_ALLOWED_KEYS,
     proofGetQueryValidator,
     proofRequestBodyValidator,
+    sendMoneyDirectBodyValidator,
     TRANSACTION_CANCEL_ALLOWED_KEYS,
     TRANSACTION_STORE_ALLOWED_KEYS,
     TRANSACTION_UPDATE_STATUS_ALLOWED_KEYS,
@@ -290,6 +295,46 @@ export const beneficiaryTransactionApiRoutes = {
             idempotency(),
             strictBody(TRANSACTION_CANCEL_ALLOWED_KEYS),
             transactionCancelBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    GET_FORM_FIELDS: {
+        path: "/get-form-fields",
+        middleware: [
+            ...transactionBaseMiddleware,
+            payoutFormFieldsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    TRANSACTION_FORM_FIELDS: {
+        path: "/transaction-form-fields",
+        middleware: [...transactionBaseMiddleware],
+    },
+    DIRECT: {
+        path: "/direct",
+        middleware: [
+            ...transactionBaseMiddleware,
+            idempotency(),
+            strictBody(DIRECT_ALLOWED_KEYS),
+            sendMoneyDirectBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    INSTANT_GET_FORM_FIELDS: {
+        path: "/instant/get-form-fields",
+        middleware: [
+            ...transactionBaseMiddleware,
+            payoutFormFieldsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    INSTANT_STORE: {
+        path: "/instant/store",
+        middleware: [
+            ...transactionBaseMiddleware,
+            idempotency(),
+            strictBody(INSTANT_ALLOWED_KEYS),
+            instantPayoutBodyValidator,
             checkValidationErrors,
         ],
     },

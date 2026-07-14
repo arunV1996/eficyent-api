@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { Op } from "sequelize";
+import { validateAndNormalizeBeneficiary } from "../helpers/beneficiary_normalizer.helper";
 import {
     cancelTransactions,
     findTransactionByAnyId,
@@ -7,9 +8,25 @@ import {
     updateTransactionStatus,
 } from "../helpers/beneficiary_transaction.helper";
 import { CodedError } from "../helpers/coded_error.helper";
-import { createPayoutTransaction } from "../helpers/payout_transaction.helper";
+import {
+    beneficiaryFormFields,
+    quoteFormFields,
+    senderFields,
+    transactionFormFields as buildTransactionFormFields,
+} from "../helpers/form_fields.helper";
+import {
+    createPayoutTransaction,
+    isRemitterDepositEnabled,
+} from "../helpers/payout_transaction.helper";
+import { validateAndNormalizeSender } from "../helpers/sender_normalizer.helper";
+import { Dispatch } from "../jobs";
+import BeneficiaryAccount from "../models/beneficiary_account.model";
+import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import BeneficiaryTransactionProof from "../models/beneficiary_transaction_proof.model";
+import Merchant from "../models/merchant.model";
+import PayoutJob from "../models/payout_job.model";
+import Sender from "../models/sender.model";
 import {
     beneficiaryTransactionCallbackToJSON,
     beneficiaryTransactionToJSON,
@@ -22,6 +39,7 @@ import {
     PAYMENT_PROOF_FIRA,
     PAYMENT_PROOF_REQUESTED,
     PAYMENT_PROOF_SWIFT,
+    PAYOUT_JOB_STATUS_PENDING,
     TAKE_COUNT,
 } from "../utils/constants";
 
@@ -29,14 +47,11 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
 
 /**
  * Mirror of Api\BeneficiaryTransactionController (via the legacy
- * payoutController). This tranche ships the JSON surface: list, store,
- * show, check_transaction_status, check_status, cancel, update-status
- * and the transaction-proof pair.
+ * payoutController): list, store, show, check_transaction_status,
+ * check_status, cancel, update-status, the transaction-proof pair,
+ * the form-fields trio, /direct and /instant/store.
  *
  * Deferred (documented per endpoint below where relevant):
- *   - /direct and /instant (need the sender normalizer)
- *   - /get-form-fields, /instant/get-form-fields,
- *     /transaction-form-fields (payout form-field builders)
  *   - /export, /download (puppeteer/EJS PDF + XLSX exports)
  *   - /bulk/template, /bulk/store (Excel import/export service)
  *   - public /retry-job, /retry_external_service,
@@ -410,6 +425,434 @@ export const getProof = async (
             res.__("s115"),
             115,
         );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * Maps the GetFormFields type token (C2C/C2B/B2C/B2B or a numeric /
+ * label user type) to the (beneficiary_type, remitter_type) pair —
+ * mirror of the legacy resolvePartyTypes.
+ */
+const resolvePartyTypes = (
+    typeToken?: string,
+): {
+    payment_type: "C2C" | "C2B" | "B2C" | "B2B";
+    beneficiary_type: 1 | 2;
+    remitter_type: 1 | 2;
+} => {
+    let paymentType: "C2C" | "C2B" | "B2C" | "B2B" = "C2C";
+    if (
+        typeToken === "C2C" ||
+        typeToken === "C2B" ||
+        typeToken === "B2C" ||
+        typeToken === "B2B"
+    ) {
+        paymentType = typeToken;
+    } else if (
+        typeToken === "1" ||
+        typeToken === "INDIVIDUAL" ||
+        typeToken === "PERSONAL"
+    ) {
+        paymentType = "C2C";
+    } else if (typeToken === "2" || typeToken === "BUSINESS") {
+        paymentType = "C2B";
+    }
+    const partyMap: Record<
+        typeof paymentType,
+        { beneficiary_type: 1 | 2; remitter_type: 1 | 2 }
+    > = {
+        C2C: { beneficiary_type: 1, remitter_type: 1 },
+        C2B: { beneficiary_type: 1, remitter_type: 2 },
+        B2C: { beneficiary_type: 2, remitter_type: 1 },
+        B2B: { beneficiary_type: 2, remitter_type: 2 },
+    };
+    return { payment_type: paymentType, ...partyMap[paymentType] };
+};
+
+/**
+ * Nulls out placeholder junk ("", "undefined", "null", "n/a") before a
+ * value lands in a DB column — mirror of the legacy cleanDbField.
+ */
+const cleanDbField = (value: unknown): string | null => {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    const stringValue = String(value).trim();
+    const lowered = stringValue.toLowerCase();
+    if (
+        lowered === "" ||
+        lowered === "undefined" ||
+        lowered === "null" ||
+        lowered === "n/a" ||
+        lowered === "na"
+    ) {
+        return null;
+    }
+    return stringValue;
+};
+
+/**
+ * GET /api/user/beneficiary-transactions/get-form-fields
+ */
+export const getFormFields = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const query = req.query as Record<string, string | undefined>;
+        const parties = resolvePartyTypes(query.type);
+        const beneficiary = await beneficiaryFormFields({
+            country: String(query.country),
+            currency: String(query.currency),
+            type: parties.beneficiary_type,
+            merchantId: req.user.merchantId,
+        });
+        const merchantRow = req.user.merchantId
+            ? await Merchant.findByPk(req.user.merchantId)
+            : null;
+        const remitter = await senderFields({
+            type: parties.remitter_type,
+            merchantId: merchantRow?.id ?? null,
+            remitterDepositEnabled: await isRemitterDepositEnabled(
+                req.user.merchantId,
+            ),
+        });
+        const transaction = await buildTransactionFormFields(
+            req.user,
+            query.type,
+            query.country,
+        );
+        return res.sendResponse(
+            { form_fields: { transaction, beneficiary, remitter } },
+            "",
+            200,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * GET /api/user/beneficiary-transactions/transaction-form-fields
+ */
+export const transactionFormFields = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        const query = req.query as { type?: string; country?: string };
+        return res.sendResponse(
+            {
+                form_fields: await buildTransactionFormFields(
+                    req.user,
+                    query.type,
+                    query.country,
+                ),
+            },
+            "",
+            200,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * GET /api/user/beneficiary-transactions/instant/get-form-fields
+ */
+export const instantGetFormFields = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const query = req.query as Record<string, string | undefined>;
+        const parties = resolvePartyTypes(query.type);
+        const beneficiary = await beneficiaryFormFields({
+            country: String(query.country),
+            currency: String(query.currency),
+            type: parties.beneficiary_type,
+            merchantId: req.user.merchantId,
+        });
+        const merchantRow = req.user.merchantId
+            ? await Merchant.findByPk(req.user.merchantId)
+            : null;
+        const remitter = await senderFields({
+            type: parties.remitter_type,
+            merchantId: merchantRow?.id ?? null,
+            remitterDepositEnabled: await isRemitterDepositEnabled(
+                req.user.merchantId,
+            ),
+        });
+        const quote = await quoteFormFields();
+        return res.sendResponse(
+            { form_fields: { transaction: quote, beneficiary, remitter } },
+            "",
+            200,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/user/beneficiary-transactions/direct — single-call payout:
+ * validates + upserts the beneficiary and remitter, then creates the
+ * transaction against the supplied quote.
+ */
+export const direct = async (req: Request, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+
+        const beneficiary = await validateAndNormalizeBeneficiary(
+            req.body.beneficiary as Record<string, unknown>,
+            req.user,
+        );
+        const depositEnabled = await isRemitterDepositEnabled(
+            req.user.merchantId,
+        );
+        const sender = await validateAndNormalizeSender(
+            req.body.remitter as Record<string, unknown>,
+            req.user,
+            depositEnabled,
+        );
+        const transaction = req.body.transaction as Record<string, unknown>;
+        if (!transaction.quote_id) {
+            return res.sendError("Quote not found.", 121, 400);
+        }
+
+        transaction.supporting_document = await handleSupportingDocument(
+            transaction.supporting_document as string | undefined,
+        );
+
+        // Beneficiary upsert: reuse an existing account matching
+        // (email, account number, currency); otherwise create the
+        // account + additional-detail pair.
+        const beneficiaryEmail = cleanDbField(
+            beneficiary.beneficiaryAccount.email,
+        );
+        const accountNumber = cleanDbField(
+            beneficiary.beneficiaryAccount.account_number,
+        );
+        const currency = String(beneficiary.beneficiaryAccount.currency ?? "");
+        let beneficiaryAccount = beneficiaryEmail
+            ? await BeneficiaryAccount.findOne({
+                  where: {
+                      userId: req.user.id,
+                      email: beneficiaryEmail,
+                      accountNumber,
+                      currency,
+                  },
+              })
+            : null;
+        if (!beneficiaryAccount) {
+            beneficiaryAccount = await BeneficiaryAccount.create({
+                uniqueId: generateUniqueId(24),
+                userId: req.user.id,
+                type:
+                    typeof beneficiary.beneficiaryAccount.type === "number"
+                        ? beneficiary.beneficiaryAccount.type
+                        : null,
+                country: String(
+                    beneficiary.beneficiaryAccount.country ?? "US",
+                ),
+                currency,
+                firstName: cleanDbField(
+                    beneficiary.beneficiaryAccount.first_name,
+                ),
+                middleName: cleanDbField(
+                    beneficiary.beneficiaryAccount.middle_name,
+                ),
+                lastName: cleanDbField(
+                    beneficiary.beneficiaryAccount.last_name,
+                ),
+                email: beneficiaryEmail,
+                mobileCountryCode: cleanDbField(
+                    beneficiary.beneficiaryAccount.mobile_country_code,
+                ),
+                mobile: cleanDbField(beneficiary.beneficiaryAccount.mobile),
+                accountNumber,
+                accountName: cleanDbField(
+                    beneficiary.beneficiaryAccount.account_name,
+                ),
+                bankName: cleanDbField(
+                    beneficiary.beneficiaryAccount.bank_name,
+                ),
+                paymentRail: cleanDbField(
+                    beneficiary.beneficiaryAccount.payment_rail,
+                ),
+                routingNumber: cleanDbField(
+                    beneficiary.beneficiaryAccount.routing_number,
+                ),
+                swiftCode: cleanDbField(
+                    beneficiary.beneficiaryAccount.swift_code,
+                ),
+                iban: cleanDbField(beneficiary.beneficiaryAccount.iban),
+                businessName: cleanDbField(
+                    beneficiary.beneficiaryAccount.business_name,
+                ),
+                businessCountry: cleanDbField(
+                    beneficiary.beneficiaryAccount.business_country,
+                ),
+                status: 1,
+            });
+
+            const additionalDetail =
+                beneficiary.beneficiaryAccountAdditionalDetail;
+            await BeneficiaryAdditionalDetail.create({
+                uniqueId: generateUniqueId(24),
+                beneficiaryAccountId: beneficiaryAccount.id,
+                addressType:
+                    cleanDbField(additionalDetail.address_type) ?? "PRESENT",
+                addressLine1: cleanDbField(additionalDetail.address_line1),
+                addressLine2: cleanDbField(additionalDetail.address_line2),
+                postalCode: cleanDbField(additionalDetail.postal_code),
+                city: cleanDbField(additionalDetail.city),
+                state: cleanDbField(additionalDetail.state),
+                country: cleanDbField(additionalDetail.country),
+                paymentType: cleanDbField(additionalDetail.payment_type),
+                bankAddressLine1: cleanDbField(
+                    additionalDetail.bank_address_line1,
+                ),
+                bankAddressLine2: cleanDbField(
+                    additionalDetail.bank_address_line2,
+                ),
+                bankPostalCode: cleanDbField(
+                    additionalDetail.bank_postal_code,
+                ),
+                bankCity: cleanDbField(additionalDetail.bank_city),
+                bankState: cleanDbField(additionalDetail.bank_state),
+                bankCountry: cleanDbField(additionalDetail.bank_country),
+                purposeOfTransaction: cleanDbField(
+                    additionalDetail.purpose_of_transaction,
+                ),
+                userSourceOfIncome: cleanDbField(
+                    additionalDetail.user_source_of_income,
+                ),
+            });
+        }
+
+        // Sender upsert: reuse by id_number, otherwise create.
+        const senderIdNumber = cleanDbField(sender.id_number);
+        let senderRow = senderIdNumber
+            ? await Sender.findOne({
+                  where: { userId: req.user.id, idNumber: senderIdNumber },
+              })
+            : null;
+        if (!senderRow) {
+            let dateOfBirth: Date | null = null;
+            if (sender.dob) {
+                const parsedDob = new Date(sender.dob as string);
+                if (!Number.isNaN(parsedDob.getTime())) {
+                    dateOfBirth = parsedDob;
+                }
+            }
+
+            senderRow = await Sender.create({
+                uniqueId: generateUniqueId(24),
+                userId: req.user.id,
+                firstName: cleanDbField(sender.first_name),
+                middleName: cleanDbField(sender.middle_name),
+                lastName: cleanDbField(sender.last_name),
+                email: cleanDbField(sender.email),
+                mobileCountryCode: cleanDbField(sender.mobile_country_code),
+                mobile: cleanDbField(sender.mobile),
+                dob: dateOfBirth,
+                country: cleanDbField(sender.country),
+                nationality: cleanDbField(sender.nationality),
+                address1: cleanDbField(sender.address_1 ?? sender.address),
+                address2: cleanDbField(sender.address_2),
+                city: cleanDbField(sender.city),
+                state: cleanDbField(sender.state),
+                postalCode: cleanDbField(sender.postal_code),
+                type: typeof sender.type === "number" ? sender.type : null,
+                idType: cleanDbField(sender.id_type),
+                idNumber: senderIdNumber,
+                sourceOfFunds: cleanDbField(sender.source_of_funds),
+                businessPersons: sender.business_persons ?? null,
+                status: 1,
+            });
+        }
+
+        const createdTransaction = await createPayoutTransaction(
+            {
+                beneficiary_account_id: beneficiaryAccount.uniqueId,
+                quote_id: String(transaction.quote_id),
+                remitter_id: senderRow.uniqueId,
+                remarks: (transaction.remarks as string) ?? undefined,
+                supporting_document:
+                    (transaction.supporting_document as string) ?? undefined,
+                txn_ref_no: (transaction.txn_ref_no as string) ?? undefined,
+                purpose_of_payment:
+                    (transaction.purpose_of_payment as string) ?? undefined,
+                client_reference_id:
+                    (transaction.client_reference_id as string) ?? undefined,
+            },
+            req.user,
+        );
+        return res.sendResponse(
+            {
+                beneficiary_transaction:
+                    await beneficiaryTransactionToJSON(createdTransaction),
+            },
+            res.__("s108"),
+            108,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/user/beneficiary-transactions/instant/store — persists one
+ * PayoutJob carrying the whole payload; the bulk-payout worker does the
+ * quote create + beneficiary/sender upsert + transaction create as one
+ * unit (mirror of BeneficiaryTransactionRepository::dispatchPayoutJobs).
+ */
+export const instant = async (req: Request, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+
+        if (req.body.transaction) {
+            const transaction = req.body.transaction as Record<
+                string,
+                unknown
+            >;
+            transaction.supporting_document = await handleSupportingDocument(
+                transaction.supporting_document as string | undefined,
+            );
+        }
+
+        const payoutJob = await PayoutJob.create({
+            uniqueId: generateUniqueId(24),
+            userId: req.user.id,
+            rowNumber: 1,
+            amount: null,
+            status: PAYOUT_JOB_STATUS_PENDING,
+            payload: {
+                source: "instant",
+                beneficiary: req.body.beneficiary,
+                remitter: req.body.remitter,
+                transaction: req.body.transaction,
+                creator: null,
+            },
+        });
+        await Dispatch.bulkPayout({
+            payoutJobUniqueId: payoutJob.uniqueId,
+            userId: String(req.user.id),
+        });
+        return res.sendResponse([], res.__("s112"), 112);
     } catch (error) {
         return sendCodedError(res, error);
     }

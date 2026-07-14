@@ -3,11 +3,16 @@ import {
     cancel,
     checkStatus,
     checkTransactionStatus,
+    direct,
+    getFormFields,
     getProof,
     index,
+    instant,
+    instantGetFormFields,
     requestProof,
     show,
     store,
+    transactionFormFields,
     updateStatus,
 } from "../controller/beneficiary_transaction.controller";
 import { beneficiaryTransactionApiRoutes } from "../utils/api.routes";
@@ -54,6 +59,36 @@ router.post(
     beneficiaryTransactionApiRoutes.CANCEL.path,
     ...beneficiaryTransactionApiRoutes.CANCEL.middleware,
     cancel,
+);
+
+router.get(
+    beneficiaryTransactionApiRoutes.GET_FORM_FIELDS.path,
+    ...beneficiaryTransactionApiRoutes.GET_FORM_FIELDS.middleware,
+    getFormFields,
+);
+
+router.get(
+    beneficiaryTransactionApiRoutes.TRANSACTION_FORM_FIELDS.path,
+    ...beneficiaryTransactionApiRoutes.TRANSACTION_FORM_FIELDS.middleware,
+    transactionFormFields,
+);
+
+router.post(
+    beneficiaryTransactionApiRoutes.DIRECT.path,
+    ...beneficiaryTransactionApiRoutes.DIRECT.middleware,
+    direct,
+);
+
+router.get(
+    beneficiaryTransactionApiRoutes.INSTANT_GET_FORM_FIELDS.path,
+    ...beneficiaryTransactionApiRoutes.INSTANT_GET_FORM_FIELDS.middleware,
+    instantGetFormFields,
+);
+
+router.post(
+    beneficiaryTransactionApiRoutes.INSTANT_STORE.path,
+    ...beneficiaryTransactionApiRoutes.INSTANT_STORE.middleware,
+    instant,
 );
 
 router.post(

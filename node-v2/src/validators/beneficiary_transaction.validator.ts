@@ -275,3 +275,86 @@ export const proofGetQueryValidator: ValidationChain[] = [
         .isLength({ min: 1, max: 64 })
         .withMessage(localizedError("1100", 1100)),
 ];
+
+const NESTED_OBJECT_MESSAGE = "Expected object, received something else.";
+
+const isPlainObject = (value: unknown): boolean => {
+    return (
+        typeof value === "object" && value !== null && !Array.isArray(value)
+    );
+};
+
+/**
+ * Keys accepted by POST /beneficiary-transactions/direct (mirror of
+ * SendMoneyDirectSchema.strict()). The nested objects are handed to
+ * the beneficiary/sender/transaction normalizers — only the top-level
+ * shape is enforced here, same as legacy.
+ */
+export const DIRECT_ALLOWED_KEYS = [
+    "transaction",
+    "remitter",
+    "beneficiary",
+    "verification_code",
+];
+
+export const sendMoneyDirectBodyValidator: ValidationChain[] = [
+    body("transaction")
+        .custom(isPlainObject)
+        .withMessage(() => ({ msg: NESTED_OBJECT_MESSAGE, code: 422 })),
+
+    body("remitter")
+        .custom(isPlainObject)
+        .withMessage(() => ({ msg: NESTED_OBJECT_MESSAGE, code: 422 })),
+
+    body("beneficiary")
+        .custom(isPlainObject)
+        .withMessage(() => ({ msg: NESTED_OBJECT_MESSAGE, code: 422 })),
+
+    body("verification_code")
+        .optional()
+        .matches(/^\d{6}$/)
+        .withMessage(localizedError("1100", 1100)),
+];
+
+/**
+ * Keys accepted by POST /beneficiary-transactions/instant/store
+ * (mirror of InstantPayoutSchema.strict()).
+ */
+export const INSTANT_ALLOWED_KEYS = ["transaction", "remitter", "beneficiary"];
+
+export const instantPayoutBodyValidator: ValidationChain[] = [
+    body("transaction")
+        .custom(isPlainObject)
+        .withMessage(() => ({ msg: NESTED_OBJECT_MESSAGE, code: 422 })),
+
+    body("remitter")
+        .custom(isPlainObject)
+        .withMessage(() => ({ msg: NESTED_OBJECT_MESSAGE, code: 422 })),
+
+    body("beneficiary")
+        .custom(isPlainObject)
+        .withMessage(() => ({ msg: NESTED_OBJECT_MESSAGE, code: 422 })),
+];
+
+/**
+ * GET /beneficiary-transactions/get-form-fields and
+ * /instant/get-form-fields (mirror of GetFormFieldsSchema).
+ */
+export const payoutFormFieldsQueryValidator: ValidationChain[] = [
+    query("type").optional().isString().isLength({ max: 20 }),
+
+    query("country")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .isString()
+        .isLength({ min: 2, max: 10 })
+        .withMessage(localizedError("1104", 1104)),
+
+    query("currency")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .matches(/^[A-Za-z]{3}$/)
+        .withMessage(localizedError("1104", 1104)),
+];

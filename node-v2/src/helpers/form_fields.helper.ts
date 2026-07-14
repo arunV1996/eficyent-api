@@ -1228,3 +1228,314 @@ export const beneficiaryFormFields = async (payload: {
 
     return fields;
 };
+
+/**
+ * Merchant boolean setting with a default. Mirror of the legacy
+ * merchantSettingEnabled: missing/empty/"1" keeps the default, any
+ * other stored value disables the flag.
+ */
+const merchantSettingEnabled = async (
+    user: { merchantId?: number | null } | undefined,
+    key: string,
+    defaultValue: boolean,
+): Promise<boolean> => {
+    if (!user?.merchantId) {
+        return defaultValue;
+    }
+    const setting = await MerchantSetting.findOne({
+        where: { merchantId: user.merchantId, key },
+    });
+    if (
+        !setting ||
+        setting.value === null ||
+        setting.value === undefined ||
+        setting.value === "" ||
+        setting.value === "1"
+    ) {
+        return defaultValue;
+    }
+    return false;
+};
+
+/**
+ * Mirror of FieldsHelper transaction fields — the /store leg of the
+ * payout form (quote_id + remarks/purpose/document/reference), with
+ * per-merchant mandatoriness overrides and the B2B/USA
+ * supporting-document escalation.
+ */
+export const transactionFormFields = async (
+    user?: { merchantId?: number | null },
+    type?: string,
+    country?: string,
+): Promise<FieldDef[]> => {
+    const isSupportingDocumentRequired = await merchantSettingEnabled(
+        user,
+        "is_supporting_document_required",
+        true,
+    );
+    const isRemarksRequired = await merchantSettingEnabled(
+        user,
+        "is_remarks_required",
+        true,
+    );
+    const isPurposeOfPaymentRequired = await merchantSettingEnabled(
+        user,
+        "is_purpose_of_payment_required",
+        false,
+    );
+    const isTransactionRefRequired = await merchantSettingEnabled(
+        user,
+        "is_transaction_reference_no_required",
+        false,
+    );
+
+    const isB2B = type === "B2B";
+    const isUSA = country?.toUpperCase() === "USA";
+    const finalSupportingDocRequired =
+        isSupportingDocumentRequired || isB2B || isUSA;
+
+    const context = await buildContext();
+
+    return [
+        make("quote_id", "Quote ID"),
+        make("remarks", "Remarks", {
+            mandatory: isRemarksRequired,
+            validation: { max_length: 255 },
+        }),
+        make("client_reference_id", "Client Reference ID", {
+            mandatory: false,
+            validation: { max_length: 255 },
+        }),
+        make("purpose_of_payment", "Purpose of Payment", {
+            mandatory: isPurposeOfPaymentRequired,
+            values: context.eec_payment_purposes,
+        }),
+        make("supporting_document", "Supporting Document", {
+            type: "file",
+            mandatory: finalSupportingDocRequired,
+            validation: {
+                accepted_extensions: [
+                    "image/jpeg",
+                    "image/png",
+                    "image/jpg",
+                    "application/pdf",
+                ],
+                max_file_size: 5 * 1024 * 1024,
+            },
+        }),
+        make("txn_ref_no", "Transaction Reference Number", {
+            mandatory: isTransactionRefRequired,
+            validation: { max_length: 64 },
+        }),
+    ];
+};
+
+/**
+ * Mirror of FieldsHelper::QuoteFormFields — the static minimal quote
+ * fields that drive instant + bulk payout uploads.
+ */
+export const quoteFormFields = async (): Promise<FieldDef[]> => {
+    return [
+        make("amount", "Amount", {
+            type: "number",
+            validation: { min_value: 1, max_value: 10_000_000 },
+        }),
+        make("remarks", "Remarks", {
+            mandatory: false,
+            validation: { max_length: 255 },
+        }),
+        make("txn_ref_no", "Transaction Reference Number", {
+            mandatory: false,
+            validation: { max_length: 64 },
+        }),
+    ];
+};
+
+export interface SenderFieldsContext {
+    type: number;
+    merchantId: number | null;
+    remitterDepositEnabled: boolean;
+    country?: string;
+}
+
+/**
+ * Mirror of FieldsHelper::sender_fields — the remitter form for
+ * individual/business senders, with the merchant `remitter_fields`
+ * optional-field override.
+ */
+export const senderFields = async (
+    senderContext: SenderFieldsContext,
+): Promise<FieldDef[]> => {
+    const context = await buildContext();
+
+    const common: FieldDef[] = [
+        make("email", "Email", { validation: VALIDATION_PRESETS.email }),
+        make("mobile_country_code", "Mobile Country Code", {
+            values: context.mobile_country_codes,
+        }),
+        make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
+        make("address_1", "Address", {
+            validation: VALIDATION_PRESETS.address,
+        }),
+        make("country", "Country", { values: context.countries }),
+        make("nationality", "Nationality", { values: context.countries }),
+        make("state", "State / Province", {
+            values: context.states,
+            parent_key: "country",
+        }),
+        make("city", "City", { validation: VALIDATION_PRESETS.city }),
+        make("postal_code", "Postal Code", {
+            validation: VALIDATION_PRESETS.postal_code,
+        }),
+        make("source_of_funds", "Source of Funds", {
+            values: [
+                ...context.source_of_funds,
+                ...context.eec_payment_purposes,
+            ],
+        }),
+        make("id_type", "ID Type", { values: context.id_types }),
+        make("id_number", "ID Number", {
+            validation: VALIDATION_PRESETS.id_number,
+        }),
+    ];
+    if (senderContext.remitterDepositEnabled) {
+        common.push(make("client_reference_id", "Client Reference ID"));
+    }
+
+    let fields: FieldDef[] = [];
+    if (Number(senderContext.type) === USER_TYPE_PERSONAL) {
+        const eighteenYearsAgo = new Date();
+        eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+        const maxDate = eighteenYearsAgo.toISOString().slice(0, 10);
+        const individual: FieldDef[] = [
+            make("first_name", "First Name", {
+                validation: VALIDATION_PRESETS.name,
+            }),
+            make("middle_name", "Middle Name", {
+                mandatory: false,
+                validation: VALIDATION_PRESETS.name,
+            }),
+            make("last_name", "Last Name", {
+                validation: VALIDATION_PRESETS.name,
+            }),
+            make("dob", "Date of Birth", {
+                type: "date",
+                validation: { max_date: maxDate },
+            }),
+        ];
+        fields = [...individual, ...common];
+    } else if (Number(senderContext.type) === USER_TYPE_BUSINESS) {
+        const business: FieldDef[] = [
+            make("business_name", "Business Name", {
+                validation: VALIDATION_PRESETS.business_name,
+            }),
+        ];
+
+        const owners: FieldDef = make("owners", "Business Owners", {
+            type: "group",
+            repeatable: true,
+            validation: { min_length: 1, max_length: 3 },
+            children: [
+                make("first_name", "First Name", {
+                    validation: VALIDATION_PRESETS.name,
+                }),
+                make("last_name", "Last Name", {
+                    validation: VALIDATION_PRESETS.name,
+                }),
+                make("id_type", "ID Type", { values: context.id_types }),
+                make("id_number", "ID Number", {
+                    validation: VALIDATION_PRESETS.id_number,
+                }),
+                make("email", "Email", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.email,
+                }),
+                make("mobile_country_code", "Mobile Country Code", {
+                    mandatory: false,
+                    values: context.mobile_country_codes,
+                }),
+                make("mobile", "Mobile", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.mobile,
+                }),
+                make("address_1", "Address Line 1", {
+                    validation: VALIDATION_PRESETS.address,
+                }),
+                make("address_2", "Address Line 2", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.address,
+                }),
+                make("country", "Country", { values: context.countries }),
+                make("nationality", "Nationality", {
+                    values: context.countries,
+                }),
+                make("state", "State", {
+                    mandatory: false,
+                    values: context.states,
+                    parent_key: "country",
+                }),
+                make("city", "City", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.city,
+                }),
+                make("postal_code", "Postal Code", {
+                    mandatory: false,
+                    validation: VALIDATION_PRESETS.postal_code,
+                }),
+                make("designation", "Designation", {
+                    values: context.professions,
+                }),
+            ],
+        });
+
+        const documents: FieldDef[] = [
+            documentGroup("proofs", "Proofs", [], context.document_types),
+        ];
+
+        fields = [...business, ...common, ...documents, owners];
+    }
+
+    if (senderContext.merchantId) {
+        const setting = await MerchantSetting.findOne({
+            where: {
+                merchantId: senderContext.merchantId,
+                key: "remitter_fields",
+                status: 1,
+            },
+        });
+        if (setting && setting.value) {
+            try {
+                const customNonMandatoryFields: string[] = JSON.parse(
+                    setting.value,
+                );
+                if (Array.isArray(customNonMandatoryFields)) {
+                    const mapFields = (list: FieldDef[]): FieldDef[] => {
+                        return list.map((fieldDef) => {
+                            const isMandatory =
+                                fieldDef.is_mandatory &&
+                                !customNonMandatoryFields.includes(
+                                    fieldDef.field_key,
+                                );
+                            const mapped: FieldDef = {
+                                ...fieldDef,
+                                is_mandatory: isMandatory,
+                            };
+                            if (
+                                fieldDef.children &&
+                                fieldDef.children.length > 0
+                            ) {
+                                mapped.children = mapFields(fieldDef.children);
+                            }
+                            return mapped;
+                        });
+                    };
+                    fields = mapFields(fields);
+                }
+            } catch {
+                // Ignore parsing errors — keep the default mandatoriness.
+            }
+        }
+    }
+
+    return fields;
+};
