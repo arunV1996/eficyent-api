@@ -10,11 +10,15 @@ import sequelize from "./config/database";
 import { loadLocales } from "./middleware/locales";
 import { responseHelpers } from "./middleware/responseHelpers";
 import "./models/lookup.model";
+import "./models/merchant.model";
+import "./models/merchant_setting.model";
 import "./models/mobile_country_code.model";
 import "./models/personal_access_token.model";
 import "./models/setting.model";
 import "./models/state.model";
 import "./models/user.model";
+import "./models/user_document.model";
+import "./models/user_information.model";
 import apiRoutes from "./routes";
 
 dotenv.config();

@@ -141,6 +141,120 @@ export const generateEmailCodeExpiry = (minutesAhead = 10): string => {
 };
 
 /**
+ * "YES"/"NO" from the tinyint / boolean flags the legacy tables use.
+ */
+export const yesNo = (value: number | boolean | null): string => {
+    if (typeof value === "boolean") {
+        return value ? "YES" : "NO";
+    }
+    return value === 1 ? "YES" : "NO";
+};
+
+/**
+ * Onboarding step number -> label. Mirror of userShaper.onboardingLabel.
+ */
+export const onboardingLabel = (step: number): string => {
+    switch (Number(step)) {
+        case 1:
+            return "REGISTERED";
+        case 2:
+            return "INFORMATION_UPDATED";
+        case 3:
+            return "DOCUMENTS_UPLOADED";
+        case 4:
+            return "ONBOARDING_COMPLETED";
+        default:
+            return "REGISTERED";
+    }
+};
+
+/**
+ * ID-verification status number -> label. Mirror of
+ * userShaper.verificationLabel.
+ */
+export const verificationLabel = (status: number): string => {
+    switch (status) {
+        case 1:
+            return "PENDING";
+        case 2:
+            return "INITIATED";
+        case 3:
+            return "PROCESSING";
+        case 4:
+            return "FAILED";
+        case 5:
+            return "COMPLETED";
+        default:
+            return "PENDING";
+    }
+};
+
+/**
+ * Tour status number -> label. Mirror of userShaper.tourLabel.
+ */
+export const tourLabel = (status: number): string => {
+    return status === 1 ? "COMPLETED" : "PENDING";
+};
+
+/**
+ * User role number -> label. Mirror of userShaper.roleLabel.
+ */
+export const roleLabel = (role: number | null): string => {
+    if (role === null) {
+        return "ADMIN";
+    }
+    switch (Number(role)) {
+        case 1:
+            return "ADMIN";
+        case 2:
+            return "OWNER";
+        case 3:
+            return "TEAM_MEMBER";
+        case 4:
+            return "CORPORATE";
+        default:
+            return "ADMIN";
+    }
+};
+
+/**
+ * Normalizes the many stored gender representations to
+ * Male/Female/Others. Mirror of userShaper.genderFormatted.
+ */
+export const genderFormatted = (gender: string | null | undefined): string => {
+    if (!gender) {
+        return "";
+    }
+    const normalizedGender = gender.toLowerCase().trim();
+    if (["male", "1", "m"].includes(normalizedGender)) {
+        return "Male";
+    }
+    if (["female", "2", "f"].includes(normalizedGender)) {
+        return "Female";
+    }
+    if (["others", "3", "o"].includes(normalizedGender)) {
+        return "Others";
+    }
+    return gender;
+};
+
+/**
+ * Date -> "YYYY-MM-DD" (empty string when null). Sequelize DATEONLY
+ * columns already come back as strings, so both are accepted.
+ */
+export const toDateOnlyString = (
+    date: Date | string | null | undefined,
+): string => {
+    if (!date) {
+        return "";
+    }
+    if (typeof date === "string") {
+        return date.split("T")[0];
+    }
+    return date.toISOString().split("T")[0];
+};
+
+/**
  * Human-readable relative time ("5 minutes ago"). Mirror of
  * lookupsService.relativeTime — used by fx-rate lookups.
  */

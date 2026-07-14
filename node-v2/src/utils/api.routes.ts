@@ -1,5 +1,6 @@
 import { authSanctum } from "../middleware/auth";
 import { checkValidationErrors } from "../middleware/checkValidationErrors";
+import { validateMerchant } from "../middleware/validateMerchant";
 import {
     loginValidator,
     registerValidator,
@@ -33,6 +34,10 @@ export const authApiRoutes = {
 };
 
 export const profileApiRoutes = {
+    PROFILE: {
+        path: "/profile",
+        middleware: [authSanctum, validateMerchant],
+    },
     CHANGE_PASSWORD: {
         path: "/change-password",
         middleware: [

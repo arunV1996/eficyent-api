@@ -11,5 +11,8 @@
     "125": "Invalid email or password",
     "126": "New password must be different from the current password",
     "148": "Tour has already been completed",
+    "151": "Invalid merchant.",
+    "192": "X-User-Id header required.",
+    "193": "User not found for the merchant.",
     "500": "An unexpected error occurred"
 }

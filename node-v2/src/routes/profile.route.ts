@@ -1,11 +1,18 @@
 import { Router } from "express";
 import {
     changePassword,
+    profile,
     updateTourStatus,
 } from "../controller/profile.controller";
 import { profileApiRoutes } from "../utils/api.routes";
 
 const router = Router();
+
+router.get(
+    profileApiRoutes.PROFILE.path,
+    ...profileApiRoutes.PROFILE.middleware,
+    profile,
+);
 
 router.post(
     profileApiRoutes.CHANGE_PASSWORD.path,

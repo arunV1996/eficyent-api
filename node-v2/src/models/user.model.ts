@@ -15,16 +15,27 @@ import sequelize from "../config/database";
 interface UserAttributes {
     id: number;
     uniqueId: string;
+    merchantId: number | null;
+    title: string | null;
+    firstName: string | null;
+    middleName: string | null;
+    lastName: string | null;
     email: string;
     password: string;
     mobileCountryCode: string | null;
     mobile: string | null;
+    gender: string | null;
+    dob: Date | null;
     userType: number;
     userRole: number;
+    onboardingStep: number;
+    idVerification: number;
+    enableSender: number;
     isTfaEnabled: boolean;
     isTfaSetupCompleted: boolean;
     emailVerifiedAt: Date | null;
     tourStatus: number;
+    timezone: string;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -33,13 +44,24 @@ interface UserCreationAttributes
     extends Optional<
         UserAttributes,
         | "id"
+        | "merchantId"
+        | "title"
+        | "firstName"
+        | "middleName"
+        | "lastName"
         | "mobileCountryCode"
         | "mobile"
+        | "gender"
+        | "dob"
         | "userRole"
+        | "onboardingStep"
+        | "idVerification"
+        | "enableSender"
         | "isTfaEnabled"
         | "isTfaSetupCompleted"
         | "emailVerifiedAt"
         | "tourStatus"
+        | "timezone"
     > {}
 
 class User
@@ -48,16 +70,27 @@ class User
 {
     public id!: number;
     public uniqueId!: string;
+    public merchantId!: number | null;
+    public title!: string | null;
+    public firstName!: string | null;
+    public middleName!: string | null;
+    public lastName!: string | null;
     public email!: string;
     public password!: string;
     public mobileCountryCode!: string | null;
     public mobile!: string | null;
+    public gender!: string | null;
+    public dob!: Date | null;
     public userType!: number;
     public userRole!: number;
+    public onboardingStep!: number;
+    public idVerification!: number;
+    public enableSender!: number;
     public isTfaEnabled!: boolean;
     public isTfaSetupCompleted!: boolean;
     public emailVerifiedAt!: Date | null;
     public tourStatus!: number;
+    public timezone!: string;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -74,6 +107,26 @@ User.init(
             type: DataTypes.STRING(64),
             allowNull: false,
             unique: true,
+        },
+        merchantId: {
+            type: DataTypes.BIGINT.UNSIGNED,
+            allowNull: true,
+        },
+        title: {
+            type: DataTypes.STRING(5),
+            allowNull: true,
+        },
+        firstName: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+        },
+        middleName: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+        },
+        lastName: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
         },
         email: {
             type: DataTypes.STRING(255),
@@ -92,6 +145,14 @@ User.init(
             type: DataTypes.STRING(30),
             allowNull: true,
         },
+        gender: {
+            type: DataTypes.STRING(5),
+            allowNull: true,
+        },
+        dob: {
+            type: DataTypes.DATEONLY,
+            allowNull: true,
+        },
         userType: {
             type: DataTypes.TINYINT.UNSIGNED,
             allowNull: false,
@@ -101,6 +162,21 @@ User.init(
             type: DataTypes.TINYINT.UNSIGNED,
             allowNull: false,
             defaultValue: 1,
+        },
+        onboardingStep: {
+            type: DataTypes.TINYINT,
+            allowNull: false,
+            defaultValue: 1,
+        },
+        idVerification: {
+            type: DataTypes.TINYINT,
+            allowNull: false,
+            defaultValue: 1,
+        },
+        enableSender: {
+            type: DataTypes.TINYINT,
+            allowNull: false,
+            defaultValue: 0,
         },
         isTfaEnabled: {
             type: DataTypes.BOOLEAN,
@@ -120,6 +196,11 @@ User.init(
             type: DataTypes.TINYINT.UNSIGNED,
             allowNull: false,
             defaultValue: 0,
+        },
+        timezone: {
+            type: DataTypes.STRING(30),
+            allowNull: false,
+            defaultValue: "Asia/Kolkata",
         },
     },
     {

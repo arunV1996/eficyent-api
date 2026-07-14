@@ -33,6 +33,20 @@ export const C2C = "C2C";
 export const LOOKUP_TYPE_SOURCE_OF_FUNDS = "source_of_funds";
 export const LOOKUP_TYPE_PURPOSE_OF_TRANSACTION = "purpose_of_transaction";
 
+// Lookup table `type` groups (mirror of legacy constants)
+export const LOOKUP_TYPE_ID_TYPE = "id_types";
+export const LOOKUP_TYPE_BUSINESS_TYPES = "business_types";
+export const LOOKUP_TYPE_PROFESSIONS = "professions";
+export const LOOKUP_TYPE_SOURCES_OF_INCOMES = "sources_of_incomes";
+
+// Default business model when a merchant has no business_model setting
+export const BUSINESS_MODEL_MTO = "mto";
+
+// Merchant types (subset needed so far; mirror of legacy constants)
+export const MERCHANT_TYPE_PAYOUT = 1;
+export const MERCHANT_TYPE_PAYOUTINTEGRATOR = 3;
+export const MERCHANT_TYPE_PAYINCOLLECTION = 4;
+
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {
     PERSONAL: USER_TYPE_PERSONAL,

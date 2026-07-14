@@ -1,8 +1,58 @@
 import { Request, Response } from "express";
+import { getBusinessModel } from "../helpers/merchant.helper";
+import Merchant from "../models/merchant.model";
 import PersonalAccessToken from "../models/personal_access_token.model";
 import User from "../models/user.model";
+import UserDocument from "../models/user_document.model";
+import UserInformation from "../models/user_information.model";
+import { fullUserToJSON } from "../resources/user.resource";
 import { comparePassword, hashPassword } from "../utils/common.utils";
 import { ACTIVE } from "../utils/constants";
+
+/**
+ * GET /api/user/profile
+ *
+ * Full profile payload: user fields + user/business information +
+ * signed document URLs + merchant flags. Mirrors
+ * profileController.profile in /node, including the empty-envelope
+ * response shape {success, message, code: "", data}.
+ */
+export const profile = async (req: Request, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("1006"), 1006, 401);
+        }
+
+        const userId = req.user.id;
+        const [information, documents, merchant] = await Promise.all([
+            UserInformation.findOne({ where: { userId } }),
+            UserDocument.findAll({ where: { userId } }),
+            Merchant.findOne({
+                where: { userId },
+                attributes: ["id"],
+            }),
+        ]);
+
+        const businessModel = await getBusinessModel(
+            merchant?.id ?? req.user.merchantId,
+        );
+
+        return res.sendEmptyEnvelope(
+            {
+                user: await fullUserToJSON(
+                    req.user,
+                    information,
+                    documents,
+                    !!merchant,
+                    businessModel,
+                ),
+            },
+            "",
+        );
+    } catch (error) {
+        return res.handleError(error);
+    }
+};
 
 /**
  * POST /api/user/change-password
