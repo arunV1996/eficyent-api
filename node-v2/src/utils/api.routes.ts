@@ -1,5 +1,6 @@
 import {
     authSanctum,
+    businessUserAccess,
     emailShouldBeVerified,
     onboardingShouldBeCompleted,
 } from "../middleware/auth";
@@ -87,6 +88,14 @@ import {
     senderUpdateBodyValidator,
 } from "../validators/sender.validator";
 import { statementExportQueryValidator } from "../validators/statement.validator";
+import { staticPageShowQueryValidator } from "../validators/static_page.validator";
+import {
+    ACCEPT_INVITE_ALLOWED_KEYS,
+    acceptInviteBodyValidator,
+    SUBUSER_STORE_ALLOWED_KEYS,
+    subuserShowQueryValidator,
+    subuserStoreBodyValidator,
+} from "../validators/subuser.validator";
 import {
     ACTIVATE_ALLOWED_KEYS,
     activateBodyValidator,
@@ -709,6 +718,75 @@ export const statementApiRoutes = {
         middleware: [
             ...reportingBaseMiddleware,
             statementExportQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
+export const settingApiRoutes = {
+    GET_SETTINGS: {
+        path: "/get_settings",
+        middleware: [],
+    },
+};
+
+export const staticPageApiRoutes = {
+    LIST: {
+        path: "/list",
+        middleware: [],
+    },
+    SHOW: {
+        path: "/show",
+        middleware: [staticPageShowQueryValidator, checkValidationErrors],
+    },
+};
+
+// Subusers: accept-invite is anonymous; the rest sit behind the
+// business-user stack (legacy ordering: email verification BEFORE
+// validateMerchant on this group).
+const subuserBaseMiddleware = [
+    authSanctum,
+    emailShouldBeVerified,
+    validateMerchant,
+    onboardingShouldBeCompleted,
+    businessUserAccess,
+];
+
+export const subuserApiRoutes = {
+    ACCEPT_INVITE: {
+        path: "/accept-invite",
+        middleware: [
+            strictBody(ACCEPT_INVITE_ALLOWED_KEYS),
+            acceptInviteBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    LIST: {
+        path: "/list",
+        middleware: [...subuserBaseMiddleware],
+    },
+    STORE: {
+        path: "/store",
+        middleware: [
+            ...subuserBaseMiddleware,
+            strictBody(SUBUSER_STORE_ALLOWED_KEYS),
+            subuserStoreBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    SHOW: {
+        path: "/show",
+        middleware: [
+            ...subuserBaseMiddleware,
+            subuserShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    DELETE: {
+        path: "/delete",
+        middleware: [
+            ...subuserBaseMiddleware,
+            subuserShowQueryValidator,
             checkValidationErrors,
         ],
     },

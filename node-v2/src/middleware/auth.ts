@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import PersonalAccessToken from "../models/personal_access_token.model";
 import User from "../models/user.model";
 import { authenticateToken } from "../helpers/token.helper";
+import { USER_TYPE_BUSINESS } from "../utils/constants";
 
 /**
  * Attach the authenticated user (and the active token id) onto the
@@ -95,6 +96,28 @@ export const emailShouldBeVerified = (
     }
     if (!req.user.emailVerifiedAt) {
         return res.sendError(res.__("403"), 403, 403);
+    }
+    next();
+};
+
+/**
+ * Only business users may pass (mirror of the legacy
+ * businessUserAccess): 401 envelope with code 133 otherwise.
+ */
+export const businessUserAccess = (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+): void => {
+    if (!req.user) {
+        return res.sendError(res.__("401"), 401, 401);
+    }
+    if (req.user.userType !== USER_TYPE_BUSINESS) {
+        return res.sendError(
+            "Only business users can access this resource.",
+            133,
+            401,
+        );
     }
     next();
 };

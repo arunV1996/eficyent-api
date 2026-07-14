@@ -11,7 +11,10 @@ import profileRoutes from "./profile.route";
 import { publicRouter, userPublicRouter } from "./public.route";
 import quoteRoutes from "./quote.route";
 import senderRoutes from "./sender.route";
+import settingRoutes from "./setting.route";
 import statementRoutes from "./statement.route";
+import staticPageRoutes from "./static_page.route";
+import subuserRoutes from "./subuser.route";
 import virtualAccountRoutes from "./virtual_account.route";
 import walletRoutes from "./wallet.route";
 
@@ -20,6 +23,9 @@ const router = Router();
 // Path prefix `/user` matches the legacy /node routes/api.php grouping.
 // Multiple sub-routers can share this prefix — Express walks them in order.
 router.use("/user", authRoutes);
+router.use("/user", settingRoutes);
+router.use("/user/static-pages", staticPageRoutes);
+router.use("/user/subusers", subuserRoutes);
 router.use("/user", profileRoutes);
 router.use("/user/lookups", lookupRoutes);
 router.use("/user/onboarding", onboardingRoutes);

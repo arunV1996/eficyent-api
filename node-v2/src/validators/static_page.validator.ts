@@ -1,0 +1,39 @@
+import { query, ValidationChain } from "express-validator";
+
+/**
+ * express-validator chain for GET /static-pages/show — mirror of the
+ * legacy StaticPageShowSchema (either `type` or
+ * `static_page_unique_id` is required; both are additive filters).
+ */
+
+const localizedError = (localeKey: string, code: number) => {
+    return (_: unknown, meta: { req: unknown }) => {
+        const request = meta.req as { __?: (key: string) => string };
+        const message = request.__ ? request.__(localeKey) : localeKey;
+        return { msg: message, code };
+    };
+};
+
+export const staticPageShowQueryValidator: ValidationChain[] = [
+    query("type")
+        .optional()
+        .isString()
+        .isLength({ min: 1, max: 50 })
+        .withMessage(localizedError("1100", 1100)),
+
+    query("static_page_unique_id")
+        .optional()
+        .isString()
+        .isLength({ min: 1, max: 64 })
+        .withMessage(localizedError("1100", 1100)),
+
+    query("type").custom((_value, { req }) => {
+        const requestQuery = (req.query ?? {}) as Record<string, unknown>;
+        return Boolean(
+            requestQuery.type ?? requestQuery.static_page_unique_id,
+        );
+    }).withMessage(() => ({
+        msg: "Either `type` or `static_page_unique_id` is required.",
+        code: 422,
+    })),
+];

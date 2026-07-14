@@ -331,3 +331,21 @@ export const statusUserToJSON = (
         business_model: businessModel.toLowerCase(),
     };
 };
+
+/**
+ * Compact subuser row (mirror of userResource.subUserResource).
+ */
+export const subUserToJSON = (user: User): Record<string, unknown> => {
+    return {
+        unique_id: user.uniqueId,
+        title: user.title,
+        first_name: user.firstName,
+        last_name: user.lastName,
+        email: user.email,
+        mobile_country_code: user.mobileCountryCode,
+        mobile: user.mobile,
+        onboarding_step: onboardingLabel(user.onboardingStep),
+        id_verification: verificationLabel(user.idVerification),
+        email_status: user.emailVerifiedAt ? "VERIFIED" : "NOT_VERIFIED",
+    };
+};

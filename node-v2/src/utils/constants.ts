@@ -310,6 +310,9 @@ export const REMITTER_STATUS_MAP: Record<string, number> = {
     DISABLED: SENDER_STATUS_DISABLED,
 };
 
+// Salutation titles (mirror of legacy Mr/Mrs/Miss constants)
+export const USER_TITLES = ["Mr", "Mrs", "Miss"] as const;
+
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {
     PERSONAL: USER_TYPE_PERSONAL,

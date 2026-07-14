@@ -4,6 +4,7 @@ import {
     emailVerifiedEmail,
     forgotPasswordEmail,
     registeredEmail,
+    userInviteLinkEmail,
     verifyEmailAddressEmail,
 } from "./email_templates.helper";
 import { settingGet } from "./setting.helper";
@@ -64,6 +65,35 @@ export const UserAuthEmail = {
             email: user.email,
         });
         await sendMail({ to: user.email, ...template });
+    },
+
+    /**
+     * Subuser invitation (mirror of UserEmailService.userInviteLink):
+     * the invite URL template comes from settings with an APP_URL
+     * fallback, `{token}` is substituted with the encrypted envelope.
+     */
+    async userInviteLink(user: User, encryptedToken: string): Promise<void> {
+        const appUrl = (process.env.APP_URL || "").replace(/\/$/, "");
+        const template = await settingGet<string>(
+            "invite_url_template",
+            `${appUrl}/accept-invite?token={token}`,
+        );
+        const url = template.replace(
+            "{token}",
+            encodeURIComponent(encryptedToken),
+        );
+        const expiresMinutes = Number(
+            await settingGet<string>("invite_link_expiry", "60"),
+        );
+        const mailTemplate = userInviteLinkEmail({
+            brand: await brand(),
+            firstName: user.firstName,
+            inviteUrl: url,
+            expiresInMinutes: Number.isFinite(expiresMinutes)
+                ? expiresMinutes
+                : 60,
+        });
+        await sendMail({ to: user.email, ...mailTemplate });
     },
 
     async emailVerificationCode(user: User): Promise<void> {

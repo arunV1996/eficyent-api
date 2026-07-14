@@ -278,3 +278,4 @@ export function userInviteLinkEmail(ctx: InviteContext): { subject: string; html
     html: plainShell(ctx.brand, body),
   };
 }
+
