@@ -4,8 +4,22 @@ import {
     onboardingShouldBeCompleted,
 } from "../middleware/auth";
 import { checkValidationErrors } from "../middleware/checkValidationErrors";
+import { idempotency } from "../middleware/idempotency";
 import { strictBody } from "../middleware/strictBody";
 import { validateMerchant } from "../middleware/validateMerchant";
+import {
+    PROOF_REQUEST_ALLOWED_KEYS,
+    proofGetQueryValidator,
+    proofRequestBodyValidator,
+    TRANSACTION_CANCEL_ALLOWED_KEYS,
+    TRANSACTION_STORE_ALLOWED_KEYS,
+    TRANSACTION_UPDATE_STATUS_ALLOWED_KEYS,
+    transactionCancelBodyValidator,
+    transactionListQueryValidator,
+    transactionShowQueryValidator,
+    transactionStoreBodyValidator,
+    transactionUpdateStatusBodyValidator,
+} from "../validators/beneficiary_transaction.validator";
 import {
     beneficiaryFormFieldsQueryValidator,
     beneficiaryListQueryValidator,
@@ -186,6 +200,98 @@ export const beneficiaryApiRoutes = {
         middleware: [
             ...beneficiaryBaseMiddleware,
             beneficiaryShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
+// Shared stack for the beneficiary-transaction (payout) group —
+// mirror of the legacy payout.routes router-level ordering. The
+// money-moving POSTs additionally run the Idempotency-Key middleware.
+const transactionBaseMiddleware = [
+    authSanctum,
+    validateMerchant,
+    emailShouldBeVerified,
+    onboardingShouldBeCompleted,
+];
+
+export const beneficiaryTransactionApiRoutes = {
+    LIST: {
+        path: "/list",
+        middleware: [
+            ...transactionBaseMiddleware,
+            transactionListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    STORE: {
+        path: "/store",
+        middleware: [
+            ...transactionBaseMiddleware,
+            idempotency(),
+            strictBody(TRANSACTION_STORE_ALLOWED_KEYS),
+            transactionStoreBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    SHOW: {
+        path: "/show",
+        middleware: [
+            ...transactionBaseMiddleware,
+            transactionShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    CHECK_TRANSACTION_STATUS: {
+        path: "/check_transaction_status",
+        middleware: [
+            ...transactionBaseMiddleware,
+            transactionShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    CHECK_STATUS: {
+        path: "/check_status",
+        middleware: [
+            ...transactionBaseMiddleware,
+            transactionShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    UPDATE_STATUS: {
+        path: "/update-status",
+        middleware: [
+            ...transactionBaseMiddleware,
+            idempotency(),
+            strictBody(TRANSACTION_UPDATE_STATUS_ALLOWED_KEYS),
+            transactionUpdateStatusBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    CANCEL: {
+        path: "/cancel",
+        middleware: [
+            ...transactionBaseMiddleware,
+            idempotency(),
+            strictBody(TRANSACTION_CANCEL_ALLOWED_KEYS),
+            transactionCancelBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    REQUEST_PROOF: {
+        path: "/request-proof",
+        middleware: [
+            ...transactionBaseMiddleware,
+            strictBody(PROOF_REQUEST_ALLOWED_KEYS),
+            proofRequestBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    GET_PROOF: {
+        path: "/get-proof",
+        middleware: [
+            ...transactionBaseMiddleware,
+            proofGetQueryValidator,
             checkValidationErrors,
         ],
     },

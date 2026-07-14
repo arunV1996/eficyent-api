@@ -6,8 +6,11 @@
     "s105": "Logout successful.",
     "s106": "Submitted successfully.",
     "s107": "Quote created successfully.",
+    "s108": "Wallet conversion completed.",
     "s109": "Mail sent successfully.",
     "s110": "Code verified successfully.",
     "s111": "Password reset successfully.",
-    "s113": "Account validation completed."
+    "s113": "Account validation completed.",
+    "s114": "Proof requested.",
+    "s115": "Proof fetched."
 }

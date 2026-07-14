@@ -1,5 +1,11 @@
 import { DataTypes, Model, Optional } from "sequelize";
 import sequelize from "../config/database";
+import BeneficiaryAccount from "./beneficiary_account.model";
+import Quote from "./quote.model";
+import Sender from "./sender.model";
+import TeamMember from "./team_member.model";
+import User from "./user.model";
+import type BeneficiaryTransactionProof from "./beneficiary_transaction_proof.model";
 
 /**
  * Payout transaction row. Mirror of the legacy
@@ -92,6 +98,15 @@ class BeneficiaryTransaction
 
     public readonly createdAt!: Date | null;
     public readonly updatedAt!: Date | null;
+
+    // Eager-loaded associations (aliases mirror the legacy Prisma
+    // include names so the resource shaper reads identically).
+    public readonly beneficiaryAccount?: BeneficiaryAccount;
+    public readonly quotes?: Quote;
+    public readonly senders?: Sender;
+    public readonly team_members?: TeamMember;
+    public readonly users?: User;
+    public readonly proofs?: BeneficiaryTransactionProof[];
 }
 
 BeneficiaryTransaction.init(
@@ -152,5 +167,26 @@ BeneficiaryTransaction.init(
         updatedAt: "updated_at",
     },
 );
+
+BeneficiaryTransaction.belongsTo(BeneficiaryAccount, {
+    foreignKey: "beneficiaryAccountId",
+    as: "beneficiaryAccount",
+});
+BeneficiaryTransaction.belongsTo(Quote, {
+    foreignKey: "quoteId",
+    as: "quotes",
+});
+BeneficiaryTransaction.belongsTo(Sender, {
+    foreignKey: "senderId",
+    as: "senders",
+});
+BeneficiaryTransaction.belongsTo(TeamMember, {
+    foreignKey: "teamMemberId",
+    as: "team_members",
+});
+BeneficiaryTransaction.belongsTo(User, {
+    foreignKey: "userId",
+    as: "users",
+});
 
 export default BeneficiaryTransaction;

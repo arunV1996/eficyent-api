@@ -119,3 +119,30 @@ export const safeEqual = (left: string, right: string): boolean => {
     }
     return timingSafeEqual(leftBuffer, rightBuffer);
 };
+
+/**
+ * Deterministic JSON serialization (keys sorted recursively) hashed
+ * with SHA-256. Mirror of helpers/crypto.stableJsonHash — the
+ * idempotency middleware uses it to detect replayed requests whose
+ * body changed.
+ */
+const stableStringify = (value: unknown): string => {
+    if (value === null || typeof value !== "object") {
+        return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(stableStringify).join(",")}]`;
+    }
+    const objectValue = value as Record<string, unknown>;
+    const sortedKeys = Object.keys(objectValue).sort();
+    return `{${sortedKeys
+        .map(
+            (key) =>
+                `${JSON.stringify(key)}:${stableStringify(objectValue[key])}`,
+        )
+        .join(",")}}`;
+};
+
+export const stableJsonHash = (value: unknown): string => {
+    return sha256Hex(stableStringify(value), "");
+};

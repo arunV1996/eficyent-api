@@ -1,5 +1,6 @@
 import { DataTypes, Model, Optional } from "sequelize";
 import sequelize from "../config/database";
+import type SenderDocument from "./sender_document.model";
 
 /**
  * Remitter (sender) row. Mirror of the legacy `senders` table
@@ -80,6 +81,9 @@ class Sender
     public readonly createdAt!: Date | null;
     public readonly updatedAt!: Date | null;
     public readonly deletedAt!: Date | null;
+
+    // Eager-loaded association (declared in sender_document.model.ts).
+    public readonly documents?: SenderDocument[];
 }
 
 Sender.init(

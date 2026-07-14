@@ -1,7 +1,17 @@
 import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "crypto";
 import moment from "moment-timezone";
-import { ALPHA3_TO_ALPHA2, DISPOSABLE_EMAIL_DOMAINS } from "./constants";
+import {
+    ALPHA3_TO_ALPHA2,
+    BENEFICIARY_TRANSACTION_CANCELLED,
+    BENEFICIARY_TRANSACTION_COMPLETED,
+    BENEFICIARY_TRANSACTION_CORPORATE_INITIATED,
+    BENEFICIARY_TRANSACTION_EXPIRED,
+    BENEFICIARY_TRANSACTION_FAILED,
+    BENEFICIARY_TRANSACTION_REJECTED,
+    BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
+    DISPOSABLE_EMAIL_DOMAINS,
+} from "./constants";
 
 /**
  * Standard Bcrypt password hashing (10 rounds) — matches Laravel's
@@ -345,4 +355,35 @@ export const relativeTime = (date: Date): string => {
 
     const elapsedYears = Math.floor(elapsedMonths / 12);
     return `${elapsedYears} year${elapsedYears === 1 ? "" : "s"} ago`;
+};
+
+/**
+ * Coarse status label the API exposes for a beneficiary transaction.
+ * Mirror of helpers/constants.beneficiaryTransactionStatusLabel: every
+ * in-flight provider/compliance state collapses to "PROCESSING" and the
+ * terminal failure states collapse to "FAILED".
+ */
+export const beneficiaryTransactionStatusLabel = (
+    value: number,
+    _isTeam = false,
+): string => {
+    switch (value) {
+        case BENEFICIARY_TRANSACTION_COMPLETED:
+            return "COMPLETED";
+
+        case BENEFICIARY_TRANSACTION_FAILED:
+        case BENEFICIARY_TRANSACTION_EXPIRED:
+        case BENEFICIARY_TRANSACTION_REJECTED:
+        case BENEFICIARY_TRANSACTION_CANCELLED:
+            return "FAILED";
+
+        case BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL:
+            return "WAITING_FOR_APPROVAL";
+
+        case BENEFICIARY_TRANSACTION_CORPORATE_INITIATED:
+            return "CORPORATE_INITIATED";
+
+        default:
+            return "PROCESSING";
+    }
 };

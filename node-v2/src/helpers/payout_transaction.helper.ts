@@ -16,6 +16,7 @@ import VirtualAccount from "../models/virtual_account.model";
 import Wallet from "../models/wallet.model";
 import WalletTransaction from "../models/wallet_transaction.model";
 import { computeBankBalance, getWalletBalance } from "./balance.helper";
+import { transactionIncludes } from "./beneficiary_transaction.helper";
 import { CodedError } from "./coded_error.helper";
 import { getVirtualAccountScope } from "./virtual_account.helper";
 import {
@@ -71,6 +72,7 @@ export interface PayoutCreatePayload {
     txn_ref_no?: string;
     purpose_of_payment?: string;
     client_reference_id?: string;
+    order_id?: string;
 }
 
 export interface CreatorContext {
@@ -207,8 +209,10 @@ export const createPayoutTransaction = async (
             throw new CodedError("Sender is disabled.", 203, 400);
         }
         if (
-            beneficiaryAccount.currency === "PKR" &&
-            sender.nationality === "IND"
+            (beneficiaryAccount.currency === "PKR" &&
+                sender.nationality === "IND") ||
+            (beneficiaryAccount.currency === "INR" &&
+                sender.nationality === "PAK")
         ) {
             throw new CodedError(
                 "Sender nationality and beneficiary currency combination not allowed.",
@@ -311,12 +315,14 @@ export const createPayoutTransaction = async (
                     supportingDocument: payload.supporting_document ?? null,
                     remarks: payload.remarks ?? null,
                     clientReferenceId: payload.client_reference_id ?? null,
-                    orderId: `TXN${Math.floor(Date.now() / 1000)
-                        .toString()
-                        .slice(-8)}${Math.random()
-                        .toString(36)
-                        .substring(2, 6)
-                        .toUpperCase()}`,
+                    orderId:
+                        payload.order_id ??
+                        `TXN${Math.floor(Date.now() / 1000)
+                            .toString()
+                            .slice(-8)}${Math.random()
+                            .toString(36)
+                            .substring(2, 6)
+                            .toUpperCase()}`,
                     status: finalStatus,
                 },
                 { transaction: databaseTransaction },
@@ -432,5 +438,12 @@ export const createPayoutTransaction = async (
         });
     }
 
-    return created.transactionRow;
+    // Reload with the response include tree (mirror of the legacy
+    // findUniqueOrThrow reload) so the resource shaper sees the same
+    // eagerly-loaded relations.
+    const reloaded = await BeneficiaryTransaction.findOne({
+        where: { id: created.transactionRow.id },
+        include: transactionIncludes(),
+    });
+    return reloaded ?? created.transactionRow;
 };
