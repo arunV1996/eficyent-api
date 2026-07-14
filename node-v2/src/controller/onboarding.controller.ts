@@ -204,7 +204,7 @@ export const getFormFields = async (
 ): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const requestedType = String(req.query.type);
@@ -245,7 +245,7 @@ export const getFormFields = async (
 export const stepTwo = async (req: Request, res: Response): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
         if (Number(req.user.onboardingStep) !== ONBOARDING_STEP_ONE) {
             return res.sendError(res.__("108"), 108, 400);
@@ -336,7 +336,7 @@ export const stepThree = async (
 ): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
         if (Number(req.user.onboardingStep) !== ONBOARDING_STEP_TWO) {
             return res.sendError(res.__("108"), 108, 400);
@@ -477,9 +477,11 @@ export const stepThree = async (
             user: await documentsUserToJSON(resultUser, documents),
         };
 
-        // KYC handoff for individuals. The external KYC drivers arrive
-        // with their own tranche; until then the URL is null — matching
-        // the legacy behavior when the provider call fails.
+        // KYC handoff for individuals. id_verification_url stays null
+        // until the external KYC provider drivers (legacy kycFactory)
+        // are migrated to node-v2 services — integrate the driver call
+        // here at that point. Null matches the legacy behavior when the
+        // provider call fails.
         if (Number(resultUser.userType) === USER_TYPE_PERSONAL) {
             const kycService = await settingGet<string>("kyc_service", "");
             if (kycService && kycService !== ID_VERIFIED_BY_ADMIN) {

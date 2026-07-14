@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { getBusinessModel } from "../helpers/merchant.helper";
+import { revokeToken } from "../helpers/token.helper";
 import Merchant from "../models/merchant.model";
-import PersonalAccessToken from "../models/personal_access_token.model";
 import User from "../models/user.model";
 import UserDocument from "../models/user_document.model";
 import UserInformation from "../models/user_information.model";
@@ -20,7 +20,7 @@ import { ACTIVE } from "../utils/constants";
 export const profile = async (req: Request, res: Response): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const userId = req.user.id;
@@ -68,8 +68,8 @@ export const changePassword = async (
     res: Response,
 ): Promise<void> => {
     try {
-        if (!req.user || !req.personalAccessToken) {
-            return res.sendError(res.__("401"), 401, 401);
+        if (!req.user || !req.tokenId) {
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const oldPassword = String(req.body.old_password);
@@ -82,7 +82,7 @@ export const changePassword = async (
         );
 
         if (!userWithPassword) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         const oldPasswordMatches = await comparePassword(
@@ -105,11 +105,9 @@ export const changePassword = async (
         userWithPassword.password = newPasswordHash;
         await userWithPassword.save();
 
-        // Revoke the token that made this request so the client must
-        // re-authenticate with the new password.
-        await PersonalAccessToken.destroy({
-            where: { id: req.personalAccessToken.id },
-        });
+        // Revoke the token that made this request (row + Redis session)
+        // so the client must re-authenticate with the new password.
+        await revokeToken(req.tokenId, req.user.id);
 
         return res.sendEmptyEnvelope({}, "Password changed successfully.");
     } catch (error) {
@@ -130,7 +128,7 @@ export const updateTourStatus = async (
 ): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         if (req.user.tourStatus === ACTIVE) {

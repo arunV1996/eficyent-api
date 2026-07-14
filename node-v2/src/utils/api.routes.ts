@@ -101,13 +101,14 @@ export const profileApiRoutes = {
         path: "/change-password",
         middleware: [
             authSanctum,
+            validateMerchant,
             changePasswordValidator,
             checkValidationErrors,
         ],
     },
     UPDATE_TOUR_STATUS: {
         path: "/update-tour-status",
-        middleware: [authSanctum],
+        middleware: [authSanctum, validateMerchant],
     },
 };
 
