@@ -1,5 +1,8 @@
 import { DataTypes, Model, Optional } from "sequelize";
 import sequelize from "../config/database";
+import User from "./user.model";
+import VirtualAccount from "./virtual_account.model";
+import Wallet from "./wallet.model";
 
 /**
  * Balance anchor rows for virtual accounts / wallets, tied
@@ -49,6 +52,12 @@ class Ledger
 
     public readonly createdAt!: Date | null;
     public readonly updatedAt!: Date | null;
+
+    // Eager-loaded associations (aliases mirror the legacy Prisma
+    // include names).
+    public readonly wallet?: Wallet;
+    public readonly virtualAccount?: VirtualAccount;
+    public readonly users?: User;
 }
 
 Ledger.init(
@@ -82,5 +91,13 @@ Ledger.init(
         updatedAt: "updated_at",
     },
 );
+
+// Aliases mirror the legacy Prisma include names.
+Ledger.belongsTo(Wallet, { foreignKey: "walletId", as: "wallet" });
+Ledger.belongsTo(VirtualAccount, {
+    foreignKey: "virtualAccountId",
+    as: "virtualAccount",
+});
+Ledger.belongsTo(User, { foreignKey: "userId", as: "users" });
 
 export default Ledger;

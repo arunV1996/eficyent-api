@@ -186,6 +186,16 @@ export const MORPH_MERCHANT = "App\\Models\\Merchant";
 
 // Transactions substrate (mirror of legacy constants)
 export const TRANSACTION_TYPE_DEBIT = 1;
+
+// Ledger paid_to markers (mirror of legacy constants)
+export const PAID_TO_BENEFICIARY = 1;
+export const PAID_TO_WALLET = 2;
+
+// Client-facing CREDIT/DEBIT tokens (mirror of transaction_type_map())
+export const TRANSACTION_TYPE_MAP: Record<string, number> = {
+    CREDIT: 2,
+    DEBIT: 1,
+};
 export const TRANSACTION_TYPE_CREDIT = 2;
 export const WALLET_TRANSACTION_COMPLETED = 1;
 export const DEPOSIT_TRANSACTION_COMPLETED = 1;

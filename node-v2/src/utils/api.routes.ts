@@ -69,9 +69,18 @@ import {
     verifyOtpValidator,
 } from "../validators/auth.validator";
 import {
+    dashboardChartsDataQueryValidator,
+    dashboardStatisticsQueryValidator,
+} from "../validators/dashboard.validator";
+import {
+    ledgerListQueryValidator,
+    ledgerShowQueryValidator,
+} from "../validators/ledger.validator";
+import {
     depositLookupsQueryValidator,
     statesQueryValidator,
 } from "../validators/lookup.validator";
+import { statementExportQueryValidator } from "../validators/statement.validator";
 import { changePasswordValidator } from "../validators/profile.validator";
 
 /**
@@ -454,6 +463,64 @@ export const depositApiRoutes = {
             idempotency(),
             strictBody(DEPOSIT_STORE_ALLOWED_KEYS),
             depositStoreBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
+// Shared stack for the read-only reporting groups (dashboard,
+// ledgers, statement) — mirror of the legacy router-level ordering.
+const reportingBaseMiddleware = [
+    authSanctum,
+    validateMerchant,
+    emailShouldBeVerified,
+    onboardingShouldBeCompleted,
+];
+
+export const dashboardApiRoutes = {
+    STATISTICS: {
+        path: "/statistics",
+        middleware: [
+            ...reportingBaseMiddleware,
+            dashboardStatisticsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    CHARTS_DATA: {
+        path: "/charts-data",
+        middleware: [
+            ...reportingBaseMiddleware,
+            dashboardChartsDataQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
+export const ledgerApiRoutes = {
+    LIST: {
+        path: "/list",
+        middleware: [
+            ...reportingBaseMiddleware,
+            ledgerListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    SHOW: {
+        path: "/show",
+        middleware: [
+            ...reportingBaseMiddleware,
+            ledgerShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
+export const statementApiRoutes = {
+    EXPORT: {
+        path: "/export",
+        middleware: [
+            ...reportingBaseMiddleware,
+            statementExportQueryValidator,
             checkValidationErrors,
         ],
     },

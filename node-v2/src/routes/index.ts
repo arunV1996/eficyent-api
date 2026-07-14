@@ -2,12 +2,15 @@ import { Router } from "express";
 import authRoutes from "./auth.route";
 import beneficiaryAccountRoutes from "./beneficiary_account.route";
 import beneficiaryTransactionRoutes from "./beneficiary_transaction.route";
+import dashboardRoutes from "./dashboard.route";
 import depositRoutes from "./deposit.route";
+import ledgerRoutes from "./ledger.route";
 import lookupRoutes from "./lookup.route";
 import onboardingRoutes from "./onboarding.route";
 import profileRoutes from "./profile.route";
 import { publicRouter, userPublicRouter } from "./public.route";
 import quoteRoutes from "./quote.route";
+import statementRoutes from "./statement.route";
 import walletRoutes from "./wallet.route";
 
 const router = Router();
@@ -23,6 +26,9 @@ router.use("/user/beneficiary-transactions", beneficiaryTransactionRoutes);
 router.use("/user/quotes", quoteRoutes);
 router.use("/user/wallets", walletRoutes);
 router.use("/user/deposits", depositRoutes);
+router.use("/user/ledgers", ledgerRoutes);
+router.use("/user/dashboard", dashboardRoutes);
+router.use("/user/statement", statementRoutes);
 router.use("/user", userPublicRouter);
 router.use("/public", publicRouter);
 
