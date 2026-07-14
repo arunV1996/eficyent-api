@@ -29,6 +29,10 @@ export const B2C = "B2C";
 export const C2B = "C2B";
 export const C2C = "C2C";
 
+// Deposit lookup query types (mirror of LOOKUP_TYPE_* in legacy constants)
+export const LOOKUP_TYPE_SOURCE_OF_FUNDS = "source_of_funds";
+export const LOOKUP_TYPE_PURPOSE_OF_TRANSACTION = "purpose_of_transaction";
+
 // Receiving-country recipient_type translation (mirror of user_type_map())
 export const USER_TYPE_MAP: Record<string, number> = {
     PERSONAL: USER_TYPE_PERSONAL,

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import authRoutes from "./auth.route";
+import lookupRoutes from "./lookup.route";
 import profileRoutes from "./profile.route";
 
 const router = Router();
@@ -8,5 +9,6 @@ const router = Router();
 // Multiple sub-routers can share this prefix — Express walks them in order.
 router.use("/user", authRoutes);
 router.use("/user", profileRoutes);
+router.use("/user/lookups", lookupRoutes);
 
 export default router;

@@ -4,6 +4,10 @@ import {
     loginValidator,
     registerValidator,
 } from "../validators/auth.validator";
+import {
+    depositLookupsQueryValidator,
+    statesQueryValidator,
+} from "../validators/lookup.validator";
 import { changePasswordValidator } from "../validators/profile.validator";
 
 /**
@@ -40,5 +44,28 @@ export const profileApiRoutes = {
     UPDATE_TOUR_STATUS: {
         path: "/update-tour-status",
         middleware: [authSanctum],
+    },
+};
+
+export const lookupApiRoutes = {
+    MOBILE_COUNTRY_CODES: {
+        path: "/mobile_country_codes",
+        middleware: [],
+    },
+    COUNTRIES: {
+        path: "/countries",
+        middleware: [],
+    },
+    STATES: {
+        path: "/states",
+        middleware: [statesQueryValidator, checkValidationErrors],
+    },
+    PAYMENT_RAILS: {
+        path: "/payment_rails",
+        middleware: [],
+    },
+    DEPOSIT_LOOKUPS: {
+        path: "/deposit_lookups",
+        middleware: [depositLookupsQueryValidator, checkValidationErrors],
     },
 };

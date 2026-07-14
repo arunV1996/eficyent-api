@@ -17,10 +17,15 @@ declare global {
     // eslint-disable-next-line @typescript-eslint/no-namespace
     namespace Express {
         interface Response {
+            /**
+             * `code` is numeric for most endpoints, but the legacy
+             * lookups group returns an empty-string code with message
+             * "OK" — the string type is kept so that contract survives.
+             */
             sendResponse: (
                 data: unknown,
                 message: string,
-                code: number,
+                code: number | string,
                 httpStatus?: number,
             ) => void;
             sendError: (
@@ -56,7 +61,7 @@ export const responseHelpers = (
     res.sendResponse = (
         data: unknown,
         message: string,
-        code: number,
+        code: number | string,
         httpStatus = 200,
     ): void => {
         res.status(httpStatus).json({

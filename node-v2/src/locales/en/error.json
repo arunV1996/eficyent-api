@@ -6,6 +6,8 @@
     "1101": "Invalid email format",
     "1102": "Email is already registered",
     "1103": "Password must be at least 8 characters",
+    "1104": "Invalid country code",
+    "1105": "Invalid lookup type",
     "125": "Invalid email or password",
     "126": "New password must be different from the current password",
     "148": "Tour has already been completed",
