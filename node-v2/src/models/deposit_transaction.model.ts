@@ -35,7 +35,6 @@ interface DepositTransactionAttributes {
     purposeOfPayment: string | null;
     sourceOfFunds: string | null;
     proof: string | null;
-    orderId: string | null;
     createdAt?: Date | null;
     updatedAt?: Date | null;
 }
@@ -86,7 +85,6 @@ class DepositTransaction
     public purposeOfPayment!: string | null;
     public sourceOfFunds!: string | null;
     public proof!: string | null;
-    public orderId!: string | null;
 
     public readonly createdAt!: Date | null;
     public readonly updatedAt!: Date | null;
@@ -136,7 +134,6 @@ DepositTransaction.init(
         purposeOfPayment: { type: DataTypes.STRING(255), allowNull: true },
         sourceOfFunds: { type: DataTypes.STRING(255), allowNull: true },
         proof: { type: DataTypes.STRING(255), allowNull: true },
-        orderId: { type: DataTypes.STRING(255), allowNull: true },
     },
     {
         sequelize,

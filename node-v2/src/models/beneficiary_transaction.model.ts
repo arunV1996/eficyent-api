@@ -23,13 +23,11 @@ interface BeneficiaryTransactionAttributes {
     senderId: number | null;
     beneficiaryAccountId: number | null;
     quoteId: number | null;
-    virtualAccountId: number | null;
     amount: string;
     totalAmount: string;
     commissionAmount: string;
     recipientAmount: string | null;
     receivingCurrency: string | null;
-    paymentRail: string | null;
     rail: string | null;
     externalType: string | null;
     serviceMid: string | null;
@@ -73,13 +71,11 @@ class BeneficiaryTransaction
     public senderId!: number | null;
     public beneficiaryAccountId!: number | null;
     public quoteId!: number | null;
-    public virtualAccountId!: number | null;
     public amount!: string;
     public totalAmount!: string;
     public commissionAmount!: string;
     public recipientAmount!: string | null;
     public receivingCurrency!: string | null;
-    public paymentRail!: string | null;
     public rail!: string | null;
     public externalType!: string | null;
     public serviceMid!: string | null;
@@ -127,7 +123,6 @@ BeneficiaryTransaction.init(
             allowNull: true,
         },
         quoteId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
-        virtualAccountId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
         amount: { type: DataTypes.DECIMAL(20, 6), allowNull: false },
         totalAmount: { type: DataTypes.DECIMAL(20, 6), allowNull: false },
         commissionAmount: {
@@ -137,7 +132,6 @@ BeneficiaryTransaction.init(
         },
         recipientAmount: { type: DataTypes.DECIMAL(20, 6), allowNull: true },
         receivingCurrency: { type: DataTypes.STRING(5), allowNull: true },
-        paymentRail: { type: DataTypes.STRING(255), allowNull: true },
         rail: { type: DataTypes.STRING(255), allowNull: true },
         externalType: { type: DataTypes.STRING(255), allowNull: true },
         serviceMid: { type: DataTypes.STRING(255), allowNull: true },
