@@ -115,8 +115,6 @@ WalletTransaction.init(
         tableName: "wallet_transactions",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         indexes: [
             {
                 fields: ["user_id", "wallet_id"],

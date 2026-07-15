@@ -140,9 +140,6 @@ Sender.init(
         underscored: true,
         timestamps: true,
         paranoid: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
-        deletedAt: "deleted_at",
         indexes: [
             { fields: ["user_id"], name: "senders_user_id_foreign" },
         ],

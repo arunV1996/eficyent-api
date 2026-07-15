@@ -84,8 +84,6 @@ BeneficiaryTransactionProof.init(
         tableName: "beneficiary_transaction_proofs",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
     },
 );
 

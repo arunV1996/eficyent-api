@@ -224,8 +224,6 @@ Quote.init(
         tableName: "quotes",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         indexes: [
             { fields: ["expires_at"], name: "quotes_expires_at_index" },
             {

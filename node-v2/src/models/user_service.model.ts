@@ -75,8 +75,6 @@ UserService.init(
         tableName: "user_services",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
     },
 );
 

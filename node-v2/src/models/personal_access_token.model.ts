@@ -91,8 +91,6 @@ PersonalAccessToken.init(
         tableName: "personal_access_tokens",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         indexes: [
             {
                 fields: ["tokenable_type", "tokenable_id"],

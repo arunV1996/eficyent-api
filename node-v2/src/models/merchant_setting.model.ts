@@ -71,8 +71,6 @@ MerchantSetting.init(
         tableName: "merchant_settings",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         indexes: [
             {
                 fields: ["merchant_id"],

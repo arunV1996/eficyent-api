@@ -71,8 +71,6 @@ DepositTransactionStatusHistory.init(
         tableName: "deposit_transaction_status_histories",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
     },
 );
 

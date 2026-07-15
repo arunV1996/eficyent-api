@@ -68,8 +68,6 @@ BeneficiaryTransactionStatusHistory.init(
         tableName: "beneficiary_transaction_status_histories",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         indexes: [
             {
                 fields: ["beneficiary_transaction_id"],

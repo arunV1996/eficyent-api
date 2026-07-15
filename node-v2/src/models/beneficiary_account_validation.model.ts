@@ -138,8 +138,6 @@ BeneficiaryAccountValidation.init(
         tableName: "beneficiary_account_validations",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         indexes: [
             {
                 fields: ["user_id"],

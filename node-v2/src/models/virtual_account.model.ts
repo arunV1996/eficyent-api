@@ -111,8 +111,6 @@ VirtualAccount.init(
         tableName: "virtual_accounts",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         indexes: [
             {
                 fields: ["user_id"],

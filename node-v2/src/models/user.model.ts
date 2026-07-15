@@ -291,8 +291,6 @@ User.init(
         tableName: "users",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         defaultScope: {
             attributes: {
                 exclude: ["password", "tfaSecret", "backupCodes", "saltKey", "privateKey", "emailCode"],

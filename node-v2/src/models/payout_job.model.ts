@@ -81,8 +81,6 @@ PayoutJob.init(
         tableName: "payout_jobs",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         indexes: [
             { fields: ["status"], name: "payout_jobs_status_index" },
             { fields: ["user_id"], name: "payout_jobs_user_id_index" },

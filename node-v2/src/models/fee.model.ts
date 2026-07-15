@@ -114,8 +114,6 @@ Fee.init(
         tableName: "fees",
         underscored: true,
         timestamps: true,
-        createdAt: "created_at",
-        updatedAt: "updated_at",
         indexes: [
             {
                 fields: ["owner_type", "owner_id"],
