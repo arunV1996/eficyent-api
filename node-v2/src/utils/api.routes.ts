@@ -564,6 +564,12 @@ export const depositApiRoutes = {
             checkValidationErrors,
         ],
     },
+    EXPORT: {
+        // No query validator — mirror of the legacy route, which
+        // registers /export bare (filters are best-effort).
+        path: "/export",
+        middleware: [...depositBaseMiddleware],
+    },
 };
 
 // Shared stack for the virtual-accounts group (mirror of the legacy
@@ -732,6 +738,15 @@ export const ledgerApiRoutes = {
         middleware: [
             ...reportingBaseMiddleware,
             ledgerShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    EXPORT: {
+        // Same query validator as the list (legacy parity).
+        path: "/export",
+        middleware: [
+            ...reportingBaseMiddleware,
+            ledgerListQueryValidator,
             checkValidationErrors,
         ],
     },

@@ -25,12 +25,14 @@ import {
     updateStatus as transactionUpdateStatus,
 } from "../controller/beneficiary_transaction.controller";
 import {
+    exportDeposits as depositExport,
     index as depositIndex,
     quote as depositQuote,
     show as depositShow,
     store as depositStore,
 } from "../controller/deposit.controller";
 import {
+    exportLedgers as ledgerExport,
     index as ledgerIndex,
     show as ledgerShow,
 } from "../controller/ledger.controller";
@@ -415,6 +417,8 @@ teamAuthedRouter.get(
     checkValidationErrors,
     depositShow,
 );
+// No validator — mirror of the legacy team mount.
+teamAuthedRouter.get("/deposits/export", depositExport);
 
 // Beneficiary accounts
 teamAuthedRouter.get(
@@ -607,6 +611,12 @@ teamAuthedRouter.get(
     ...ledgerShowQueryValidator,
     checkValidationErrors,
     ledgerShow,
+);
+teamAuthedRouter.get(
+    "/ledgers/export",
+    ...ledgerListQueryValidator,
+    checkValidationErrors,
+    ledgerExport,
 );
 
 // Statements

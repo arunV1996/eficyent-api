@@ -6,7 +6,7 @@
     "main": "dist/app.js",
     "scripts": {
         "dev": "nodemon --watch src --ext ts --exec ts-node src/app.ts",
-        "build": "tsc && cp -r src/locales dist/",
+        "build": "tsc && cp -r src/locales dist/ && cp -r src/views dist/",
         "start": "node dist/app.js",
         "migrate": "sequelize-cli db:migrate",
         "db:migrate:undo": "sequelize-cli db:migrate:undo",
@@ -15,6 +15,7 @@
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1086.0",
         "@aws-sdk/s3-request-presigner": "^3.1086.0",
+        "@types/ejs": "^3.1.5",
         "@types/multer": "^2.2.0",
         "bcryptjs": "^3.0.3",
         "bullmq": "^5.80.2",
@@ -22,6 +23,7 @@
         "currency-symbol-map": "^5.1.0",
         "decimal.js": "^10.6.0",
         "dotenv": "^16.4.5",
+        "ejs": "^6.0.1",
         "exceljs": "^4.4.0",
         "express": "^4.21.1",
         "express-rate-limit": "^7.4.1",
@@ -36,6 +38,7 @@
         "mysql2": "^3.11.5",
         "nodemailer": "^9.0.3",
         "otpauth": "^9.5.1",
+        "puppeteer": "^25.3.0",
         "qrcode": "^1.5.4",
         "sequelize": "^6.37.5"
     },

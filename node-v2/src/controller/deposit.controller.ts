@@ -11,10 +11,17 @@ import DepositTransactionStatusHistory from "../models/deposit_transaction_statu
 import Merchant from "../models/merchant.model";
 import User from "../models/user.model";
 import VirtualAccount from "../models/virtual_account.model";
+import {
+    formatReportDate,
+    loadLogoDataUrl,
+    renderPdfFromHtml,
+    renderViewTemplate,
+} from "../helpers/pdf_export.helper";
 import { depositTransactionToJSON } from "../resources/deposit_transaction.resource";
+import { generateExcel } from "../services/excel_export.service";
 import { makeDeposit as invoiceMateMakeDeposit } from "../services/invoice_mate.service";
 import { createDeposit as processingUnitCreateDeposit } from "../services/processing_unit.service";
-import { uploadBase64 } from "../services/s3.service";
+import { temporaryUrl, upload, uploadBase64 } from "../services/s3.service";
 import { depositReceived as telegramDepositReceived } from "../services/telegram.service";
 import { generateUniqueId } from "../utils/common.utils";
 import {
@@ -44,8 +51,6 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  * Team tokens flow through unchanged: corporate members are scoped to
  * their own deposits on /list and stamp team_member_id on /store.
  *
- * Deferred (documented):
- *   - GET /deposits/export (puppeteer/EJS PDF + XLSX export)
  */
 
 const sendCodedError = (res: Response, error: unknown): void => {
@@ -508,6 +513,172 @@ export const retryDeposit = async (
             );
         }
         return res.sendResponse([], res.__("s118"), 118);
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * GET /api/user/deposits/export — bulk deposit list export as PDF
+ * (default) or XLSX (?export_type=excel|xlsx), uploaded to S3 with a
+ * signed temporary URL in the response. Mirror of the legacy
+ * depositController.export: same filter set as the list endpoint but
+ * without pagination, and the `type` filter ignores the legacy
+ * pdf/excel/xlsx tokens some clients send in that field.
+ */
+export const exportDeposits = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const query = req.query as Record<string, string | undefined>;
+        const fileType = String(query.export_type ?? "pdf").toLowerCase();
+
+        const statusFilter = resolveStatusFilter(query.status);
+        let virtualAccountId: number | null = null;
+        if (query.bank_account_id) {
+            const baseScope = await getVirtualAccountScope(req.user);
+            const virtualAccount = await VirtualAccount.findOne({
+                where: {
+                    ...(baseScope as Record<string, unknown>),
+                    uniqueId: query.bank_account_id,
+                },
+            });
+            if (!virtualAccount) {
+                return res.sendError("Bank account not found.", 120, 400);
+            }
+            virtualAccountId = virtualAccount.id;
+        }
+
+        const where: Record<string, unknown> = { userId: req.user.id };
+        if (statusFilter !== undefined) {
+            where.status = Array.isArray(statusFilter)
+                ? { [Op.in]: statusFilter }
+                : statusFilter;
+        }
+        if (virtualAccountId !== null) {
+            where.virtualAccountId = virtualAccountId;
+        }
+        if (
+            query.type &&
+            !["pdf", "excel", "xlsx"].includes(query.type.toLowerCase())
+        ) {
+            where.type = query.type;
+        }
+        if (query.from_date && query.to_date) {
+            where.createdAt = {
+                [Op.gte]: new Date(`${query.from_date}T00:00:00Z`),
+                [Op.lte]: new Date(`${query.to_date}T23:59:59Z`),
+            };
+        }
+        if (query.search_key) {
+            const searchTerm = `%${query.search_key}%`;
+            where[Op.or as unknown as string] = [
+                { uniqueId: { [Op.like]: searchTerm } },
+                { externalReferenceId: { [Op.like]: searchTerm } },
+            ];
+        }
+        const corporateContext = teamMemberContext(req);
+        if (
+            corporateContext &&
+            corporateContext.role === TEAM_MEMBER_ROLE_CORPORATE
+        ) {
+            where.teamMemberId = corporateContext.id;
+        }
+
+        const rows = await DepositTransaction.findAll({
+            where,
+            order: [["created_at", "DESC"]],
+        });
+
+        let buffer: Buffer;
+        let contentType: string;
+        let extension: string;
+
+        if (fileType === "excel" || fileType === "xlsx") {
+            const toTitleCase = (value: string): string => {
+                if (!value) {
+                    return "";
+                }
+                return value
+                    .toLowerCase()
+                    .split(/[\s_]+/)
+                    .map(
+                        (word) =>
+                            word.charAt(0).toUpperCase() + word.slice(1),
+                    )
+                    .join(" ");
+            };
+
+            const exportRows = [];
+            for (let index = 0; index < rows.length; index += 1) {
+                const resource = await depositTransactionToJSON(rows[index]);
+                exportRows.push({
+                    "S. No.": index + 1,
+                    "Transaction ID": resource.unique_id || "",
+                    Memo: resource.memo || "",
+                    Amount: `${resource.amount} ${resource.currency}`,
+                    Type: resource.type ? toTitleCase(resource.type) : "",
+                    Status: toTitleCase(resource.status),
+                    Remarks: rows[index].remarks || "",
+                    Date: resource.created_at || "",
+                });
+            }
+
+            buffer = await generateExcel(exportRows, {
+                sheetTitle: "Deposits",
+            });
+            contentType =
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            extension = "xlsx";
+        } else {
+            const translations: Record<string, string> = {
+                deposits: "Deposits",
+                s_no: "S.No",
+                transaction_id: "Transaction ID",
+                memo: "Memo",
+                amount: "Amount",
+                status: "Status",
+                date: "Date",
+            };
+            const tr = (key: string) => translations[key] || key;
+
+            const depositDetails = [];
+            for (const row of rows) {
+                const resource = await depositTransactionToJSON(row);
+                depositDetails.push({
+                    unique_id: resource.unique_id,
+                    memo: resource.memo,
+                    amount: resource.amount,
+                    currency: resource.currency,
+                    status: resource.status,
+                    created_at: resource.created_at,
+                });
+            }
+
+            const html = await renderViewTemplate(
+                "invoice/depositTransactions.ejs",
+                {
+                    tr,
+                    date: formatReportDate(),
+                    logo: loadLogoDataUrl(),
+                    deposit_details: depositDetails,
+                },
+            );
+            buffer = await renderPdfFromHtml(html);
+            contentType = "application/pdf";
+            extension = "pdf";
+        }
+
+        const key = await upload(
+            { buffer, contentType, extension },
+            "exports/deposits",
+        );
+        const signedUrl = await temporaryUrl(key);
+        return res.sendEmptyEnvelope({ url: signedUrl }, "");
     } catch (error) {
         return sendCodedError(res, error);
     }

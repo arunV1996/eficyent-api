@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { index, quote, show, store } from "../controller/deposit.controller";
+import {
+    exportDeposits,
+    index,
+    quote,
+    show,
+    store,
+} from "../controller/deposit.controller";
 import { depositApiRoutes } from "../utils/api.routes";
 
 const router = Router();
@@ -26,6 +32,12 @@ router.post(
     depositApiRoutes.STORE.path,
     ...depositApiRoutes.STORE.middleware,
     store,
+);
+
+router.get(
+    depositApiRoutes.EXPORT.path,
+    ...depositApiRoutes.EXPORT.middleware,
+    exportDeposits,
 );
 
 export default router;
