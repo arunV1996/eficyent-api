@@ -14,6 +14,7 @@ import {
     cancel as transactionCancel,
     checkTransactionStatus,
     direct as transactionDirect,
+    downloadList as transactionDownloadList,
     getFormFields as transactionGetFormFields,
     getProof,
     index as transactionIndex,
@@ -569,6 +570,11 @@ teamAuthedRouter.post(
     ...sendMoneyDirectBodyValidator,
     checkValidationErrors,
     transactionDirect,
+);
+// No validator — mirror of the legacy team mount.
+teamAuthedRouter.get(
+    "/beneficiary-transactions/download",
+    transactionDownloadList,
 );
 teamAuthedRouter.get(
     "/beneficiary-transactions/transaction-form-fields",

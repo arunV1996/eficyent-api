@@ -2,11 +2,18 @@ import { Request, Response } from "express";
 import { Op } from "sequelize";
 import { validateAndNormalizeBeneficiary } from "../helpers/beneficiary_normalizer.helper";
 import {
+    buildListFilter,
     cancelTransactions,
     findTransactionByAnyId,
     listTransactions,
     updateTransactionStatus,
 } from "../helpers/beneficiary_transaction.helper";
+import {
+    formatReportDate,
+    loadLogoDataUrl,
+    renderPdfFromHtml,
+    renderViewTemplate,
+} from "../helpers/pdf_export.helper";
 import { CodedError } from "../helpers/coded_error.helper";
 import {
     beneficiaryFormFields,
@@ -32,6 +39,7 @@ import {
     processExcel,
 } from "../services/excel_import.service";
 import * as processingUnitService from "../services/processing_unit.service";
+import { generateExcel } from "../services/excel_export.service";
 import { temporaryUrl, upload } from "../services/s3.service";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
 import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
@@ -52,7 +60,12 @@ import {
     transactionProofToJSON,
 } from "../resources/beneficiary_transaction.resource";
 import { uploadBase64 } from "../services/s3.service";
-import { generateOrderId, generateUniqueId } from "../utils/common.utils";
+import {
+    beneficiaryTransactionStatusLabel,
+    formatDateHuman,
+    generateOrderId,
+    generateUniqueId,
+} from "../utils/common.utils";
 import {
     BENEFICIARY_TRANSACTION_APPROVAL_MAP,
     BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
@@ -81,7 +94,7 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  * at the /user mount (no auth — mirror of Laravel).
  *
  * Deferred (documented per endpoint below where relevant):
- *   - /export, /download (puppeteer/EJS PDF exports)
+ *   - /export (single-transaction PDF receipt)
  *
  * Team tokens (authTeam) flow through unchanged: req.teamMember is
  * threaded into the creator context, list scoping and the resource
@@ -1329,6 +1342,321 @@ export const retryJob = async (req: Request, res: Response): Promise<void> => {
             userId: String(req.user.id),
         });
         return res.sendResponse([], res.__("s176"), 176);
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * GET /api/user/beneficiary-transactions/download — bulk payout list
+ * export as PDF (default) or XLSX (?type=excel|xlsx), uploaded to S3
+ * with a signed temporary URL in the response. Mirror of the legacy
+ * payoutController.downloadList: the list filter set without
+ * pagination, sending currency resolved through the quote's
+ * polymorphic source (wallet or virtual account).
+ */
+export const downloadList = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const query = req.query as Record<string, string | undefined>;
+        const fileType = String(query.type ?? "pdf").toLowerCase();
+
+        const memberContext = teamMemberContext(req);
+        const { where, filterIncludes } = await buildListFilter(
+            req.user,
+            query as never,
+            memberContext,
+        );
+
+        // Two-step fetch (ids first) so the filter joins can't conflict
+        // with the display includes — same rows the legacy single
+        // findMany returned.
+        const idRows = (await BeneficiaryTransaction.findAll({
+            where,
+            include: filterIncludes,
+            order: [["created_at", "DESC"]],
+            attributes: ["id"],
+            subQuery: false,
+            raw: true,
+        })) as unknown as { id: number }[];
+        const rows =
+            idRows.length === 0
+                ? []
+                : await BeneficiaryTransaction.findAll({
+                      where: { id: { [Op.in]: idRows.map((row) => row.id) } },
+                      include: [
+                          {
+                              model: BeneficiaryAccount,
+                              as: "beneficiaryAccount",
+                              required: false,
+                              paranoid: false,
+                          },
+                          { model: Quote, as: "quotes", required: false },
+                          {
+                              model: Sender,
+                              as: "senders",
+                              required: false,
+                              paranoid: false,
+                          },
+                      ],
+                      order: [["created_at", "DESC"]],
+                  });
+
+        // Sending currency comes from the quote's polymorphic source.
+        const walletIds: number[] = [];
+        const virtualAccountIds: number[] = [];
+        for (const row of rows) {
+            const quote = row.quotes;
+            if (!quote) {
+                continue;
+            }
+            if (quote.sourceId) {
+                if (
+                    quote.sourceType === MORPH_WALLET ||
+                    quote.sourceType === "wallet"
+                ) {
+                    walletIds.push(quote.sourceId);
+                } else if (
+                    quote.sourceType === MORPH_VIRTUAL_ACCOUNT ||
+                    quote.sourceType === "virtual_account"
+                ) {
+                    virtualAccountIds.push(quote.sourceId);
+                }
+            }
+            if (quote.virtualAccountId) {
+                virtualAccountIds.push(quote.virtualAccountId);
+            }
+        }
+        const [wallets, virtualAccounts] = await Promise.all([
+            walletIds.length > 0
+                ? Wallet.findAll({ where: { id: { [Op.in]: walletIds } } })
+                : Promise.resolve([]),
+            virtualAccountIds.length > 0
+                ? VirtualAccount.findAll({
+                      where: { id: { [Op.in]: virtualAccountIds } },
+                  })
+                : Promise.resolve([]),
+        ]);
+        const walletCurrencyMap = new Map(
+            wallets.map((wallet) => [String(wallet.id), wallet.currency]),
+        );
+        const virtualAccountCurrencyMap = new Map(
+            virtualAccounts.map((account) => [
+                String(account.id),
+                account.currency,
+            ]),
+        );
+        const merchant = req.user.merchantId
+            ? await Merchant.findByPk(req.user.merchantId)
+            : null;
+
+        const toTitleCase = (value: string): string => {
+            if (!value) {
+                return "";
+            }
+            return value
+                .toLowerCase()
+                .split(/[\s_]+/)
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(" ");
+        };
+
+        const resolveSendingCurrency = (
+            row: BeneficiaryTransaction,
+        ): string => {
+            const quote = row.quotes;
+            if (!quote) {
+                return "";
+            }
+            let sendingCurrency = "";
+            if (quote.sourceId) {
+                if (
+                    quote.sourceType === MORPH_WALLET ||
+                    quote.sourceType === "wallet"
+                ) {
+                    sendingCurrency =
+                        walletCurrencyMap.get(String(quote.sourceId)) ?? "";
+                } else if (
+                    quote.sourceType === MORPH_VIRTUAL_ACCOUNT ||
+                    quote.sourceType === "virtual_account"
+                ) {
+                    sendingCurrency =
+                        virtualAccountCurrencyMap.get(
+                            String(quote.sourceId),
+                        ) ?? "";
+                }
+            }
+            if (!sendingCurrency && quote.virtualAccountId) {
+                sendingCurrency =
+                    virtualAccountCurrencyMap.get(
+                        String(quote.virtualAccountId),
+                    ) ?? "";
+            }
+            return sendingCurrency;
+        };
+
+        let buffer: Buffer;
+        let contentType: string;
+        let extension: string;
+
+        if (fileType === "excel" || fileType === "xlsx") {
+            const exportRows = rows.map((row, index) => {
+                const sendingCurrency = resolveSendingCurrency(row);
+
+                let remitterName = "";
+                if (row.senders) {
+                    if (Number(row.senders.type) === 2) {
+                        remitterName = row.senders.firstName ?? "";
+                    } else {
+                        remitterName = [
+                            row.senders.firstName,
+                            row.senders.lastName,
+                        ]
+                            .filter(Boolean)
+                            .join(" ");
+                    }
+                } else if (merchant) {
+                    remitterName = merchant.name;
+                } else {
+                    remitterName = [
+                        req.user?.firstName,
+                        req.user?.lastName,
+                    ]
+                        .filter(Boolean)
+                        .join(" ");
+                }
+
+                let beneficiaryName = "";
+                if (row.beneficiaryAccount) {
+                    if (Number(row.beneficiaryAccount.type) === 2) {
+                        beneficiaryName =
+                            row.beneficiaryAccount.businessName ||
+                            [
+                                row.beneficiaryAccount.firstName,
+                                row.beneficiaryAccount.lastName,
+                            ]
+                                .filter(Boolean)
+                                .join(" ");
+                    } else {
+                        beneficiaryName = [
+                            row.beneficiaryAccount.firstName,
+                            row.beneficiaryAccount.lastName,
+                        ]
+                            .filter(Boolean)
+                            .join(" ");
+                    }
+                }
+
+                const statusText = beneficiaryTransactionStatusLabel(
+                    Number(row.status),
+                );
+
+                let fxRateFormatted = "";
+                if (
+                    row.quotes?.fxRate &&
+                    sendingCurrency &&
+                    row.receivingCurrency
+                ) {
+                    fxRateFormatted = `1${sendingCurrency} = ${row.quotes.fxRate}${row.receivingCurrency}`;
+                } else {
+                    fxRateFormatted = row.quotes?.fxRate ?? "";
+                }
+
+                return {
+                    "S. No.": index + 1,
+                    "Transaction ID": row.txnRefNo ?? "",
+                    "Client Ref No": row.clientReferenceId ?? "",
+                    "Sending Amount": String(row.totalAmount),
+                    "Sending Currency": sendingCurrency,
+                    "Recipient Amount": row.recipientAmount
+                        ? String(row.recipientAmount)
+                        : "",
+                    "Recipient Currency": row.receivingCurrency ?? "",
+                    Fees: String(row.commissionAmount),
+                    "FX Rate": fxRateFormatted,
+                    "Remitter Name": remitterName,
+                    "Beneficiary Name": beneficiaryName,
+                    "Account Number":
+                        row.beneficiaryAccount?.accountNumber ?? "",
+                    Remarks: row.remarks ?? "",
+                    Status: toTitleCase(statusText),
+                    "Created At": row.createdAt
+                        ? formatDateHuman(row.createdAt)
+                        : "",
+                };
+            });
+
+            buffer = await generateExcel(exportRows, {
+                sheetTitle: "BeneficiaryTransactions",
+            });
+            contentType =
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            extension = "xlsx";
+        } else {
+            const translations: Record<string, string> = {
+                beneficiary_transactions: "Beneficiary Transactions",
+                s_no: "S.No",
+                txn_ref_no: "Txn Ref No",
+                client_ref_no: "Client Ref No",
+                account_number: "Account Number",
+                sending_amount: "Sending Amount",
+                receiving_amount: "Receiving Amount",
+                status: "Status",
+                date: "Date",
+            };
+            const tr = (key: string) => translations[key] || key;
+
+            const beneficiaryDetails = rows.map((row) => {
+                const statusLabel = beneficiaryTransactionStatusLabel(
+                    Number(row.status),
+                    !!req.teamMember,
+                );
+                return {
+                    txn_ref_no: row.txnRefNo ?? "",
+                    client_ref_no: row.clientReferenceId ?? "",
+                    account_number:
+                        row.beneficiaryAccount?.accountNumber ?? "",
+                    sending_amount: String(row.totalAmount),
+                    receiving_amount: row.recipientAmount
+                        ? String(row.recipientAmount)
+                        : "",
+                    receiving_currency: row.receivingCurrency ?? "",
+                    status: statusLabel,
+                    created_at: row.createdAt
+                        ? new Date(row.createdAt).toISOString().split("T")[0]
+                        : "",
+                };
+            });
+
+            const html = await renderViewTemplate(
+                "invoice/beneficiaryTransaction.ejs",
+                {
+                    tr,
+                    date: formatReportDate(),
+                    logo: loadLogoDataUrl(),
+                    beneficiary_details: beneficiaryDetails,
+                },
+            );
+            buffer = await renderPdfFromHtml(html);
+            contentType = "application/pdf";
+            extension = "pdf";
+        }
+
+        const key = await upload(
+            { buffer, contentType, extension },
+            "exports/beneficiary-transactions",
+        );
+        const signedUrl = await temporaryUrl(key);
+        return res.sendResponse(
+            { url: signedUrl },
+            "Bulk export generated.",
+            200,
+        );
     } catch (error) {
         return sendCodedError(res, error);
     }

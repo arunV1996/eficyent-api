@@ -6,6 +6,7 @@ import {
     checkStatus,
     checkTransactionStatus,
     direct,
+    downloadList,
     getFormFields,
     getProof,
     index,
@@ -123,6 +124,12 @@ router.post(
     ...beneficiaryTransactionApiRoutes.BULK_STORE.middleware,
     bulkUpload.single("file"),
     bulkStore,
+);
+
+router.get(
+    beneficiaryTransactionApiRoutes.DOWNLOAD.path,
+    ...beneficiaryTransactionApiRoutes.DOWNLOAD.middleware,
+    downloadList,
 );
 
 export default router;

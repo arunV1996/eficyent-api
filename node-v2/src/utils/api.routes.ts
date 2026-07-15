@@ -464,6 +464,12 @@ export const beneficiaryTransactionApiRoutes = {
         path: "/bulk/store",
         middleware: [...transactionBaseMiddleware],
     },
+    DOWNLOAD: {
+        // No query validator — mirror of the legacy route, which
+        // registers /download bare (filters are best-effort).
+        path: "/download",
+        middleware: [...transactionBaseMiddleware],
+    },
 };
 
 // Shared stack for the wallets group (mirror of the legacy
