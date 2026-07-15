@@ -4,6 +4,10 @@ import { availableBanks } from "../helpers/available_banks.helper";
 import { computeBankBalance } from "../helpers/balance.helper";
 import { CodedError } from "../helpers/coded_error.helper";
 import { settingGet } from "../helpers/setting.helper";
+import {
+    teamMemberContext,
+    TeamRequestContext,
+} from "../helpers/team_context.helper";
 import { getVirtualAccountScope } from "../helpers/virtual_account.helper";
 import User from "../models/user.model";
 import UserService from "../models/user_service.model";
@@ -13,6 +17,7 @@ import { onboardingStatusLabel } from "../utils/common.utils";
 import {
     MERCHANT_TYPE_PAYOUT,
     TAKE_COUNT,
+    TEAM_MEMBER_ROLE_CORPORATE,
     VIRTUAL_ACCOUNT_STATUS_CREATED,
     VIRTUAL_ACCOUNT_STATUS_MAP,
 } from "../utils/constants";
@@ -29,8 +34,8 @@ import {
  * onboarding/VA factories are commented out upstream) — it returns the
  * same success envelope without side effects.
  *
- * Deferred with the team module: the corporate team-member balance
- * scoping argument (always null here, same as user tokens today).
+ * Team tokens flow through unchanged: balances are scoped to the
+ * corporate member's own activity when applicable (mirror of legacy).
  */
 
 const sendCodedError = (res: Response, error: unknown): void => {
@@ -79,8 +84,9 @@ const groupAccountsByExternalType = (
 const attachBalance = async (
     user: User,
     account: GroupedAccount,
+    teamContext: TeamRequestContext | null = null,
 ): Promise<void> => {
-    const balance = await computeBankBalance(user, account, null);
+    const balance = await computeBankBalance(user, account, teamContext);
     account.balance = balance.toString();
 };
 
@@ -173,7 +179,7 @@ export const index = async (req: Request, res: Response): Promise<void> => {
 
         if (isTruthyFlag(query.with_balance)) {
             for (const account of grouped) {
-                await attachBalance(req.user, account);
+                await attachBalance(req.user, account, teamMemberContext(req));
             }
         }
 
@@ -317,7 +323,7 @@ export const getBalance = async (
         if (!virtualAccount) {
             return res.sendError(res.__("116"), 116, 400);
         }
-        await attachBalance(req.user, virtualAccount);
+        await attachBalance(req.user, virtualAccount, teamMemberContext(req));
         const appUrl = await resolveAppUrl();
         return res.sendResponse(
             {
@@ -374,7 +380,7 @@ export const show = async (req: Request, res: Response): Promise<void> => {
             ) ?? (virtualAccount as GroupedAccount);
 
         if (isTruthyFlag(req.query.with_balance)) {
-            await attachBalance(req.user, account);
+            await attachBalance(req.user, account, teamMemberContext(req));
         }
         const appUrl = await resolveAppUrl();
         return res.sendResponse(
@@ -409,11 +415,17 @@ export const balances = async (req: Request, res: Response): Promise<void> => {
         const accounts = await VirtualAccount.findAll({
             where: baseScope as Record<string, unknown>,
         });
+        const corporateContext = teamMemberContext(req);
+        const balanceContext =
+            corporateContext &&
+            corporateContext.role === TEAM_MEMBER_ROLE_CORPORATE
+                ? corporateContext
+                : null;
         const accountBalances = await Promise.all(
             accounts.map(async (account) => ({
                 currency: account.currency,
                 balance: (
-                    await computeBankBalance(req.user!, account, null)
+                    await computeBankBalance(req.user!, account, balanceContext)
                 ).toString(),
             })),
         );

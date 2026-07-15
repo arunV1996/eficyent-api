@@ -19,6 +19,7 @@ import {
     isRemitterDepositEnabled,
 } from "../helpers/payout_transaction.helper";
 import { validateAndNormalizeSender } from "../helpers/sender_normalizer.helper";
+import { teamMemberContext } from "../helpers/team_context.helper";
 import { Dispatch } from "../jobs";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
 import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
@@ -60,8 +61,10 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  *   - /bulk/template, /bulk/store (Excel import/export service)
  *   - public /retry_external_service (needs the Compliance + PU payout
  *     clients and reverseRefund)
- *   - team-member token context (req.teamMember) — the team module is
- *     a later tranche, so creator context is always the user here.
+ *
+ * Team tokens (authTeam) flow through unchanged: req.teamMember is
+ * threaded into the creator context, list scoping and the resource
+ * isTeam flag — mirror of the legacy controller.
  *
  * Every error path keeps the legacy code + HTTP status; every success
  * path keeps the legacy message/code envelope byte-identical.
@@ -100,21 +103,25 @@ export const index = async (req: Request, res: Response): Promise<void> => {
         const take =
             req.query.take !== undefined ? Number(req.query.take) : TAKE_COUNT;
 
-        const { total, rows } = await listTransactions(req.user, {
-            status: query.status,
-            from_date: query.from_date,
-            to_date: query.to_date,
-            bank_account_id: query.bank_account_id,
-            wallet_id: query.wallet_id,
-            search_key: query.search_key,
-            skip,
-            take,
-        });
+        const { total, rows } = await listTransactions(
+            req.user,
+            {
+                status: query.status,
+                from_date: query.from_date,
+                to_date: query.to_date,
+                bank_account_id: query.bank_account_id,
+                wallet_id: query.wallet_id,
+                search_key: query.search_key,
+                skip,
+                take,
+            },
+            teamMemberContext(req),
+        );
 
         const beneficiaryTransactions = [];
         for (const row of rows) {
             beneficiaryTransactions.push(
-                await beneficiaryTransactionToJSON(row),
+                await beneficiaryTransactionToJSON(row, !!req.teamMember),
             );
         }
 
@@ -153,12 +160,15 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                 client_reference_id: req.body.client_reference_id,
             },
             req.user,
+            teamMemberContext(req),
         );
 
         return res.sendResponse(
             {
-                beneficiary_transaction:
-                    await beneficiaryTransactionToJSON(transaction),
+                beneficiary_transaction: await beneficiaryTransactionToJSON(
+                    transaction,
+                    !!req.teamMember,
+                ),
             },
             res.__("s108"),
             "",
@@ -183,8 +193,10 @@ export const show = async (req: Request, res: Response): Promise<void> => {
         }
         return res.sendResponse(
             {
-                beneficiary_transaction:
-                    await beneficiaryTransactionToJSON(transaction),
+                beneficiary_transaction: await beneficiaryTransactionToJSON(
+                    transaction,
+                    !!req.teamMember,
+                ),
             },
             "Transaction fetched successfully.",
             "",
@@ -217,8 +229,10 @@ export const checkTransactionStatus = async (
         }
         return res.sendResponse(
             {
-                beneficiary_transaction:
-                    await beneficiaryTransactionToJSON(transaction),
+                beneficiary_transaction: await beneficiaryTransactionToJSON(
+                    transaction,
+                    !!req.teamMember,
+                ),
             },
             "Transaction fetched successfully.",
             "",
@@ -322,6 +336,7 @@ export const updateStatus = async (
             transactionIds,
             statusValue,
             req.body.remarks,
+            teamMemberContext(req),
         );
         return res.sendResponse(result, "Transactions updated.", 200);
     } catch (error) {
@@ -801,11 +816,14 @@ export const direct = async (req: Request, res: Response): Promise<void> => {
                     (transaction.client_reference_id as string) ?? undefined,
             },
             req.user,
+            teamMemberContext(req),
         );
         return res.sendResponse(
             {
-                beneficiary_transaction:
-                    await beneficiaryTransactionToJSON(createdTransaction),
+                beneficiary_transaction: await beneficiaryTransactionToJSON(
+                    createdTransaction,
+                    !!req.teamMember,
+                ),
             },
             res.__("s108"),
             108,
@@ -848,7 +866,7 @@ export const instant = async (req: Request, res: Response): Promise<void> => {
                 beneficiary: req.body.beneficiary,
                 remitter: req.body.remitter,
                 transaction: req.body.transaction,
-                creator: null,
+                creator: req.teamMember?.id ? String(req.teamMember.id) : null,
             },
         });
         await Dispatch.bulkPayout({

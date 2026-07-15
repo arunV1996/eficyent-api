@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { fetchStatementData } from "../helpers/statement.helper";
+import { getEffectiveUserId } from "../helpers/team_context.helper";
 import { temporaryUrl, upload } from "../services/s3.service";
 import { generateStatementExcel } from "../utils/excel_generator.utils";
 
@@ -11,8 +12,8 @@ import { generateStatementExcel } from "../utils/excel_generator.utils";
  * ({success:false, message, code:"", data:null} with 404/500), so they
  * are emitted verbatim here rather than through sendError.
  *
- * Deferred with the team module: the effective-user resolution for
- * team-member tokens (the effective user is always req.user here).
+ * Team tokens resolve through getEffectiveUserId (viewer-permission
+ * gate + parent business user), mirror of the legacy controller.
  */
 
 /**
@@ -46,9 +47,10 @@ export const exportStatement = async (
             }
         }
 
+        const effectiveUserId = getEffectiveUserId(req);
         const data = await fetchStatementData({
             user: req.user,
-            userId: req.user.id,
+            userId: effectiveUserId,
             from_date: fromDate!,
             to_date: toDate!,
             bank_account_id: bankAccountId,

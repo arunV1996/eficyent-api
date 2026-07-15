@@ -15,6 +15,7 @@ import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail
 import Merchant from "../models/merchant.model";
 import { beneficiaryAccountToJSON } from "../resources/beneficiary_account.resource";
 import { validateAccount as processingUnitValidateAccount } from "../services/processing_unit.service";
+import { teamMemberContext } from "../helpers/team_context.helper";
 import { generateUniqueId } from "../utils/common.utils";
 import {
     BENEFICIARY_ACCOUNT_ACTIVATED,
@@ -23,6 +24,7 @@ import {
     PAYMENT_RAIL_SWIFT,
     PAYMENT_RAIL_WIRE,
     TAKE_COUNT,
+    TEAM_MEMBER_ROLE_CORPORATE,
     USER_TYPE_MAP,
 } from "../utils/constants";
 
@@ -139,6 +141,14 @@ export const index = async (req: Request, res: Response): Promise<void> => {
                   }
                 : {}),
         };
+        const corporateContext = teamMemberContext(req);
+        if (
+            corporateContext &&
+            corporateContext.role === TEAM_MEMBER_ROLE_CORPORATE
+        ) {
+            (whereClause as Record<string, unknown>).teamMemberId =
+                corporateContext.id;
+        }
 
         const skip = requestQuery.skip ? Number(requestQuery.skip) : 0;
         const take = requestQuery.take ? Number(requestQuery.take) : TAKE_COUNT;
@@ -371,6 +381,7 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                         {
                             ...baseAttributes,
                             uniqueId: generateUniqueId(24),
+                            teamMemberId: req.teamMember?.id ?? null,
                             paymentRail,
                         } as never,
                         { transaction: databaseTransaction },

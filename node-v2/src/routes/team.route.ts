@@ -1,13 +1,141 @@
 import { Router } from "express";
 import {
+    destroy as beneficiaryDestroy,
+    getFormFields as beneficiaryGetFormFields,
+    index as beneficiaryIndex,
+    show as beneficiaryShow,
+    store as beneficiaryStore,
+} from "../controller/beneficiary_account.controller";
+import {
+    cancel as transactionCancel,
+    checkTransactionStatus,
+    direct as transactionDirect,
+    getFormFields as transactionGetFormFields,
+    getProof,
+    index as transactionIndex,
+    requestProof,
+    show as transactionShow,
+    store as transactionStore,
+    transactionFormFields,
+    updateStatus as transactionUpdateStatus,
+} from "../controller/beneficiary_transaction.controller";
+import {
+    index as depositIndex,
+    quote as depositQuote,
+    show as depositShow,
+    store as depositStore,
+} from "../controller/deposit.controller";
+import {
+    index as ledgerIndex,
+    show as ledgerShow,
+} from "../controller/ledger.controller";
+import {
     banks,
     countries,
     depositLookups,
     depositWallets,
+    getRates,
     mobileCountryCodes,
     paymentRails,
+    receivingCountries,
+    refreshRates,
     states,
 } from "../controller/lookup.controller";
+import { makeQuoteStore } from "../controller/quote.controller";
+import {
+    destroy as senderDestroy,
+    getFormFields as senderGetFormFields,
+    index as senderIndex,
+    show as senderShow,
+    store as senderStore,
+    update as senderUpdate,
+} from "../controller/sender.controller";
+import { exportStatement } from "../controller/statement.controller";
+import {
+    chartsData as teamChartsData,
+    statistics as teamStatistics,
+} from "../controller/team_dashboard.controller";
+import {
+    activate as virtualAccountActivate,
+    getBalance as virtualAccountGetBalance,
+    getVirtualAccounts,
+    index as virtualAccountIndex,
+    show as virtualAccountShow,
+} from "../controller/virtual_account.controller";
+import { index as walletIndex,
+    convert as walletConvert,
+    show as walletShow,
+    showTransaction as walletShowTransaction,
+    transactions as walletTransactions,
+} from "../controller/wallet.controller";
+import { idempotency } from "../middleware/idempotency";
+import {
+    beneficiaryFormFieldsQueryValidator,
+    beneficiaryListQueryValidator,
+    beneficiaryShowQueryValidator,
+} from "../validators/beneficiary_account.validator";
+import {
+    DIRECT_ALLOWED_KEYS,
+    payoutFormFieldsQueryValidator,
+    PROOF_REQUEST_ALLOWED_KEYS,
+    proofGetQueryValidator,
+    proofRequestBodyValidator,
+    sendMoneyDirectBodyValidator,
+    TRANSACTION_CANCEL_ALLOWED_KEYS,
+    TRANSACTION_STORE_ALLOWED_KEYS,
+    TRANSACTION_UPDATE_STATUS_ALLOWED_KEYS,
+    transactionCancelBodyValidator,
+    transactionListQueryValidator,
+    transactionShowQueryValidator,
+    transactionStoreBodyValidator,
+    transactionUpdateStatusBodyValidator,
+} from "../validators/beneficiary_transaction.validator";
+import {
+    dashboardChartsDataQueryValidator,
+    dashboardStatisticsQueryValidator,
+} from "../validators/dashboard.validator";
+import {
+    DEPOSIT_STORE_ALLOWED_KEYS,
+    depositListQueryValidator,
+    depositQuoteQueryValidator,
+    depositShowQueryValidator,
+    depositStoreBodyValidator,
+} from "../validators/deposit.validator";
+import {
+    ledgerListQueryValidator,
+    ledgerShowQueryValidator,
+} from "../validators/ledger.validator";
+import { receivingCountriesQueryValidator } from "../validators/lookup.validator";
+import {
+    quoteStoreCrossFieldRules,
+    quoteStoreValidator,
+    refreshRatesBodyValidator,
+} from "../validators/quote.validator";
+import {
+    senderFormFieldsQueryValidator,
+    senderListQueryValidator,
+    senderShowQueryValidator,
+    senderUpdateBodyValidator,
+} from "../validators/sender.validator";
+import { statementExportQueryValidator } from "../validators/statement.validator";
+import {
+    ACTIVATE_ALLOWED_KEYS,
+    activateBodyValidator,
+    virtualAccountIdQueryValidator,
+    virtualAccountListQueryValidator,
+} from "../validators/virtual_account.validator";
+import {
+    WALLET_CONVERT_ALLOWED_KEYS,
+    walletConvertBodyValidator,
+    walletListQueryValidator,
+    walletShowQueryValidator,
+    walletTransactionShowQueryValidator,
+    walletTransactionsQueryValidator,
+} from "../validators/wallet.validator";
+import {
+    QUOTE_MODE_QUOTATION,
+    QUOTE_MODE_RATE,
+} from "../utils/constants";
 import {
     corporateLogin,
     forceResetPassword,
@@ -35,6 +163,8 @@ import { checkValidationErrors } from "../middleware/checkValidationErrors";
 import { strictBody } from "../middleware/strictBody";
 import {
     authTeam,
+    checkerAccess,
+    makerAccess,
     ownerAccess,
     teamPasswordResetGate,
 } from "../middleware/team_auth";
@@ -66,17 +196,14 @@ import {
 } from "../validators/team.validator";
 
 /**
- * Mirror of routes/team_members.php (via the legacy team.routes.ts).
- * This tranche ships the team foundation: auth (login / corporate
- * login / force-reset / forgot-password), profile + credentials, the
- * public team lookups, and the Owner-only TeamMember CRUD.
+ * Mirror of routes/team_members.php (via the legacy team.routes.ts):
+ * team auth + profile + Owner-only TeamMember CRUD, plus the shared
+ * business mounts that reuse the user controllers (authTeam sets
+ * req.user to the parent business user; req.teamMember drives the
+ * corporate scoping and the maker/checker gates).
  *
- * Deferred to the corporate-scoping tranche: the ~45 shared team-side
- * business mounts (accounts / deposits / beneficiaries / remitters /
- * quotes / beneficiary-transactions / ledgers / statement / wallets /
- * dashboard / authed lookups) — they reuse the user controllers but
- * require the CORPORATE req.teamMember narrowing threaded through the
- * underlying helpers first.
+ * Deferred with their user-side twins: bulk template/store, the
+ * export/download PDF-XLSX endpoints.
  */
 
 // Mounted at "/" — paths carry their own /corporate + /team prefixes.
@@ -124,12 +251,6 @@ teamPublicRouter.get(
     depositLookups,
 );
 teamPublicRouter.get("/team/lookups/deposit_wallets", depositWallets);
-teamPublicRouter.get(
-    "/team/lookups/banks",
-    ...banksQueryValidator,
-    checkValidationErrors,
-    banks,
-);
 
 teamPublicRouter.post(
     "/team/forgot-password/send-reset-link",
@@ -220,4 +341,312 @@ teamAuthedRouter.delete(
     ...teamMemberShowQueryValidator,
     checkValidationErrors,
     teamMemberDestroy,
+);
+
+// ----- Shared business mounts (reuse the user controllers; authTeam
+// sets req.user to the parent business user and req.teamMember drives
+// the corporate scoping inside them). -----
+
+// Virtual accounts
+teamAuthedRouter.get(
+    "/accounts/list",
+    ...virtualAccountListQueryValidator,
+    checkValidationErrors,
+    virtualAccountIndex,
+);
+teamAuthedRouter.get(
+    "/accounts/show",
+    ...virtualAccountIdQueryValidator,
+    checkValidationErrors,
+    virtualAccountShow,
+);
+teamAuthedRouter.get(
+    "/accounts/get_account_balance",
+    ...virtualAccountIdQueryValidator,
+    checkValidationErrors,
+    virtualAccountGetBalance,
+);
+teamAuthedRouter.post(
+    "/accounts/activate",
+    strictBody(ACTIVATE_ALLOWED_KEYS),
+    ...activateBodyValidator,
+    checkValidationErrors,
+    virtualAccountActivate,
+);
+teamAuthedRouter.get(
+    "/accounts/get_virtual_Accounts",
+    getVirtualAccounts,
+);
+
+// Deposits
+teamAuthedRouter.get(
+    "/deposits/list",
+    ...depositListQueryValidator,
+    checkValidationErrors,
+    depositIndex,
+);
+teamAuthedRouter.get(
+    "/deposits/quote",
+    ...depositQuoteQueryValidator,
+    checkValidationErrors,
+    depositQuote,
+);
+teamAuthedRouter.post(
+    "/deposits/store",
+    idempotency(),
+    strictBody(DEPOSIT_STORE_ALLOWED_KEYS),
+    ...depositStoreBodyValidator,
+    checkValidationErrors,
+    depositStore,
+);
+teamAuthedRouter.get(
+    "/deposits/show",
+    ...depositShowQueryValidator,
+    checkValidationErrors,
+    depositShow,
+);
+
+// Beneficiary accounts
+teamAuthedRouter.get(
+    "/beneficiaries/get-form-fields",
+    ...beneficiaryFormFieldsQueryValidator,
+    checkValidationErrors,
+    beneficiaryGetFormFields,
+);
+teamAuthedRouter.get(
+    "/beneficiaries/list",
+    ...beneficiaryListQueryValidator,
+    checkValidationErrors,
+    beneficiaryIndex,
+);
+teamAuthedRouter.post("/beneficiaries/store", beneficiaryStore);
+teamAuthedRouter.get(
+    "/beneficiaries/show",
+    ...beneficiaryShowQueryValidator,
+    checkValidationErrors,
+    beneficiaryShow,
+);
+teamAuthedRouter.delete(
+    "/beneficiaries/delete",
+    ...beneficiaryShowQueryValidator,
+    checkValidationErrors,
+    beneficiaryDestroy,
+);
+
+// Senders
+teamAuthedRouter.get(
+    "/remitters/get-form-fields",
+    ...senderFormFieldsQueryValidator,
+    checkValidationErrors,
+    senderGetFormFields,
+);
+teamAuthedRouter.get(
+    "/remitters/list",
+    ...senderListQueryValidator,
+    checkValidationErrors,
+    senderIndex,
+);
+teamAuthedRouter.post("/remitters/store", senderStore);
+teamAuthedRouter.post(
+    "/remitters/update",
+    ...senderUpdateBodyValidator,
+    checkValidationErrors,
+    senderUpdate,
+);
+teamAuthedRouter.get(
+    "/remitters/show",
+    ...senderShowQueryValidator,
+    checkValidationErrors,
+    senderShow,
+);
+teamAuthedRouter.delete(
+    "/remitters/delete",
+    ...senderShowQueryValidator,
+    checkValidationErrors,
+    senderDestroy,
+);
+
+// Quotes
+teamAuthedRouter.post(
+    "/quotes/store",
+    ...quoteStoreValidator,
+    checkValidationErrors,
+    quoteStoreCrossFieldRules,
+    makeQuoteStore(QUOTE_MODE_QUOTATION),
+);
+teamAuthedRouter.get(
+    "/quotes/exchange-rate",
+    ...quoteStoreValidator,
+    checkValidationErrors,
+    quoteStoreCrossFieldRules,
+    makeQuoteStore(QUOTE_MODE_RATE),
+);
+
+// Beneficiary transactions (the maker/checker dance)
+teamAuthedRouter.get(
+    "/beneficiary-transactions/list",
+    ...transactionListQueryValidator,
+    checkValidationErrors,
+    transactionIndex,
+);
+teamAuthedRouter.post(
+    "/beneficiary-transactions/store",
+    makerAccess,
+    idempotency(),
+    strictBody(TRANSACTION_STORE_ALLOWED_KEYS),
+    ...transactionStoreBodyValidator,
+    checkValidationErrors,
+    transactionStore,
+);
+teamAuthedRouter.get(
+    "/beneficiary-transactions/show",
+    ...transactionShowQueryValidator,
+    checkValidationErrors,
+    transactionShow,
+);
+teamAuthedRouter.get(
+    "/beneficiary-transactions/check_transaction_status",
+    ...transactionShowQueryValidator,
+    checkValidationErrors,
+    checkTransactionStatus,
+);
+teamAuthedRouter.post(
+    "/beneficiary-transactions/update-status",
+    checkerAccess,
+    idempotency(),
+    strictBody(TRANSACTION_UPDATE_STATUS_ALLOWED_KEYS),
+    ...transactionUpdateStatusBodyValidator,
+    checkValidationErrors,
+    transactionUpdateStatus,
+);
+teamAuthedRouter.post(
+    "/beneficiary-transactions/cancel",
+    idempotency(),
+    strictBody(TRANSACTION_CANCEL_ALLOWED_KEYS),
+    ...transactionCancelBodyValidator,
+    checkValidationErrors,
+    transactionCancel,
+);
+teamAuthedRouter.get(
+    "/beneficiary-transactions/get-form-fields",
+    ...payoutFormFieldsQueryValidator,
+    checkValidationErrors,
+    transactionGetFormFields,
+);
+teamAuthedRouter.post(
+    "/beneficiary-transactions/direct",
+    idempotency(),
+    strictBody(DIRECT_ALLOWED_KEYS),
+    ...sendMoneyDirectBodyValidator,
+    checkValidationErrors,
+    transactionDirect,
+);
+teamAuthedRouter.get(
+    "/beneficiary-transactions/transaction-form-fields",
+    transactionFormFields,
+);
+teamAuthedRouter.post(
+    "/beneficiary-transactions/request-proof",
+    strictBody(PROOF_REQUEST_ALLOWED_KEYS),
+    ...proofRequestBodyValidator,
+    checkValidationErrors,
+    requestProof,
+);
+teamAuthedRouter.get(
+    "/beneficiary-transactions/get-proof",
+    ...proofGetQueryValidator,
+    checkValidationErrors,
+    getProof,
+);
+
+// Ledgers
+teamAuthedRouter.get(
+    "/ledgers/list",
+    ...ledgerListQueryValidator,
+    checkValidationErrors,
+    ledgerIndex,
+);
+teamAuthedRouter.get(
+    "/ledgers/show",
+    ...ledgerShowQueryValidator,
+    checkValidationErrors,
+    ledgerShow,
+);
+
+// Statements
+teamAuthedRouter.get(
+    "/statement/export",
+    ...statementExportQueryValidator,
+    checkValidationErrors,
+    exportStatement,
+);
+
+// Authenticated lookups
+teamAuthedRouter.get(
+    "/lookups/receiving_countries",
+    ...receivingCountriesQueryValidator,
+    checkValidationErrors,
+    receivingCountries,
+);
+teamAuthedRouter.get("/lookups/get-rates", getRates);
+teamAuthedRouter.post(
+    "/lookups/refresh-rates",
+    ...refreshRatesBodyValidator,
+    checkValidationErrors,
+    refreshRates,
+);
+teamAuthedRouter.get(
+    "/lookups/banks",
+    ...banksQueryValidator,
+    checkValidationErrors,
+    banks,
+);
+
+// Dashboard
+teamAuthedRouter.get(
+    "/dashboard/statistics",
+    ...dashboardStatisticsQueryValidator,
+    checkValidationErrors,
+    teamStatistics,
+);
+teamAuthedRouter.get(
+    "/dashboard/charts-data",
+    ...dashboardChartsDataQueryValidator,
+    checkValidationErrors,
+    teamChartsData,
+);
+
+// Wallets
+teamAuthedRouter.get(
+    "/wallets/list",
+    ...walletListQueryValidator,
+    checkValidationErrors,
+    walletIndex,
+);
+teamAuthedRouter.get(
+    "/wallets/show",
+    ...walletShowQueryValidator,
+    checkValidationErrors,
+    walletShow,
+);
+teamAuthedRouter.post(
+    "/wallets/convert",
+    ownerAccess,
+    idempotency(),
+    strictBody(WALLET_CONVERT_ALLOWED_KEYS),
+    ...walletConvertBodyValidator,
+    checkValidationErrors,
+    walletConvert,
+);
+teamAuthedRouter.get(
+    "/wallets/transactions/list",
+    ...walletTransactionsQueryValidator,
+    checkValidationErrors,
+    walletTransactions,
+);
+teamAuthedRouter.get(
+    "/wallets/transactions/show",
+    ...walletTransactionShowQueryValidator,
+    checkValidationErrors,
+    walletShowTransaction,
 );

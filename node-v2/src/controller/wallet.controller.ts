@@ -4,6 +4,7 @@ import { Op, QueryTypes } from "sequelize";
 import sequelize from "../config/database";
 import { computeBankBalance, getWalletBalance } from "../helpers/balance.helper";
 import { CodedError } from "../helpers/coded_error.helper";
+import { teamMemberContext } from "../helpers/team_context.helper";
 import { getVirtualAccountScope } from "../helpers/virtual_account.helper";
 import Quote from "../models/quote.model";
 import SupportedCountry from "../models/supported_country.model";
@@ -44,8 +45,8 @@ const APP_URL = process.env.APP_URL ?? "https://dev-eficyent.rare-able.com";
  *     quote) and credits the matching-currency wallet, marking the
  *     quote SUBMITTED — with FOR UPDATE locks on both rows.
  *
- * Team-member token context is a later tranche, so the corporate
- * balance scoping arg is always null here (same as user tokens today).
+ * Team tokens flow through unchanged: /convert checks the balance
+ * with the caller's team context (mirror of legacy).
  */
 
 const sendCodedError = (res: Response, error: unknown): void => {
@@ -271,7 +272,7 @@ export const convert = async (req: Request, res: Response): Promise<void> => {
         const checkBalance = await computeBankBalance(
             req.user,
             virtualAccount,
-            null,
+            teamMemberContext(req),
         );
         if (new Decimal(quote.amount).gt(checkBalance)) {
             return res.sendError("Insufficient balance.", 154, 400);

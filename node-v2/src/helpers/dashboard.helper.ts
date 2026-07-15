@@ -28,6 +28,7 @@ import {
     MORPH_VIRTUAL_ACCOUNT,
     MORPH_WALLET,
     QUOTE_SUBMITTED,
+    TEAM_MEMBER_ROLE_CORPORATE,
 } from "../utils/constants";
 
 /**
@@ -40,9 +41,8 @@ import {
  *
  * Rows are pulled and aggregated in TS exactly like the legacy service
  * (the multi-status CASE WHEN aggregation) so every number matches.
- *
- * Deferred with the team module: the CORPORATE team-member narrowing
- * argument (creator context is always the user here).
+ * CORPORATE team members are narrowed to their own transactions when a
+ * team context is supplied (mirror of the legacy buildWhere).
  */
 
 const FAILED_STATUSES = [
@@ -163,10 +163,16 @@ const quoteSourceIds = async (
         .map((quote) => quote.id);
 };
 
+export interface DashboardTeamContext {
+    id: number;
+    role: number;
+}
+
 const buildWhere = (
     user: User,
     scope: ResolvedScope,
     quoteIds: number[] | null,
+    teamMember: DashboardTeamContext | null = null,
 ): Record<string, unknown> => {
     const where: Record<string, unknown> = { userId: user.id };
     if ((scope.bankAccountId || scope.walletId) && quoteIds) {
@@ -176,6 +182,9 @@ const buildWhere = (
         } else {
             where.quoteId = { [Op.in]: quoteIds };
         }
+    }
+    if (teamMember && teamMember.role === TEAM_MEMBER_ROLE_CORPORATE) {
+        where.teamMemberId = teamMember.id;
     }
     return where;
 };
@@ -285,10 +294,11 @@ const formatDayLabel = (day: Date): string => {
 export const statistics = async (
     filters: DashboardFilters,
     user: User,
+    teamMember: DashboardTeamContext | null = null,
 ): Promise<Record<string, unknown>> => {
     const scope = await resolveScope(filters, user);
     const quoteIds = await quoteSourceIds(scope);
-    const where = buildWhere(user, scope, quoteIds);
+    const where = buildWhere(user, scope, quoteIds, teamMember);
 
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
@@ -329,10 +339,11 @@ export const statistics = async (
 export const chartsData = async (
     filters: DashboardFilters,
     user: User,
+    teamMember: DashboardTeamContext | null = null,
 ): Promise<Record<string, unknown>> => {
     const scope = await resolveScope(filters, user);
     const quoteIds = await quoteSourceIds(scope);
-    const where = buildWhere(user, scope, quoteIds);
+    const where = buildWhere(user, scope, quoteIds, teamMember);
 
     const days = Math.max(1, filters.last_x_days ?? 10);
     const labels: string[] = [];

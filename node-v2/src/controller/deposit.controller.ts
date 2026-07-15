@@ -3,6 +3,7 @@ import { Op } from "sequelize";
 import sequelize from "../config/database";
 import { CodedError } from "../helpers/coded_error.helper";
 import { calcDepositCommissions } from "../helpers/commission.helper";
+import { teamMemberContext } from "../helpers/team_context.helper";
 import { getVirtualAccountScope } from "../helpers/virtual_account.helper";
 import AdminWallet from "../models/admin_wallet.model";
 import DepositTransaction from "../models/deposit_transaction.model";
@@ -27,6 +28,7 @@ import {
     DEPOSIT_TYPE_MAP,
     DEPOSIT_TYPE_TOPUP,
     TAKE_COUNT,
+    TEAM_MEMBER_ROLE_CORPORATE,
     USER_TYPE_PERSONAL,
 } from "../utils/constants";
 
@@ -39,9 +41,11 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  * Deposits respond with the legacy "empty envelope"
  * ({success, message, code: "", data}) — res.sendEmptyEnvelope.
  *
+ * Team tokens flow through unchanged: corporate members are scoped to
+ * their own deposits on /list and stamp team_member_id on /store.
+ *
  * Deferred (documented):
  *   - GET /deposits/export (puppeteer/EJS PDF + XLSX export)
- *   - team-member token context (req.teamMember) — team module tranche.
  */
 
 const sendCodedError = (res: Response, error: unknown): void => {
@@ -147,6 +151,13 @@ export const index = async (req: Request, res: Response): Promise<void> => {
                 { uniqueId: { [Op.like]: searchTerm } },
                 { externalReferenceId: { [Op.like]: searchTerm } },
             ];
+        }
+        const corporateContext = teamMemberContext(req);
+        if (
+            corporateContext &&
+            corporateContext.role === TEAM_MEMBER_ROLE_CORPORATE
+        ) {
+            where.teamMemberId = corporateContext.id;
         }
 
         const skip = req.query.skip !== undefined ? Number(req.query.skip) : 0;
@@ -348,7 +359,7 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                     {
                         uniqueId: generateUniqueId(24),
                         userId: req.user!.id,
-                        teamMemberId: null,
+                        teamMemberId: req.teamMember?.id ?? null,
                         virtualAccountId: virtualAccount.id,
                         adminWalletId,
                         amount: String(body.amount),
@@ -396,8 +407,10 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                         toStatus: String(
                             DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
                         ),
-                        changedBy: String(req.user!.id),
-                        changedByType: "user",
+                        changedBy: req.teamMember
+                            ? String(req.teamMember.id)
+                            : String(req.user!.id),
+                        changedByType: req.teamMember ? "team" : "user",
                         changedAt: new Date(),
                     },
                     { transaction: databaseTransaction },

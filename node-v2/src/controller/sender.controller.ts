@@ -5,6 +5,7 @@ import { CodedError } from "../helpers/coded_error.helper";
 import { senderFields } from "../helpers/form_fields.helper";
 import { isRemitterDepositEnabled } from "../helpers/payout_transaction.helper";
 import { validateAndNormalizeSender } from "../helpers/sender_normalizer.helper";
+import { teamMemberContext } from "../helpers/team_context.helper";
 import Merchant from "../models/merchant.model";
 import Sender from "../models/sender.model";
 import SenderDocument from "../models/sender_document.model";
@@ -17,6 +18,7 @@ import {
     SENDER_STATUS_APPROVED,
     SENDER_STATUS_PENDING,
     TAKE_COUNT,
+    TEAM_MEMBER_ROLE_CORPORATE,
     USER_TYPE_BUSINESS,
     USER_TYPE_MAP,
     USER_TYPE_PERSONAL,
@@ -29,9 +31,11 @@ const SENDER_DOCUMENT_PATH = "user_documents";
  * senderController). The Sender model is paranoid, so the legacy
  * `deleted_at: null` scoping is automatic.
  *
+ * Team tokens flow through unchanged: corporate members are scoped to
+ * their own remitters on /list and stamp team_member_id on /store.
+ *
  * Deferred (documented):
  *   - /bulk/template + /bulk/store (Excel import/export service)
- *   - team-member token context (creator is always the user here)
  */
 
 const sendCodedError = (res: Response, error: unknown): void => {
@@ -219,6 +223,13 @@ export const index = async (req: Request, res: Response): Promise<void> => {
         if (searchConditions.length > 0) {
             where[Op.or] = searchConditions;
         }
+        const corporateContext = teamMemberContext(req);
+        if (
+            corporateContext &&
+            corporateContext.role === TEAM_MEMBER_ROLE_CORPORATE
+        ) {
+            where.teamMemberId = corporateContext.id;
+        }
 
         const skip = req.query.skip !== undefined ? Number(req.query.skip) : 0;
         const take =
@@ -290,7 +301,7 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                         ...senderColumns,
                         uniqueId: generateUniqueId(24),
                         userId: req.user!.id,
-                        teamMemberId: null,
+                        teamMemberId: req.teamMember?.id ?? null,
                         status: initialStatus,
                     } as never,
                     { transaction: databaseTransaction },

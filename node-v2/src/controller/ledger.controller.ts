@@ -1,6 +1,10 @@
 import { Request, Response } from "express";
 import { Includeable, Op } from "sequelize";
 import { CodedError } from "../helpers/coded_error.helper";
+import {
+    teamMemberContext,
+    TeamRequestContext,
+} from "../helpers/team_context.helper";
 import { getVirtualAccountScope } from "../helpers/virtual_account.helper";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
@@ -23,6 +27,7 @@ import {
     MORPH_WALLET,
     MORPH_WALLET_TRANSACTION,
     TAKE_COUNT,
+    TEAM_MEMBER_ROLE_CORPORATE,
     TRANSACTION_TYPE_CREDIT,
     TRANSACTION_TYPE_DEBIT,
     TRANSACTION_TYPE_MAP,
@@ -34,9 +39,12 @@ import {
  * CREDIT to deposit rows and DEBIT to beneficiary-transaction rows,
  * with wallet-transaction rows recognised on both sides.
  *
+ * CORPORATE team members get their own scoped view: deposits/payouts
+ * are narrowed to the member and the running balance is rebuilt from
+ * the member's own credit/debit timeline (mirror of legacy).
+ *
  * Deferred (documented):
  *   - GET /ledgers/export (puppeteer/EJS PDF + XLSX export)
- *   - the CORPORATE team-member balance timeline (team module tranche)
  */
 
 const sendCodedError = (res: Response, error: unknown): void => {
@@ -404,6 +412,102 @@ export const index = async (req: Request, res: Response): Promise<void> => {
             ];
         }
 
+        const corporate = teamMemberContext(req);
+        const isCorporate =
+            corporate !== null &&
+            corporate.role === TEAM_MEMBER_ROLE_CORPORATE;
+        if (isCorporate) {
+            // Resolve the filtered source ids so the corporate arms
+            // stay consistent with the root where.
+            let corporateVaId: number | undefined;
+            let corporateWalletId: number | undefined;
+            if (query.bank_account_id) {
+                const baseScope = await getVirtualAccountScope(req.user);
+                const virtualAccount = await VirtualAccount.findOne({
+                    where: {
+                        ...(baseScope as Record<string, unknown>),
+                        uniqueId: query.bank_account_id,
+                    },
+                });
+                if (virtualAccount) {
+                    corporateVaId = virtualAccount.id;
+                }
+            }
+            if (query.wallet_id) {
+                const wallet = await Wallet.findOne({
+                    where: {
+                        uniqueId: query.wallet_id,
+                        userId: req.user.id,
+                    },
+                });
+                if (wallet) {
+                    corporateWalletId = wallet.id;
+                }
+            }
+
+            // Deposits scoped to the filtered VA + member; payouts are
+            // ALL of the member's payouts regardless of source
+            // (wallet-sourced payouts carry walletId, not the USD
+            // virtualAccountId — a source filter would hide them).
+            const [depositRows, beneficiaryRows] = await Promise.all([
+                corporateWalletId
+                    ? Promise.resolve([] as { id: number }[])
+                    : (DepositTransaction.findAll({
+                          where: {
+                              userId: req.user.id,
+                              teamMemberId: corporate!.id,
+                              ...(corporateVaId
+                                  ? { virtualAccountId: corporateVaId }
+                                  : {}),
+                          },
+                          attributes: ["id"],
+                          raw: true,
+                      }) as unknown as Promise<{ id: number }[]>),
+                BeneficiaryTransaction.findAll({
+                    where: {
+                        userId: req.user.id,
+                        teamMemberId: corporate!.id,
+                    },
+                    attributes: ["id"],
+                    raw: true,
+                }) as unknown as Promise<{ id: number }[]>,
+            ]);
+
+            // The root VA/wallet filter only makes sense for deposits —
+            // move it inside the deposit arm.
+            if (corporateVaId) {
+                delete where.virtualAccountId;
+            }
+            if (corporateWalletId) {
+                delete where.walletId;
+            }
+
+            andConditions.push({
+                [Op.or]: [
+                    {
+                        transactionType: MORPH_DEPOSIT_TRANSACTION,
+                        transactionId: {
+                            [Op.in]: idList(depositRows),
+                        },
+                        ...(corporateVaId
+                            ? { virtualAccountId: corporateVaId }
+                            : {}),
+                        ...(corporateWalletId
+                            ? { walletId: corporateWalletId }
+                            : {}),
+                    },
+                    // Payout entries carry their own source columns —
+                    // no source filter here.
+                    {
+                        transactionType: MORPH_BENEFICIARY_TRANSACTION,
+                        transactionId: {
+                            [Op.in]: idList(beneficiaryRows),
+                        },
+                    },
+                ],
+            });
+        }
+
         if (andConditions.length > 0) {
             where[Op.and] = andConditions;
         }
@@ -426,11 +530,122 @@ export const index = async (req: Request, res: Response): Promise<void> => {
             enriched.push(await loadTransaction(row));
         }
 
+        if (isCorporate) {
+            // Corporate running balance: the member's own completed
+            // deposits (credits) and all their payouts (debits), in
+            // chronological order (mirror of the legacy timeline).
+            let scopedVaId: number | null = null;
+            let scopedWalletId: number | null = null;
+            if (query.bank_account_id) {
+                const baseScope = await getVirtualAccountScope(req.user);
+                const virtualAccount = await VirtualAccount.findOne({
+                    where: {
+                        ...(baseScope as Record<string, unknown>),
+                        uniqueId: query.bank_account_id,
+                    },
+                });
+                if (virtualAccount) {
+                    scopedVaId = virtualAccount.id;
+                }
+            }
+            if (query.wallet_id) {
+                const wallet = await Wallet.findOne({
+                    where: {
+                        uniqueId: query.wallet_id,
+                        userId: req.user.id,
+                    },
+                });
+                if (wallet) {
+                    scopedWalletId = wallet.id;
+                }
+            }
+
+            const depositTimeline = scopedWalletId
+                ? []
+                : ((await DepositTransaction.findAll({
+                      where: {
+                          userId: req.user.id,
+                          teamMemberId: corporate!.id,
+                          status: DEPOSIT_TRANSACTION_COMPLETED,
+                          ...(scopedVaId
+                              ? { virtualAccountId: scopedVaId }
+                              : {}),
+                      },
+                      order: [["created_at", "ASC"]],
+                      attributes: ["id", "totalAmount", "createdAt"],
+                      raw: true,
+                  })) as unknown as {
+                      id: number;
+                      totalAmount: string;
+                      createdAt: Date;
+                  }[]);
+            const beneficiaryTimeline = (await BeneficiaryTransaction.findAll(
+                {
+                    where: {
+                        userId: req.user.id,
+                        teamMemberId: corporate!.id,
+                    },
+                    order: [["created_at", "ASC"]],
+                    attributes: ["id", "totalAmount", "createdAt"],
+                    raw: true,
+                },
+            )) as unknown as {
+                id: number;
+                totalAmount: string;
+                createdAt: Date;
+            }[];
+
+            const timeline: {
+                id: number;
+                type: string;
+                amount: number;
+                createdAt: Date;
+            }[] = [];
+            for (const deposit of depositTimeline) {
+                timeline.push({
+                    id: deposit.id,
+                    type: MORPH_DEPOSIT_TRANSACTION,
+                    amount: Number(deposit.totalAmount),
+                    createdAt: new Date(deposit.createdAt),
+                });
+            }
+            for (const beneficiary of beneficiaryTimeline) {
+                timeline.push({
+                    id: beneficiary.id,
+                    type: MORPH_BENEFICIARY_TRANSACTION,
+                    amount: -Number(beneficiary.totalAmount),
+                    createdAt: new Date(beneficiary.createdAt),
+                });
+            }
+            timeline.sort(
+                (left, right) =>
+                    left.createdAt.getTime() - right.createdAt.getTime() ||
+                    left.id - right.id,
+            );
+
+            let runningBalance = 0;
+            const balancesMap = new Map<string, string>();
+            for (const item of timeline) {
+                runningBalance += item.amount;
+                balancesMap.set(
+                    `${item.type}_${item.id}`,
+                    runningBalance.toFixed(2),
+                );
+            }
+
+            for (const ledger of enriched) {
+                const key = `${ledger.transactionType}_${ledger.transactionId}`;
+                // Missing keys collapse to zero for corporate views
+                // (mirror of legacy).
+                ledger.balanceOverride = balancesMap.get(key) ?? "0.00";
+            }
+        }
+
         // Recompute the running balance dynamically when a specific
         // bank account or wallet is selected: the stored ledger.balance
         // snapshot can be stale for wallet-conversion DEBIT entries
         // (mirror of the legacy non-corporate recompute).
-        if (query.bank_account_id || query.wallet_id) {
+        if (!isCorporate && (query.bank_account_id || query.wallet_id)) {
             let scopedVirtualAccountId: number | null = null;
             let scopedWalletId: number | null = null;
 
@@ -654,6 +869,70 @@ export const show = async (req: Request, res: Response): Promise<void> => {
             return res.sendError("Ledger not found.", 149, 400);
         }
         const enriched = await loadTransaction(row);
+
+        // Corporate members see the balance as of this row, computed
+        // from their own deposits minus payouts (mirror of legacy).
+        const corporate = teamMemberContext(req);
+        if (
+            corporate &&
+            corporate.role === TEAM_MEMBER_ROLE_CORPORATE &&
+            row.createdAt
+        ) {
+            const depositSum = row.walletId
+                ? 0
+                : Number(
+                      (await DepositTransaction.sum("totalAmount", {
+                          where: {
+                              userId: req.user.id,
+                              teamMemberId: corporate.id,
+                              status: DEPOSIT_TRANSACTION_COMPLETED,
+                              createdAt: { [Op.lte]: row.createdAt },
+                              ...(row.virtualAccountId
+                                  ? { virtualAccountId: row.virtualAccountId }
+                                  : {}),
+                          },
+                      })) ?? 0,
+                  );
+            const beneficiaryRows = (await BeneficiaryTransaction.findAll({
+                where: {
+                    userId: req.user.id,
+                    teamMemberId: corporate.id,
+                    createdAt: { [Op.lte]: row.createdAt },
+                },
+                include: [
+                    {
+                        model: Quote,
+                        as: "quotes",
+                        where: {
+                            ...(row.virtualAccountId
+                                ? {
+                                      sourceType: MORPH_VIRTUAL_ACCOUNT,
+                                      sourceId: row.virtualAccountId,
+                                  }
+                                : {}),
+                            ...(row.walletId
+                                ? {
+                                      sourceType: MORPH_WALLET,
+                                      sourceId: row.walletId,
+                                  }
+                                : {}),
+                        },
+                        required: true,
+                        attributes: [],
+                    },
+                ],
+                attributes: ["totalAmount"],
+                raw: true,
+            })) as unknown as { totalAmount: string }[];
+            const beneficiarySum = beneficiaryRows.reduce(
+                (acc, item) => acc + Number(item.totalAmount ?? 0),
+                0,
+            );
+            enriched.balanceOverride = (depositSum - beneficiarySum).toFixed(
+                2,
+            );
+        }
+
         return res.sendResponse(
             { ledger: ledgerToJSON(enriched) },
             "",
