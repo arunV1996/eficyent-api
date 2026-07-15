@@ -6,12 +6,18 @@ import { senderFields } from "../helpers/form_fields.helper";
 import { isRemitterDepositEnabled } from "../helpers/payout_transaction.helper";
 import { validateAndNormalizeSender } from "../helpers/sender_normalizer.helper";
 import { teamMemberContext } from "../helpers/team_context.helper";
+import { extractUploadedFileBuffer } from "../helpers/uploaded_file.helper";
 import Merchant from "../models/merchant.model";
 import Sender from "../models/sender.model";
 import SenderDocument from "../models/sender_document.model";
 import User from "../models/user.model";
 import { senderToJSON } from "../resources/sender.resource";
-import { uploadBase64 } from "../services/s3.service";
+import {
+    flattenFormFields,
+    generateBulkTemplate,
+    processExcel,
+} from "../services/excel_import.service";
+import { temporaryUrl, upload, uploadBase64 } from "../services/s3.service";
 import { generateUniqueId } from "../utils/common.utils";
 import {
     REMITTER_STATUS_MAP,
@@ -473,6 +479,152 @@ export const destroy = async (req: Request, res: Response): Promise<void> => {
         await sender.destroy();
         // Legacy quirk preserved: the success envelope carries code 133.
         return res.sendResponse({}, "Remitter deleted successfully.", 133);
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * GET /api/user/remitters/bulk/template — builds the remitter bulk XLSX
+ * template from the sender form fields, uploads it to S3 and returns the
+ * signed URL. Mirror of the legacy senderController.bulkTemplate.
+ */
+export const bulkTemplate = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const type = Number((req.query as { type?: string }).type ?? 1);
+        const merchant = req.user.merchantId
+            ? await Merchant.findByPk(req.user.merchantId)
+            : null;
+        const fields = await senderFields({
+            type,
+            merchantId: merchant?.id ?? null,
+            remitterDepositEnabled: await isRemitterDepositEnabled(
+                req.user.merchantId,
+            ),
+        });
+        const flat = flattenFormFields({ remitter: fields }, ["remitter"]);
+        const buffer = await generateBulkTemplate(flat, "Senders");
+        const key = await upload(
+            {
+                buffer,
+                contentType:
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                extension: "xlsx",
+            },
+            "exports/sender-templates",
+        );
+        const signedUrl = await temporaryUrl(key);
+        return res.sendResponse({ url: signedUrl }, "Template ready.", 200);
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/user/remitters/bulk/store — validates each row through the
+ * sender form fields + normalizer and creates one Sender per row.
+ * Duplicate id_numbers (within the spreadsheet or already in the DB)
+ * surface as per-row errors. Mirror of the legacy senderController.bulkStore.
+ */
+export const bulkStore = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const buffer = extractUploadedFileBuffer(req);
+        if (!buffer || buffer.length === 0) {
+            return res.sendError(
+                "Excel file (multipart 'file') required.",
+                422,
+                422,
+            );
+        }
+
+        const type = Number((req.body as { type?: number | string }).type ?? 1);
+        const merchant = req.user.merchantId
+            ? await Merchant.findByPk(req.user.merchantId)
+            : null;
+        const depositEnabled = await isRemitterDepositEnabled(
+            req.user.merchantId,
+        );
+        const fields = await senderFields({
+            type,
+            merchantId: merchant?.id ?? null,
+            remitterDepositEnabled: depositEnabled,
+        });
+        const flat = flattenFormFields({ remitter: fields }, ["remitter"]);
+
+        const seenIdNumbers = new Set<string>();
+        const result = await processExcel(
+            buffer,
+            flat,
+            async (payload, rowNumber) => {
+                const normalized = await validateAndNormalizeSender(
+                    payload.remitter as Record<string, unknown>,
+                    req.user!,
+                    depositEnabled,
+                );
+
+                const idNumber = normalized.id_number as string | undefined;
+                if (idNumber) {
+                    if (seenIdNumbers.has(idNumber)) {
+                        throw new Error(
+                            `Duplicate ID Number "${idNumber}" found in spreadsheet.`,
+                        );
+                    }
+                    seenIdNumbers.add(idNumber);
+
+                    const exists = await Sender.findOne({
+                        where: { userId: req.user!.id, idNumber },
+                    });
+                    if (exists) {
+                        throw new Error(
+                            `Remitter with ID Number "${idNumber}" already exists.`,
+                        );
+                    }
+                }
+
+                return { row: rowNumber, sender: normalized };
+            },
+        );
+
+        if (result.errors.length > 0) {
+            return res.sendResponse(
+                { errors: result.errors },
+                "Bulk import failed.",
+                200,
+            );
+        }
+
+        const created: { row: number; remitter_id: string }[] = [];
+        for (const row of result.validatedRows) {
+            const senderColumns = toSenderColumns(
+                row.sender as Record<string, unknown>,
+            );
+            const sender = await Sender.create({
+                ...senderColumns,
+                uniqueId: generateUniqueId(24),
+                userId: req.user.id,
+                teamMemberId: req.teamMember?.id ?? null,
+                status: SENDER_STATUS_APPROVED,
+            } as never);
+            created.push({ row: row.row, remitter_id: sender.uniqueId });
+        }
+
+        return res.sendResponse(
+            { success: created, errors: [] },
+            "Bulk import accepted.",
+            200,
+        );
     } catch (error) {
         return sendCodedError(res, error);
     }

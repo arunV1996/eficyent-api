@@ -1,5 +1,8 @@
 import { Router } from "express";
+import multer from "multer";
 import {
+    bulkStore,
+    bulkTemplate,
     destroy,
     getFormFields,
     index,
@@ -10,6 +13,9 @@ import {
 import { beneficiaryApiRoutes } from "../utils/api.routes";
 
 const router = Router();
+
+// Route-level multipart parsing for the bulk-store upload only.
+const bulkUpload = multer({ storage: multer.memoryStorage() });
 
 router.get(
     beneficiaryApiRoutes.GET_FORM_FIELDS.path,
@@ -45,6 +51,19 @@ router.delete(
     beneficiaryApiRoutes.DELETE.path,
     ...beneficiaryApiRoutes.DELETE.middleware,
     destroy,
+);
+
+router.get(
+    beneficiaryApiRoutes.BULK_TEMPLATE.path,
+    ...beneficiaryApiRoutes.BULK_TEMPLATE.middleware,
+    bulkTemplate,
+);
+
+router.post(
+    beneficiaryApiRoutes.BULK_STORE.path,
+    ...beneficiaryApiRoutes.BULK_STORE.middleware,
+    bulkUpload.single("file"),
+    bulkStore,
 );
 
 export default router;

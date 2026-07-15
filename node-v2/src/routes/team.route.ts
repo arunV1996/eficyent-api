@@ -1,6 +1,8 @@
 import { Router } from "express";
 import multer from "multer";
 import {
+    bulkStore as beneficiaryBulkStore,
+    bulkTemplate as beneficiaryBulkTemplate,
     destroy as beneficiaryDestroy,
     getFormFields as beneficiaryGetFormFields,
     index as beneficiaryIndex,
@@ -46,6 +48,8 @@ import {
 } from "../controller/lookup.controller";
 import { makeQuoteStore } from "../controller/quote.controller";
 import {
+    bulkStore as senderBulkStore,
+    bulkTemplate as senderBulkTemplate,
     destroy as senderDestroy,
     getFormFields as senderGetFormFields,
     index as senderIndex,
@@ -438,6 +442,15 @@ teamAuthedRouter.delete(
     checkValidationErrors,
     beneficiaryDestroy,
 );
+teamAuthedRouter.get(
+    "/beneficiaries/bulk/template",
+    beneficiaryBulkTemplate,
+);
+teamAuthedRouter.post(
+    "/beneficiaries/bulk/store",
+    teamBulkUpload.single("file"),
+    beneficiaryBulkStore,
+);
 
 // Senders
 teamAuthedRouter.get(
@@ -470,6 +483,12 @@ teamAuthedRouter.delete(
     ...senderShowQueryValidator,
     checkValidationErrors,
     senderDestroy,
+);
+teamAuthedRouter.get("/remitters/bulk/template", senderBulkTemplate);
+teamAuthedRouter.post(
+    "/remitters/bulk/store",
+    teamBulkUpload.single("file"),
+    senderBulkStore,
 );
 
 // Quotes

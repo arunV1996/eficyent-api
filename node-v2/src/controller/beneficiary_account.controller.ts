@@ -14,7 +14,14 @@ import BeneficiaryAccountValidation from "../models/beneficiary_account_validati
 import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
 import Merchant from "../models/merchant.model";
 import { beneficiaryAccountToJSON } from "../resources/beneficiary_account.resource";
+import {
+    flattenFormFields,
+    generateBulkTemplate,
+    processExcel,
+} from "../services/excel_import.service";
 import { validateAccount as processingUnitValidateAccount } from "../services/processing_unit.service";
+import { temporaryUrl, upload } from "../services/s3.service";
+import { extractUploadedFileBuffer } from "../helpers/uploaded_file.helper";
 import { teamMemberContext } from "../helpers/team_context.helper";
 import { generateUniqueId } from "../utils/common.utils";
 import {
@@ -587,6 +594,185 @@ export const destroy = async (req: Request, res: Response): Promise<void> => {
 
         return res.sendResponse({}, "Beneficiary deleted successfully.", 200);
     } catch (error) {
+        return res.handleError(error);
+    }
+};
+
+/**
+ * GET /api/user/beneficiaries/bulk/template — builds the beneficiary
+ * bulk XLSX template from the beneficiary form fields, uploads it to S3
+ * and returns the signed URL. Mirror of the legacy
+ * beneficiaryAccountsController.bulkTemplate.
+ */
+export const bulkTemplate = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const query = req.query as Record<string, string | undefined>;
+        const fields = await beneficiaryFormFields({
+            country: String(query.country),
+            currency: String(query.currency),
+            type: Number(query.type ?? 1),
+        });
+        const flat = flattenFormFields({ beneficiary: fields }, ["beneficiary"]);
+        const buffer = await generateBulkTemplate(flat, "Beneficiaries");
+        const key = await upload(
+            {
+                buffer,
+                contentType:
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                extension: "xlsx",
+            },
+            "exports/beneficiary-templates",
+        );
+        const signedUrl = await temporaryUrl(key);
+        return res.sendResponse({ url: signedUrl }, "Template ready.", 200);
+    } catch (error) {
+        if (error instanceof FormFieldsError) {
+            return res.sendError(
+                error.message,
+                error.errorCode,
+                error.httpStatus,
+            );
+        }
+        return res.handleError(error);
+    }
+};
+
+/**
+ * POST /api/user/beneficiaries/bulk/store — validates each row through
+ * the beneficiary form fields + normalizer and creates one
+ * BeneficiaryAccount (plus its additional-detail row) per row.
+ * Duplicate (account_number, currency) pairs — within the spreadsheet
+ * or already in the DB — surface as per-row errors. Mirror of the
+ * legacy beneficiaryAccountsController.bulkStore.
+ *
+ * Deferred: the Caliza createBeneficiary background sync (needs the
+ * Caliza provider service tranche), consistent with the single-store.
+ */
+export const bulkStore = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const buffer = extractUploadedFileBuffer(req);
+        if (!buffer || buffer.length === 0) {
+            return res.sendError(
+                "Excel file (multipart 'file') required.",
+                422,
+                422,
+            );
+        }
+
+        const body = req.body as {
+            country?: string;
+            currency?: string;
+            type?: number | string;
+        };
+        const country = String(body.country ?? "");
+        const currency = String(body.currency ?? "");
+        const type = Number(body.type ?? 1);
+
+        const beneficiary = await beneficiaryFormFields({
+            country,
+            currency,
+            type,
+        });
+        const fields = flattenFormFields({ beneficiary }, ["beneficiary"]);
+
+        const seenAccounts = new Set<string>();
+        const result = await processExcel(
+            buffer,
+            fields,
+            async (payload, rowNumber) => {
+                payload.beneficiary.country = country;
+                payload.beneficiary.currency = currency;
+                const normalized = await validateAndNormalizeBeneficiary(
+                    payload.beneficiary as Record<string, unknown>,
+                    req.user!,
+                );
+
+                const accountNumber = normalized.beneficiaryAccount
+                    .account_number as string | undefined;
+                const rowCurrency = String(
+                    normalized.beneficiaryAccount.currency ?? "",
+                );
+                if (accountNumber) {
+                    const cacheKey = `${accountNumber}|${rowCurrency}`;
+                    if (seenAccounts.has(cacheKey)) {
+                        throw new Error(
+                            `Duplicate account number "${accountNumber}" for currency "${rowCurrency}" found in spreadsheet.`,
+                        );
+                    }
+                    seenAccounts.add(cacheKey);
+
+                    const exists = await BeneficiaryAccount.findOne({
+                        where: {
+                            userId: req.user!.id,
+                            accountNumber,
+                            currency: rowCurrency,
+                        },
+                    });
+                    if (exists) {
+                        throw new Error(
+                            `Beneficiary with account number "${accountNumber}" for currency "${rowCurrency}" already exists.`,
+                        );
+                    }
+                }
+
+                return { row: rowNumber, beneficiary: normalized };
+            },
+        );
+
+        if (result.errors.length > 0) {
+            return res.sendResponse(
+                { success: [], errors: result.errors },
+                "Bulk import failed.",
+                200,
+            );
+        }
+
+        const created: { row: number; unique_id: string }[] = [];
+        for (const row of result.validatedRows) {
+            const accountAttributes = beneficiaryAttributesFromNormalized(
+                row.beneficiary.beneficiaryAccount,
+                req.user.id,
+            );
+            const account = await BeneficiaryAccount.create({
+                ...accountAttributes,
+                teamMemberId: req.teamMember?.id ?? null,
+            } as never);
+            const additionalAttributes =
+                additionalDetailAttributesFromNormalized(
+                    row.beneficiary.beneficiaryAccountAdditionalDetail,
+                );
+            await BeneficiaryAdditionalDetail.create({
+                ...additionalAttributes,
+                beneficiaryAccountId: account.id,
+            } as never);
+            created.push({ row: row.row, unique_id: account.uniqueId });
+        }
+
+        return res.sendResponse(
+            { success: created, errors: [] },
+            "Bulk import accepted.",
+            200,
+        );
+    } catch (error) {
+        if (error instanceof FormFieldsError) {
+            return res.sendError(
+                error.message,
+                error.errorCode,
+                error.httpStatus,
+            );
+        }
         return res.handleError(error);
     }
 };

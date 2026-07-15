@@ -23,6 +23,7 @@ import { teamMemberContext } from "../helpers/team_context.helper";
 import { Dispatch } from "../jobs";
 import { computeBankBalance, getWalletBalance } from "../helpers/balance.helper";
 import { reverseRefund } from "../helpers/refund.helper";
+import { extractUploadedFileBuffer } from "../helpers/uploaded_file.helper";
 import { getVirtualAccountScope } from "../helpers/virtual_account.helper";
 import * as complianceService from "../services/compliance.service";
 import {
@@ -1054,33 +1055,6 @@ export const retryExternalService = async (
     } catch (error) {
         return sendCodedError(res, error);
     }
-};
-
-/**
- * Pulls the uploaded XLSX bytes off the request. Bulk-store accepts the
- * file either as a multipart `file` field (parsed by the route-level
- * multer onto req.file) or as a base64 data: URL / raw base64 string on
- * req.body.file — mirror of the legacy extractUploadedFileBuffer.
- */
-const extractUploadedFileBuffer = (req: Request): Buffer | null => {
-    const multerFile = (req as Request & { file?: { buffer?: Buffer } }).file;
-    if (multerFile?.buffer && multerFile.buffer.length > 0) {
-        return multerFile.buffer;
-    }
-    const bodyFile = (req.body as { file?: unknown }).file;
-    if (typeof bodyFile === "string" && bodyFile.length > 0) {
-        const base64 = bodyFile.startsWith("data:")
-            ? (bodyFile.split(",", 2)[1] ?? "")
-            : bodyFile;
-        if (base64) {
-            try {
-                return Buffer.from(base64, "base64");
-            } catch {
-                return null;
-            }
-        }
-    }
-    return null;
 };
 
 /**

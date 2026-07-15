@@ -316,6 +316,14 @@ export const beneficiaryApiRoutes = {
             checkValidationErrors,
         ],
     },
+    BULK_TEMPLATE: {
+        path: "/bulk/template",
+        middleware: [...beneficiaryBaseMiddleware],
+    },
+    BULK_STORE: {
+        path: "/bulk/store",
+        middleware: [...beneficiaryBaseMiddleware],
+    },
 };
 
 // Shared stack for the beneficiary-transaction (payout) group —
@@ -671,6 +679,14 @@ export const senderApiRoutes = {
             senderShowQueryValidator,
             checkValidationErrors,
         ],
+    },
+    BULK_TEMPLATE: {
+        path: "/bulk/template",
+        middleware: [...senderBaseMiddleware],
+    },
+    BULK_STORE: {
+        path: "/bulk/store",
+        middleware: [...senderBaseMiddleware],
     },
 };
 
