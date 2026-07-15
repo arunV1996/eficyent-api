@@ -448,6 +448,14 @@ export const beneficiaryTransactionApiRoutes = {
             checkValidationErrors,
         ],
     },
+    BULK_TEMPLATE: {
+        path: "/bulk/template",
+        middleware: [...transactionBaseMiddleware],
+    },
+    BULK_STORE: {
+        path: "/bulk/store",
+        middleware: [...transactionBaseMiddleware],
+    },
 };
 
 // Shared stack for the wallets group (mirror of the legacy

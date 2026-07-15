@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import {
     destroy as beneficiaryDestroy,
     getFormFields as beneficiaryGetFormFields,
@@ -7,12 +8,14 @@ import {
     store as beneficiaryStore,
 } from "../controller/beneficiary_account.controller";
 import {
+    bulkStore as transactionBulkStore,
     cancel as transactionCancel,
     checkTransactionStatus,
     direct as transactionDirect,
     getFormFields as transactionGetFormFields,
     getProof,
     index as transactionIndex,
+    payoutTemplate as transactionPayoutTemplate,
     requestProof,
     show as transactionShow,
     store as transactionStore,
@@ -202,8 +205,8 @@ import {
  * req.user to the parent business user; req.teamMember drives the
  * corporate scoping and the maker/checker gates).
  *
- * Deferred with their user-side twins: bulk template/store, the
- * export/download PDF-XLSX endpoints.
+ * Deferred with their user-side twins: the export/download PDF
+ * endpoints.
  */
 
 // Mounted at "/" — paths carry their own /corporate + /team prefixes.
@@ -277,6 +280,9 @@ teamPublicRouter.post(
 // Mounted at "/team" — everything requires team auth; get-credentials
 // sits in front of the password-reset gate like the Laravel grouping.
 export const teamAuthedRouter = Router();
+
+// Route-level multipart parsing for the team bulk-store upload only.
+const teamBulkUpload = multer({ storage: multer.memoryStorage() });
 
 teamAuthedRouter.get(
     "/get-credentials",
@@ -557,6 +563,17 @@ teamAuthedRouter.get(
     ...proofGetQueryValidator,
     checkValidationErrors,
     getProof,
+);
+// Bulk payout template/store — no maker gate (mirror of the legacy
+// team routes, which wrap only authTeam around these two).
+teamAuthedRouter.get(
+    "/beneficiary-transactions/bulk/template",
+    transactionPayoutTemplate,
+);
+teamAuthedRouter.post(
+    "/beneficiary-transactions/bulk/store",
+    teamBulkUpload.single("file"),
+    transactionBulkStore,
 );
 
 // Ledgers

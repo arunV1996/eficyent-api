@@ -23,8 +23,15 @@ import { teamMemberContext } from "../helpers/team_context.helper";
 import { Dispatch } from "../jobs";
 import { computeBankBalance, getWalletBalance } from "../helpers/balance.helper";
 import { reverseRefund } from "../helpers/refund.helper";
+import { getVirtualAccountScope } from "../helpers/virtual_account.helper";
 import * as complianceService from "../services/compliance.service";
+import {
+    flattenFormFields,
+    generateBulkTemplate,
+    processExcel,
+} from "../services/excel_import.service";
 import * as processingUnitService from "../services/processing_unit.service";
+import { temporaryUrl, upload } from "../services/s3.service";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
 import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
@@ -73,8 +80,7 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  * at the /user mount (no auth — mirror of Laravel).
  *
  * Deferred (documented per endpoint below where relevant):
- *   - /export, /download (puppeteer/EJS PDF + XLSX exports)
- *   - /bulk/template, /bulk/store (Excel import/export service)
+ *   - /export, /download (puppeteer/EJS PDF exports)
  *
  * Team tokens (authTeam) flow through unchanged: req.teamMember is
  * threaded into the creator context, list scoping and the resource
@@ -1045,6 +1051,267 @@ export const retryExternalService = async (
         }
 
         return res.sendResponse([], res.__("s118"), 118);
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * Pulls the uploaded XLSX bytes off the request. Bulk-store accepts the
+ * file either as a multipart `file` field (parsed by the route-level
+ * multer onto req.file) or as a base64 data: URL / raw base64 string on
+ * req.body.file — mirror of the legacy extractUploadedFileBuffer.
+ */
+const extractUploadedFileBuffer = (req: Request): Buffer | null => {
+    const multerFile = (req as Request & { file?: { buffer?: Buffer } }).file;
+    if (multerFile?.buffer && multerFile.buffer.length > 0) {
+        return multerFile.buffer;
+    }
+    const bodyFile = (req.body as { file?: unknown }).file;
+    if (typeof bodyFile === "string" && bodyFile.length > 0) {
+        const base64 = bodyFile.startsWith("data:")
+            ? (bodyFile.split(",", 2)[1] ?? "")
+            : bodyFile;
+        if (base64) {
+            try {
+                return Buffer.from(base64, "base64");
+            } catch {
+                return null;
+            }
+        }
+    }
+    return null;
+};
+
+/**
+ * GET /api/user/beneficiary-transactions/bulk/template — builds the
+ * bulk-payout XLSX template (mandatory quote/beneficiary/remitter
+ * fields, with dropdowns), uploads it to S3 and returns the signed URL.
+ * Mirror of the legacy payoutController.payoutTemplate.
+ */
+export const payoutTemplate = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const query = req.query as Record<string, string | undefined>;
+        const parties = resolvePartyTypes(query.type);
+        const beneficiary = await beneficiaryFormFields({
+            country: String(query.country),
+            currency: String(query.currency),
+            type: parties.beneficiary_type,
+            merchantId: req.user.merchantId,
+        });
+        const quote = await quoteFormFields();
+        const merchantRow = req.user.merchantId
+            ? await Merchant.findByPk(req.user.merchantId)
+            : null;
+        const remitter = req.user.enableSender
+            ? await senderFields({
+                  type: parties.remitter_type,
+                  merchantId: merchantRow?.id ?? null,
+                  remitterDepositEnabled: await isRemitterDepositEnabled(
+                      req.user.merchantId,
+                  ),
+                  country: query.country,
+              })
+            : [];
+
+        const flat = flattenFormFields({ quote, beneficiary, remitter }, [
+            "quote",
+            "beneficiary",
+            ...(req.user.enableSender ? ["remitter"] : []),
+        ]);
+        const buffer = await generateBulkTemplate(flat, "Payouts");
+        const key = await upload(
+            {
+                buffer,
+                contentType:
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                extension: "xlsx",
+            },
+            "exports/payout-templates",
+        );
+        const signedUrl = await temporaryUrl(key);
+        return res.sendResponse({ url: signedUrl }, "Template ready.", 200);
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/user/beneficiary-transactions/bulk/store — validates each
+ * row of the uploaded XLSX through the beneficiary/sender normalizers;
+ * every successful row enqueues a PayoutJob to the bulk-payout worker.
+ * Mirror of the legacy payoutController.bulkStore.
+ */
+export const bulkStore = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+
+        const buffer = extractUploadedFileBuffer(req);
+        if (!buffer || buffer.length === 0) {
+            return res.sendError(
+                "Excel file (multipart 'file') required.",
+                422,
+                422,
+            );
+        }
+
+        const body = req.body as {
+            country?: string;
+            currency?: string;
+            type?: number | string;
+            bank_account_id?: string;
+            wallet_id?: string;
+        };
+        const country = String(body.country ?? "");
+        const currency = String(body.currency ?? "");
+        const type = Number(body.type ?? 1);
+
+        // Resolve the funding source (wallet or virtual account) that the
+        // per-row payouts will draw from.
+        let sourceType: string | null = null;
+        let sourceId: string | null = null;
+        if (body.wallet_id) {
+            const wallet = await Wallet.findOne({
+                where: { uniqueId: body.wallet_id, userId: req.user.id },
+            });
+            if (wallet) {
+                sourceType = MORPH_WALLET;
+                sourceId = String(wallet.id);
+            }
+        } else if (body.bank_account_id) {
+            const scope = await getVirtualAccountScope(req.user);
+            const virtualAccount = await VirtualAccount.findOne({
+                where: { ...scope, uniqueId: body.bank_account_id },
+            });
+            if (virtualAccount) {
+                sourceType = MORPH_VIRTUAL_ACCOUNT;
+                sourceId = String(virtualAccount.id);
+            }
+        }
+
+        const beneficiary = await beneficiaryFormFields({
+            country,
+            currency,
+            type,
+            merchantId: req.user.merchantId,
+        });
+        const quote = await quoteFormFields();
+        const merchantRow = req.user.merchantId
+            ? await Merchant.findByPk(req.user.merchantId)
+            : null;
+        const enableSender = req.user.enableSender;
+        const remitter = enableSender
+            ? await senderFields({
+                  type,
+                  merchantId: merchantRow?.id ?? null,
+                  remitterDepositEnabled: await isRemitterDepositEnabled(
+                      req.user.merchantId,
+                  ),
+              })
+            : [];
+
+        const fields = flattenFormFields({ quote, beneficiary, remitter }, [
+            "quote",
+            "beneficiary",
+            ...(enableSender ? ["remitter"] : []),
+        ]);
+
+        const remitterDepositEnabled = await isRemitterDepositEnabled(
+            req.user.merchantId,
+        );
+
+        const result = await processExcel(
+            buffer,
+            fields,
+            async (payload, rowNumber) => {
+                payload.beneficiary.country = country;
+                payload.beneficiary.currency = currency;
+
+                const normalizedBeneficiary =
+                    await validateAndNormalizeBeneficiary(
+                        payload.beneficiary as Record<string, unknown>,
+                        req.user!,
+                    );
+                let normalizedSender = null;
+                if (enableSender) {
+                    normalizedSender = await validateAndNormalizeSender(
+                        payload.remitter as Record<string, unknown>,
+                        req.user!,
+                        remitterDepositEnabled,
+                    );
+                }
+
+                return {
+                    row: rowNumber,
+                    beneficiary: normalizedBeneficiary,
+                    remitter: normalizedSender,
+                    amount: payload.quote.amount ?? "",
+                    remarks: payload.quote.remarks ?? null,
+                    txn_ref_no: payload.quote.txn_ref_no ?? null,
+                };
+            },
+        );
+
+        if (result.errors.length > 0) {
+            return res.sendResponse(
+                { errors: result.errors },
+                "Bulk import failed.",
+                200,
+            );
+        }
+
+        const created: { row: number; payout_job_id: string }[] = [];
+        for (let index = 0; index < result.validatedRows.length; index += 1) {
+            const row = result.validatedRows[index];
+            const job = await PayoutJob.create({
+                uniqueId: generateUniqueId(24),
+                userId: req.user.id,
+                rowNumber: index + 1,
+                amount: row.amount
+                    ? new Decimal(String(row.amount)).toString()
+                    : null,
+                status: PAYOUT_JOB_STATUS_PENDING,
+                payload: {
+                    source: "bulk",
+                    beneficiary: row.beneficiary,
+                    remitter: row.remitter,
+                    transaction: {
+                        amount: row.amount,
+                        remarks: row.remarks,
+                        txn_ref_no: row.txn_ref_no,
+                    },
+                    creator: req.teamMember?.id
+                        ? String(req.teamMember.id)
+                        : null,
+                    source_type: sourceType,
+                    source_id: sourceId,
+                },
+            });
+
+            await Dispatch.bulkPayout({
+                payoutJobUniqueId: job.uniqueId,
+                userId: String(req.user.id),
+            });
+
+            created.push({ row: index + 1, payout_job_id: job.uniqueId });
+        }
+
+        return res.sendResponse(
+            { success: created, errors: [] },
+            "Bulk import accepted.",
+            200,
+        );
     } catch (error) {
         return sendCodedError(res, error);
     }

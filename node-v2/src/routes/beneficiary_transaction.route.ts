@@ -1,5 +1,7 @@
 import { Router } from "express";
+import multer from "multer";
 import {
+    bulkStore,
     cancel,
     checkStatus,
     checkTransactionStatus,
@@ -9,6 +11,7 @@ import {
     index,
     instant,
     instantGetFormFields,
+    payoutTemplate,
     requestProof,
     show,
     store,
@@ -18,6 +21,12 @@ import {
 import { beneficiaryTransactionApiRoutes } from "../utils/api.routes";
 
 const router = Router();
+
+// Route-level multipart parsing for the bulk-store upload only — the
+// global middleware chain stays JSON/base64, so no other endpoint is
+// affected. The XLSX arrives as the `file` field (or a base64 data URL
+// on the JSON body, handled in the controller).
+const bulkUpload = multer({ storage: multer.memoryStorage() });
 
 router.get(
     beneficiaryTransactionApiRoutes.LIST.path,
@@ -101,6 +110,19 @@ router.get(
     beneficiaryTransactionApiRoutes.GET_PROOF.path,
     ...beneficiaryTransactionApiRoutes.GET_PROOF.middleware,
     getProof,
+);
+
+router.get(
+    beneficiaryTransactionApiRoutes.BULK_TEMPLATE.path,
+    ...beneficiaryTransactionApiRoutes.BULK_TEMPLATE.middleware,
+    payoutTemplate,
+);
+
+router.post(
+    beneficiaryTransactionApiRoutes.BULK_STORE.path,
+    ...beneficiaryTransactionApiRoutes.BULK_STORE.middleware,
+    bulkUpload.single("file"),
+    bulkStore,
 );
 
 export default router;
