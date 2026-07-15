@@ -62,10 +62,14 @@ MobileCountryCode.init(
             allowNull: false,
         },
         alpha2Code: {
+            // Explicit field: `underscored` would derive `alpha2_code`,
+            // but the actual column (Laravel migration) is `alpha_2_code`.
+            field: "alpha_2_code",
             type: DataTypes.STRING(5),
             allowNull: false,
         },
         alpha3Code: {
+            field: "alpha_3_code",
             type: DataTypes.STRING(5),
             allowNull: false,
         },
