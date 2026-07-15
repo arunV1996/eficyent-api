@@ -221,8 +221,33 @@ export const TRANSACTION_TYPE_MAP: Record<string, number> = {
 export const TRANSACTION_TYPE_CREDIT = 2;
 export const WALLET_TRANSACTION_COMPLETED = 1;
 export const DEPOSIT_TRANSACTION_COMPLETED = 1;
-export const TEAM_MEMBER_ROLE_CORPORATE = 4;
+export const TEAM_MEMBER_ROLE_ADMIN = 1;
+export const TEAM_MEMBER_ROLE_OWNER = 2;
 export const TEAM_MEMBER_ROLE_SUPPORT_MEMBER = 3;
+export const TEAM_MEMBER_ROLE_CORPORATE = 4;
+
+// Client-facing role/permission tokens (mirror of user_role_map /
+// user_permission_map)
+export const USER_ROLE_MAP: Record<string, number> = {
+    ADMIN: TEAM_MEMBER_ROLE_ADMIN,
+    OWNER: TEAM_MEMBER_ROLE_OWNER,
+    TEAM_MEMBER: TEAM_MEMBER_ROLE_SUPPORT_MEMBER,
+    CORPORATE: TEAM_MEMBER_ROLE_CORPORATE,
+};
+
+// Team-member account statuses (mirror of legacy constants)
+export const TEAM_MEMBER_ACTIVE = 1;
+export const TEAM_MEMBER_INACTIVE = 0;
+export const TEAM_MEMBER_DISABLED = 2;
+
+export const TEAM_MEMBER_STATUS_MAP: Record<string, number> = {
+    ACTIVE: TEAM_MEMBER_ACTIVE,
+    INACTIVE: TEAM_MEMBER_INACTIVE,
+    DISABLED: TEAM_MEMBER_DISABLED,
+};
+
+// Sanctum-style tokenable morph for team-member tokens
+export const TOKENABLE_TEAM_MEMBER = "App\\Models\\TeamMember";
 export const PAYOUT_JOB_STATUS_PENDING = 0;
 export const PAYOUT_JOB_STATUS_PROCESSING = 1;
 export const PAYOUT_JOB_STATUS_COMPLETED = 2;
@@ -276,6 +301,13 @@ export const TEAM_MEMBER_PERMISSION_MAKER = 2;
 export const TEAM_MEMBER_PERMISSION_CHECKER = 3;
 export const TEAM_MEMBER_PERMISSION_MAKER_CHECKER = 4;
 export const TEAM_MEMBER_PERMISSION_VIEWER = 5;
+
+export const USER_PERMISSION_MAP: Record<string, number> = {
+    APPROVER: TEAM_MEMBER_PERMISSION_CHECKER,
+    INITIATOR: TEAM_MEMBER_PERMISSION_INITIATOR,
+    CREATOR: TEAM_MEMBER_PERMISSION_MAKER,
+    CREATOR_AND_APPROVER: TEAM_MEMBER_PERMISSION_MAKER_CHECKER,
+};
 
 // Payment-proof lifecycle (mirror of legacy constants)
 export const PAYMENT_PROOF_REQUESTED = 1;

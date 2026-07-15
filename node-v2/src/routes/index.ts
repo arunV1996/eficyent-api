@@ -15,6 +15,8 @@ import settingRoutes from "./setting.route";
 import statementRoutes from "./statement.route";
 import staticPageRoutes from "./static_page.route";
 import subuserRoutes from "./subuser.route";
+import { teamAuthedRouter, teamPublicRouter } from "./team.route";
+import teamMemberRoutes from "./team_member.route";
 import virtualAccountRoutes from "./virtual_account.route";
 import walletRoutes from "./wallet.route";
 
@@ -39,6 +41,9 @@ router.use("/user/deposits", depositRoutes);
 router.use("/user/ledgers", ledgerRoutes);
 router.use("/user/dashboard", dashboardRoutes);
 router.use("/user/statement", statementRoutes);
+router.use("/user/team-members", teamMemberRoutes);
+router.use("/", teamPublicRouter);
+router.use("/team", teamAuthedRouter);
 router.use("/user", userPublicRouter);
 router.use("/public", publicRouter);
 
