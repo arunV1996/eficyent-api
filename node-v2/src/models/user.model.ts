@@ -17,6 +17,7 @@ interface UserAttributes {
     uniqueId: string;
     merchantId: number | null;
     businessUserId: number | null;
+    complianceMerchantId: string | null;
     title: string | null;
     firstName: string | null;
     middleName: string | null;
@@ -62,6 +63,7 @@ interface UserCreationAttributes
         | "id"
         | "merchantId"
         | "businessUserId"
+        | "complianceMerchantId"
         | "title"
         | "firstName"
         | "middleName"
@@ -104,6 +106,7 @@ class User
     public uniqueId!: string;
     public merchantId!: number | null;
     public businessUserId!: number | null;
+    public complianceMerchantId!: string | null;
     public title!: string | null;
     public firstName!: string | null;
     public middleName!: string | null;
@@ -165,6 +168,10 @@ User.init(
         },
         businessUserId: {
             type: DataTypes.BIGINT.UNSIGNED,
+            allowNull: true,
+        },
+        complianceMerchantId: {
+            type: DataTypes.STRING(255),
             allowNull: true,
         },
         title: {

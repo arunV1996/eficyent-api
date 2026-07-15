@@ -21,22 +21,37 @@ import {
 import { validateAndNormalizeSender } from "../helpers/sender_normalizer.helper";
 import { teamMemberContext } from "../helpers/team_context.helper";
 import { Dispatch } from "../jobs";
+import { computeBankBalance, getWalletBalance } from "../helpers/balance.helper";
+import { reverseRefund } from "../helpers/refund.helper";
+import * as complianceService from "../services/compliance.service";
+import * as processingUnitService from "../services/processing_unit.service";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
 import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import BeneficiaryTransactionProof from "../models/beneficiary_transaction_proof.model";
+import Ledger from "../models/ledger.model";
 import Merchant from "../models/merchant.model";
 import PayoutJob from "../models/payout_job.model";
+import Quote from "../models/quote.model";
 import Sender from "../models/sender.model";
+import TeamMember from "../models/team_member.model";
+import User from "../models/user.model";
+import VirtualAccount from "../models/virtual_account.model";
+import Wallet from "../models/wallet.model";
 import {
     beneficiaryTransactionCallbackToJSON,
     beneficiaryTransactionToJSON,
     transactionProofToJSON,
 } from "../resources/beneficiary_transaction.resource";
 import { uploadBase64 } from "../services/s3.service";
-import { generateUniqueId } from "../utils/common.utils";
+import { generateOrderId, generateUniqueId } from "../utils/common.utils";
 import {
     BENEFICIARY_TRANSACTION_APPROVAL_MAP,
+    BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
+    BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
+    MORPH_BENEFICIARY_TRANSACTION,
+    MORPH_VIRTUAL_ACCOUNT,
+    MORPH_WALLET,
     PAYMENT_PROOF_FIRA,
     PAYMENT_PROOF_REQUESTED,
     PAYMENT_PROOF_SWIFT,
@@ -44,6 +59,7 @@ import {
     PAYOUT_JOB_STATUS_PENDING,
     TAKE_COUNT,
 } from "../utils/constants";
+import Decimal from "decimal.js";
 
 const USER_DOCUMENT_FILE_PATH = "user_documents";
 
@@ -59,8 +75,6 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  * Deferred (documented per endpoint below where relevant):
  *   - /export, /download (puppeteer/EJS PDF + XLSX exports)
  *   - /bulk/template, /bulk/store (Excel import/export service)
- *   - public /retry_external_service (needs the Compliance + PU payout
- *     clients and reverseRefund)
  *
  * Team tokens (authTeam) flow through unchanged: req.teamMember is
  * threaded into the creator context, list scoping and the resource
@@ -902,6 +916,135 @@ export const checkExternalServiceStatus = async (
             "",
             200,
         );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/public/retry_external_service/:trxn — re-drives a payout
+ * that stalled at an initiation-failed state back through the provider.
+ *
+ * Mirror of the legacy payoutController.retryExternalService (public,
+ * no auth). For COMPLIANCE_INITIATION_FAILED it re-runs Compliance.make;
+ * for PU_INITIATION_FAILED it mints a fresh order id and re-runs
+ * ProcessingUnit.make. If a refund was already issued for the stalled
+ * transaction, the refund chain is reversed first — but only after a
+ * balance re-check (unless remitter-deposit is enabled), so a reversal
+ * can't push the source below zero.
+ */
+export const retryExternalService = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        const transaction = await BeneficiaryTransaction.findOne({
+            where: { uniqueId: String(req.params.trxn) },
+        });
+        if (!transaction) {
+            return res.sendError("Transaction not found.", 124, 400);
+        }
+
+        const retryable = [
+            BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
+            BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
+        ];
+        if (!retryable.includes(transaction.status)) {
+            return res.sendError(
+                "Transaction is not in a retryable state.",
+                201,
+                400,
+            );
+        }
+
+        const user = await User.findByPk(transaction.userId);
+        if (!user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+
+        const originalLedger = await Ledger.findOne({
+            where: {
+                transactionType: MORPH_BENEFICIARY_TRANSACTION,
+                transactionId: transaction.id,
+            },
+        });
+        if (originalLedger) {
+            const refundLedger = await Ledger.findOne({
+                where: { refundLedgerId: originalLedger.id },
+            });
+            if (refundLedger) {
+                let teamMemberContextInfo: {
+                    role: number;
+                    id: number;
+                } | null = null;
+                if (transaction.teamMemberId) {
+                    const teamMember = await TeamMember.findByPk(
+                        transaction.teamMemberId,
+                    );
+                    if (teamMember) {
+                        teamMemberContextInfo = {
+                            role: teamMember.role,
+                            id: teamMember.id,
+                        };
+                    }
+                }
+
+                const quote = transaction.quoteId
+                    ? await Quote.findByPk(transaction.quoteId)
+                    : null;
+                if (quote) {
+                    let currentBalance = new Decimal(0);
+                    if (quote.sourceType === MORPH_VIRTUAL_ACCOUNT) {
+                        const virtualAccount = await VirtualAccount.findByPk(
+                            quote.sourceId ?? undefined,
+                        );
+                        if (virtualAccount) {
+                            currentBalance = await computeBankBalance(
+                                user,
+                                virtualAccount,
+                                teamMemberContextInfo,
+                            );
+                        }
+                    } else if (quote.sourceType === MORPH_WALLET) {
+                        const wallet = await Wallet.findByPk(
+                            quote.sourceId ?? undefined,
+                        );
+                        if (wallet) {
+                            currentBalance = await getWalletBalance(
+                                user,
+                                wallet,
+                            );
+                        }
+                    }
+
+                    const remitterDepositEnabled =
+                        await isRemitterDepositEnabled(user.merchantId);
+                    if (
+                        !remitterDepositEnabled &&
+                        currentBalance.lt(transaction.totalAmount)
+                    ) {
+                        return res.sendError("Insufficient balance.", 154, 400);
+                    }
+                }
+                await reverseRefund(transaction);
+            }
+        }
+
+        if (
+            transaction.status ===
+            BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED
+        ) {
+            await complianceService.make(transaction, user);
+        } else if (
+            transaction.status ===
+            BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED
+        ) {
+            transaction.orderId = generateOrderId();
+            await transaction.save();
+            await processingUnitService.make(transaction, user);
+        }
+
+        return res.sendResponse([], res.__("s118"), 118);
     } catch (error) {
         return sendCodedError(res, error);
     }

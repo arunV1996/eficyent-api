@@ -808,6 +808,10 @@ export const publicApiRoutes = {
         path: "/retry_deposit/:trxn",
         middleware: [retryTrxnParamValidator, checkValidationErrors],
     },
+    RETRY_EXTERNAL_SERVICE: {
+        path: "/retry_external_service/:trxn",
+        middleware: [retryTrxnParamValidator, checkValidationErrors],
+    },
 };
 
 // Inbound provider webhooks — unauthenticated flat paths at the API

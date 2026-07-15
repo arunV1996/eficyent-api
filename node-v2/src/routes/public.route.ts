@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
     checkExternalServiceStatus,
+    retryExternalService,
     retryJob,
 } from "../controller/beneficiary_transaction.controller";
 import { retryDeposit } from "../controller/deposit.controller";
@@ -32,4 +33,10 @@ publicRouter.post(
     publicApiRoutes.RETRY_DEPOSIT.path,
     ...publicApiRoutes.RETRY_DEPOSIT.middleware,
     retryDeposit,
+);
+
+publicRouter.post(
+    publicApiRoutes.RETRY_EXTERNAL_SERVICE.path,
+    ...publicApiRoutes.RETRY_EXTERNAL_SERVICE.middleware,
+    retryExternalService,
 );

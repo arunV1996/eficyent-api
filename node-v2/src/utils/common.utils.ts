@@ -114,6 +114,20 @@ export const generateUniqueId = (length = 24): string => {
 };
 
 /**
+ * Generates a payout order id — TXN + last 8 digits of the unix
+ * timestamp + 4 uppercase alphanumeric chars. Matches the inline
+ * generator the payout store path uses, so retried transactions get a
+ * fresh, same-shaped order id (mirror of the legacy generateOrderId).
+ */
+export const generateOrderId = (): string => {
+    const timestamp = Math.floor(Date.now() / 1000)
+        .toString()
+        .slice(-8);
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `TXN${timestamp}${random}`;
+};
+
+/**
  * Formats a Date or ISO string as "12 Feb 2026 1:22 PM".
  */
 export const formatDate = (
