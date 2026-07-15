@@ -314,7 +314,7 @@ export const generateBulkTemplate = async (
 
     sheet.columns.forEach((col) => {
         let maxWidth = 12;
-        col.eachCell?.({ includeEmpty: false }, (cell) => {
+        col.eachCell?.({ includeEmpty: false }, (cell: ExcelJS.Cell) => {
             const cellValue = cell.value;
             const asString =
                 typeof cellValue === "string"

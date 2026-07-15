@@ -78,7 +78,7 @@ export async function generateStatementExcel(data: StatementData | any): Promise
     ];
     const wsHeaderRow = summarySheet.addRow(walletSummaryHeaders);
     wsHeaderRow.font = { bold: true };
-    wsHeaderRow.eachCell((cell) => {
+    wsHeaderRow.eachCell((cell: ExcelJS.Cell) => {
         cell.fill = {
             type: "pattern",
             pattern: "solid",
@@ -102,7 +102,7 @@ export async function generateStatementExcel(data: StatementData | any): Promise
         data.walletSummary.amount_paid,
         data.walletSummary.closing_balance,
     ]);
-    wsDataRow.eachCell((cell) => {
+    wsDataRow.eachCell((cell: ExcelJS.Cell) => {
         cell.border = {
             top: { style: "thin" },
             left: { style: "thin" },
@@ -137,7 +137,7 @@ export async function generateStatementExcel(data: StatementData | any): Promise
 
     // Helper for applying styles to data rows
     const applyBorders = (row: ExcelJS.Row) => {
-        row.eachCell({ includeEmpty: true }, (cell) => {
+        row.eachCell({ includeEmpty: true }, (cell: ExcelJS.Cell) => {
             cell.border = {
                 top: { style: "thin" },
                 left: { style: "thin" },
@@ -161,7 +161,7 @@ export async function generateStatementExcel(data: StatementData | any): Promise
     ];
     const payinHeaderRow = txnSheet.addRow(payinHeaders);
     payinHeaderRow.font = { bold: true };
-    payinHeaderRow.eachCell((cell) => {
+    payinHeaderRow.eachCell((cell: ExcelJS.Cell) => {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
         cell.alignment = { horizontal: "center" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
@@ -213,7 +213,7 @@ export async function generateStatementExcel(data: StatementData | any): Promise
     ];
     const payoutHeaderRow = txnSheet.addRow(payoutHeaders);
     payoutHeaderRow.font = { bold: true };
-    payoutHeaderRow.eachCell((cell) => {
+    payoutHeaderRow.eachCell((cell: ExcelJS.Cell) => {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
         cell.alignment = { horizontal: "center" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
@@ -268,7 +268,7 @@ export async function generateStatementExcel(data: StatementData | any): Promise
     ];
     const walletHeaderRow = txnSheet.addRow(walletHeaders);
     walletHeaderRow.font = { bold: true };
-    walletHeaderRow.eachCell((cell) => {
+    walletHeaderRow.eachCell((cell: ExcelJS.Cell) => {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
         cell.alignment = { horizontal: "center" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
@@ -300,13 +300,13 @@ export async function generateStatementExcel(data: StatementData | any): Promise
     }
 
     // Apply general cell styles
-    txnSheet.eachRow((row) => {
-        row.eachCell({ includeEmpty: true }, (cell) => {
+    txnSheet.eachRow((row: ExcelJS.Row) => {
+        row.eachCell({ includeEmpty: true }, (cell: ExcelJS.Cell) => {
             cell.font = Object.assign({ name: "Arial", size: 10 }, cell.font || {});
         });
     });
-    summarySheet.eachRow((row) => {
-        row.eachCell({ includeEmpty: true }, (cell) => {
+    summarySheet.eachRow((row: ExcelJS.Row) => {
+        row.eachCell({ includeEmpty: true }, (cell: ExcelJS.Cell) => {
             cell.font = Object.assign({ name: "Arial", size: 10 }, cell.font || {});
         });
     });
