@@ -1,5 +1,10 @@
+import Decimal from "decimal.js";
+import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import DepositTransaction from "../models/deposit_transaction.model";
-import { depositTransactionStatusLabel } from "../utils/common.utils";
+import {
+    beneficiaryTransactionStatusLabel,
+    depositTransactionStatusLabel,
+} from "../utils/common.utils";
 
 /**
  * Merchant-callback payload shapes (mirror of the legacy
@@ -7,6 +12,26 @@ import { depositTransactionStatusLabel } from "../utils/common.utils";
  * SendCallback worker POSTs to the merchant's callback URL, so field
  * names and formatting must stay byte-identical.
  */
+
+export const beneficiaryTransactionCallbackPayload = (
+    transaction: BeneficiaryTransaction,
+): Record<string, unknown> => {
+    return {
+        unique_id: transaction.uniqueId ?? "",
+        txn_ref_no: transaction.txnRefNo ?? "",
+        client_reference_id: transaction.clientReferenceId ?? "",
+        utr_number: transaction.externalReferenceId ?? "",
+        // Decimal normalization mirrors the Prisma Decimal .toString()
+        // ("1000.500000" -> "1000.5") the legacy builder produced.
+        total_amount:
+            transaction.totalAmount !== null &&
+            transaction.totalAmount !== undefined
+                ? new Decimal(transaction.totalAmount).toString()
+                : "",
+        status: beneficiaryTransactionStatusLabel(transaction.status) ?? "",
+        remarks: transaction.notes ?? "",
+    };
+};
 
 export const depositTransactionCallbackPayload = (
     deposit: DepositTransaction,

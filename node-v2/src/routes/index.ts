@@ -19,6 +19,7 @@ import { teamAuthedRouter, teamPublicRouter } from "./team.route";
 import teamMemberRoutes from "./team_member.route";
 import virtualAccountRoutes from "./virtual_account.route";
 import walletRoutes from "./wallet.route";
+import webhookRoutes from "./webhook.route";
 
 const router = Router();
 
@@ -46,5 +47,9 @@ router.use("/", teamPublicRouter);
 router.use("/team", teamAuthedRouter);
 router.use("/user", userPublicRouter);
 router.use("/public", publicRouter);
+// Inbound provider webhooks live at the API root (flat paths already
+// registered with the providers' dashboards) — mirror of the legacy
+// `r.use("/", webhookRoutes())` mount.
+router.use("/", webhookRoutes);
 
 export default router;

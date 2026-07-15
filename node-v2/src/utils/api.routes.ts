@@ -5,6 +5,7 @@ import {
     onboardingShouldBeCompleted,
 } from "../middleware/auth";
 import { checkValidationErrors } from "../middleware/checkValidationErrors";
+import { fvbankWebhookSignature } from "../middleware/fvbank_webhook_signature";
 import { idempotency } from "../middleware/idempotency";
 import { strictBody } from "../middleware/strictBody";
 import { validateMerchant } from "../middleware/validateMerchant";
@@ -806,6 +807,32 @@ export const publicApiRoutes = {
     RETRY_DEPOSIT: {
         path: "/retry_deposit/:trxn",
         middleware: [retryTrxnParamValidator, checkValidationErrors],
+    },
+};
+
+// Inbound provider webhooks — unauthenticated flat paths at the API
+// root (providers have these exact URLs registered); FvBank is the
+// only one gated, by its HMAC signature middleware.
+export const webhookApiRoutes = {
+    CALIZA: {
+        path: "/caliza-webhook",
+        middleware: [],
+    },
+    DIGININE: {
+        path: "/diginine-webhook",
+        middleware: [],
+    },
+    FVBANK: {
+        path: "/ef-webhook",
+        middleware: [fvbankWebhookSignature],
+    },
+    COMPLIANCE: {
+        path: "/compliance/webhook-callback",
+        middleware: [],
+    },
+    PROCESSING_UNIT: {
+        path: "/processingunit-webhook",
+        middleware: [],
     },
 };
 

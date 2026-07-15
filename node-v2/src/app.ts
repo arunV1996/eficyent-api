@@ -156,7 +156,19 @@ app.use(
 
 app.disable("x-powered-by");
 
-app.use(express.json({ limit: "1mb" }));
+app.use(
+    express.json({
+        limit: "1mb",
+        // Capture the raw bytes so webhook signature middleware (FvBank
+        // HMAC etc.) can verify against the exact payload the provider
+        // signed — re-stringifying via JSON.stringify can drift on
+        // whitespace/key-order otherwise.
+        verify: (verifyRequest, _verifyResponse, rawBuffer) => {
+            (verifyRequest as unknown as { rawBody?: Buffer }).rawBody =
+                Buffer.from(rawBuffer);
+        },
+    }),
+);
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use(hpp());
 

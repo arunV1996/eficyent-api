@@ -257,3 +257,36 @@ export const depositReceived = async (
         console.warn("Telegram depositReceived failed:", notifyError);
     }
 };
+
+export interface CallbackReceivedMessage {
+    provider: string;
+    payload: unknown;
+    channel?: string;
+}
+
+/**
+ * Mirror of TelegramNotifier.callbackReceived — announces every inbound
+ * provider webhook to the ops callback channel (falls back to the
+ * default channel when no callback channel is configured).
+ */
+export const callbackReceived = async (
+    message: CallbackReceivedMessage,
+): Promise<void> => {
+    try {
+        const config = loadConfig();
+        if (!config || !config.enabled) {
+            return;
+        }
+        const text = `<b>Callback received</b> [${escapeHtml(message.provider)}]\n\n<pre>${escapeHtml(
+            JSON.stringify(message.payload).slice(0, 3500),
+        )}</pre>`;
+        await sendRaw(
+            text,
+            message.channel ?? config.callbackChatId ?? config.chatId,
+            config,
+        );
+    } catch (notifyError) {
+        // eslint-disable-next-line no-console
+        console.warn("Telegram callbackReceived failed:", notifyError);
+    }
+};

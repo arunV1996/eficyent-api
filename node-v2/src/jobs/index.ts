@@ -26,6 +26,8 @@ export const QueueNames = {
     Callback: "callback",
     BulkPayout: "bulk-payout",
     DebitNotification: "debit-notification",
+    CalizaWebhook: "caliza-webhook",
+    DiginineWebhook: "diginine-webhook",
 } as const;
 
 export type QueueName = (typeof QueueNames)[keyof typeof QueueNames];
@@ -94,6 +96,14 @@ export interface DebitNotificationJobPayload {
     beneficiaryTransactionId: string;
 }
 
+export interface CalizaWebhookJobPayload {
+    data: Record<string, unknown>;
+}
+
+export interface DiginineWebhookJobPayload {
+    data: Record<string, unknown>;
+}
+
 export interface CallbackJobPayload {
     userId: string;
     eventType: string;
@@ -142,6 +152,28 @@ export const Dispatch = {
         options?: JobsOptions,
     ): Promise<string> {
         return enqueue(QueueNames.Callback, "SendCallback", payload, options);
+    },
+    calizaWebhook(
+        payload: CalizaWebhookJobPayload,
+        options?: JobsOptions,
+    ): Promise<string> {
+        return enqueue(
+            QueueNames.CalizaWebhook,
+            "ProcessCalizaWebhook",
+            payload,
+            options,
+        );
+    },
+    diginineWebhook(
+        payload: DiginineWebhookJobPayload,
+        options?: JobsOptions,
+    ): Promise<string> {
+        return enqueue(
+            QueueNames.DiginineWebhook,
+            "ProcessDiginineWebhook",
+            payload,
+            options,
+        );
     },
     debitNotification(
         payload: DebitNotificationJobPayload,

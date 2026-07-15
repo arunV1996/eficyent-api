@@ -120,6 +120,8 @@ export const EXTERNAL_TYPE_USI = "EUSI";
 export const EXTERNAL_TYPE_IME = "EIME";
 export const EXTERNAL_TYPE_MOBI = "EMB";
 export const EXTERNAL_TYPE_PROCESSING_UNIT = "pu";
+export const EXTERNAL_TYPE_VIYONA_PAY = "ep";
+export const EXTERNAL_TYPE_COMPLIANCE = "cp";
 
 // Polymorphic morph classes (kept as Laravel FQCNs so audit rows are
 // interchangeable between the legacy and restructured services)
@@ -326,6 +328,10 @@ export const CALLBACK_PAYOUT_REJECTED = "TRANSACTION_REJECTED";
 export const CALLBACK_PAYOUT_FAILED = "TRANSACTION_FAILED";
 export const CALLBACK_DEPOSIT_SUCCESS = "DEPOSIT_COMPLETED";
 export const CALLBACK_DEPOSIT_FAILED = "DEPOSIT_REJECTED";
+export const CALLBACK_VIRTUAL_ACCOUNT_CREATED = "BANK_ACCOUNT_CREATED";
+
+// external_service_calls.action value for inbound webhook audit rows
+export const EXTERNAL_CALL_FOR_CALLBACK = "callback";
 
 // Senders (mirror of legacy SENDER_STATUS_* + remitter_status_map())
 export const SENDER_STATUS_PENDING = 0;

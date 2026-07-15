@@ -37,9 +37,6 @@ import {
  * anchor via `refund_ledger_id`, so the audit trail is queryable both
  * ways. The function is idempotent: repeat calls find the existing
  * `refund_ledger_id == originalLedger.id` row and short-circuit.
- *
- * Deferred with the retry_external_service endpoint: reverseRefund
- * (deletes the refund chain before re-initiating a failed payout).
  */
 export const createRefund = async (
     transaction: BeneficiaryTransaction,
@@ -235,5 +232,61 @@ export const createRefund = async (
         }
     });
 
+    return true;
+};
+
+/**
+ * Mirror of the legacy reverseRefund — when a FAILED payout flips back
+ * to initiated/processing/completed after a refund was already issued,
+ * the refund chain (the credit WalletTransaction or refund
+ * DepositTransaction plus its Ledger row) is deleted so the money is
+ * debited again. Hard deletes, mirroring the Prisma `.delete` calls.
+ */
+export const reverseRefund = async (
+    transaction: BeneficiaryTransaction,
+): Promise<boolean> => {
+    const originalLedger = await Ledger.findOne({
+        where: {
+            transactionType: MORPH_BENEFICIARY_TRANSACTION,
+            transactionId: transaction.id,
+        },
+    });
+    if (!originalLedger) {
+        return false;
+    }
+
+    const refundLedger = await Ledger.findOne({
+        where: { refundLedgerId: originalLedger.id },
+    });
+    if (!refundLedger) {
+        return false;
+    }
+
+    await sequelize.transaction(async (databaseTransaction) => {
+        if (refundLedger.transactionId) {
+            if (refundLedger.transactionType === MORPH_WALLET_TRANSACTION) {
+                await WalletTransaction.destroy({
+                    where: { id: refundLedger.transactionId },
+                    transaction: databaseTransaction,
+                });
+            } else if (
+                refundLedger.transactionType === MORPH_DEPOSIT_TRANSACTION
+            ) {
+                await DepositTransaction.destroy({
+                    where: { id: refundLedger.transactionId },
+                    transaction: databaseTransaction,
+                });
+            }
+        }
+        await Ledger.destroy({
+            where: { id: refundLedger.id },
+            transaction: databaseTransaction,
+        });
+    });
+
+    // eslint-disable-next-line no-console
+    console.info(
+        `Refund chain reversed (deleted) for transaction ${transaction.uniqueId}`,
+    );
     return true;
 };

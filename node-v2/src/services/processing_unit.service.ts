@@ -23,7 +23,10 @@ import {
     DEPOSIT_TRANSACTION_PROCESSING_UNIT_INITIATED,
     DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING,
     DEPOSIT_TRANSACTION_REJECTED,
+    EXTERNAL_TYPE_CALIZA,
+    EXTERNAL_TYPE_DIGININE,
     EXTERNAL_TYPE_PROCESSING_UNIT,
+    EXTERNAL_TYPE_VIYONA_PAY,
 } from "../utils/constants";
 import { call } from "./http_client.service";
 
@@ -90,6 +93,24 @@ export const mapProcessingUnitWithdrawStatus = (
         };
     }
     return { mapped, isNew: false, original: status };
+};
+
+/**
+ * Mirror of mapProcessingUnitServiceToExternalType — maps the PU
+ * upstream service-tag (ED/ECZ/EVP/MANUAL) back to the canonical
+ * external_type code. Unknown tags pass through unchanged.
+ */
+const SERVICE_TO_EXTERNAL_TYPE: Record<string, string> = {
+    ED: EXTERNAL_TYPE_DIGININE,
+    ECZ: EXTERNAL_TYPE_CALIZA,
+    EVP: EXTERNAL_TYPE_VIYONA_PAY,
+    MANUAL: "em",
+};
+
+export const mapProcessingUnitServiceToExternalType = (
+    service: string,
+): string => {
+    return SERVICE_TO_EXTERNAL_TYPE[service] ?? service;
 };
 
 export const mapProcessingUnitDepositStatus = (
