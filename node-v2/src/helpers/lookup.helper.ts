@@ -203,6 +203,28 @@ export const businessVerificationTypes = (): Promise<LookupItem[]> => {
 };
 
 /**
+ * Mirror of the legacy format_processing_unit_fx_rate — the Processing
+ * Unit API wants a bare numeric rate, but quotes store the display form
+ * ("1 USD = 83.25 INR"). When the stored value carries an "=", take the
+ * right-hand side and strip everything except digits and the decimal
+ * point; otherwise pass the value through unchanged.
+ */
+export const formatProcessingUnitFxRate = (
+    fxRate: string | number | null | undefined,
+): string | number => {
+    if (!fxRate) {
+        return "";
+    }
+    if (typeof fxRate === "string" && fxRate.includes("=")) {
+        const parts = fxRate.split("=");
+        if (parts[1]) {
+            return parts[1].trim().replace(/[^\d.]/g, "");
+        }
+    }
+    return fxRate;
+};
+
+/**
  * Resolves a lookup key to its human-readable value, falling back to
  * the key itself when the row doesn't exist. Mirror of
  * lookupsService.findValuebyKey.

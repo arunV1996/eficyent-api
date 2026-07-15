@@ -2,6 +2,9 @@
 export const USER_TYPE_PENDING = 0;
 export const USER_TYPE_PERSONAL = 1;
 export const USER_TYPE_BUSINESS = 2;
+// Alias kept so the Processing Unit payload builder reads 1:1 against
+// the legacy source (which compares against USER_TYPE_INDIVIDUAL = 1).
+export const USER_TYPE_INDIVIDUAL = USER_TYPE_PERSONAL;
 
 // merchant_settings.supported_user_types values
 export const SUPPORTED_USER_INDIVIDUAL = "individual";

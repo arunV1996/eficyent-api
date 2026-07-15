@@ -1,9 +1,13 @@
 import crypto from "crypto";
 import { depositTransactionCallbackPayload } from "../helpers/callback_payload.helper";
+import { buildPayoutPayload } from "../helpers/processing_unit_payload.helper";
 import { Dispatch } from "../jobs";
 import AdminWallet from "../models/admin_wallet.model";
+import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
+import BeneficiaryTransactionStatusHistory from "../models/beneficiary_transaction_status_history.model";
 import DepositTransaction from "../models/deposit_transaction.model";
 import DepositTransactionStatusHistory from "../models/deposit_transaction_status_history.model";
+import ExternalServiceCall from "../models/external_service_call.model";
 import Merchant from "../models/merchant.model";
 import User from "../models/user.model";
 import VirtualAccount from "../models/virtual_account.model";
@@ -12,6 +16,7 @@ import {
     BENEFICIARY_TRANSACTION_COMPLETED,
     BENEFICIARY_TRANSACTION_FAILED,
     BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATED,
+    BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
     BENEFICIARY_TRANSACTION_PROCESSING_UNIT_PROCESSING,
     CALLBACK_DEPOSIT_FAILED,
     CALLBACK_DEPOSIT_SUCCESS,
@@ -34,10 +39,9 @@ import { call } from "./http_client.service";
  * Processing Unit provider service (mirror of the legacy
  * services/external/processingUnit.ts).
  *
- * Ported so far: validateAccount and the deposit leg (createDeposit +
- * status maps). Deferred with the payout-worker/provider tranche: the
- * payout initiation (`make`, which needs the 576-line payout payload
- * builder) and the withdraw-side consumers of the status map.
+ * Ported: validateAccount, the deposit leg (createDeposit + status
+ * maps) and the payout initiation (`make` + the payout payload builder
+ * in processing_unit_payload.helper).
  *
  * Configuration comes from the environment:
  *   PROCESSING_UNIT_URL          base URL of the PU API
@@ -47,6 +51,7 @@ import { call } from "./http_client.service";
  */
 
 const ENDPOINTS = {
+    CREATE_TRANSACTION: "api/v1/initiate-withdraw",
     VALIDATE_ACCOUNT: "api/v1/verify_account",
     INITIATE_DEPOSIT: "api/v1/initiate-deposit",
 };
@@ -273,6 +278,173 @@ export const validateAccount = async (payload: {
     return postJSON(ENDPOINTS.VALIDATE_ACCOUNT, payload, {
         callFor: "validate_account",
     });
+};
+
+/**
+ * Writes a best-effort external_service_calls audit row for a payout
+ * initiation that failed before/at the request boundary — mirror of the
+ * legacy recordFailedInitiation. Never throws.
+ */
+const recordFailedInitiation = async (
+    beneficiaryTransactionId: number,
+    action: string,
+    errorMessage: string,
+    startTime: number,
+    payload?: unknown,
+    endpoint?: string,
+): Promise<void> => {
+    try {
+        await ExternalServiceCall.create({
+            externalType: EXTERNAL_TYPE_PROCESSING_UNIT,
+            action: `initiation_failed:${action}`,
+            method: "POST",
+            endpoint: endpoint ?? null,
+            beneficiaryTransactionId,
+            requestPayload: payload ? { body: payload } : null,
+            responsePayload: null,
+            httpStatus: null,
+            success: false,
+            errorMessage,
+            responseTimeMs: Date.now() - startTime,
+        });
+    } catch (auditError) {
+        // eslint-disable-next-line no-console
+        console.error(
+            "Failed to write initiation failure audit log:",
+            beneficiaryTransactionId,
+            auditError,
+        );
+    }
+};
+
+const writeWithdrawStatusHistory = async (
+    beneficiaryTransactionId: number,
+    fromStatus: number,
+    toStatus: number,
+): Promise<void> => {
+    await BeneficiaryTransactionStatusHistory.create({
+        uniqueId: generateUniqueId(24),
+        beneficiaryTransactionId,
+        fromStatus: String(fromStatus),
+        toStatus: String(toStatus),
+        changedBy: "system",
+        changedByType: "system",
+        changedAt: new Date(),
+    });
+};
+
+/**
+ * Mirror of ExternalServices\ProcessingUnit::make — initiates a payout
+ * through the upstream Processing Unit. Builds the payout payload, POSTs
+ * to initiate-withdraw, maps the returned status onto the transaction
+ * (with a status-history row), and on any failure/throw moves the row
+ * to PU_INITIATION_FAILED. Best-effort: never throws to the caller.
+ */
+export const make = async (
+    transaction: BeneficiaryTransaction,
+    user: User,
+): Promise<void> => {
+    const startTime = Date.now();
+    let payload: Record<string, unknown> | null = null;
+    try {
+        payload = await buildPayoutPayload(transaction, user);
+
+        if (!payload) {
+            const errorMessage =
+                "ProcessingUnit.make - buildPayoutPayload returned null (missing related data)";
+            // eslint-disable-next-line no-console
+            console.warn(errorMessage, transaction.uniqueId);
+            await recordFailedInitiation(
+                transaction.id,
+                "build_payload",
+                errorMessage,
+                startTime,
+            );
+            return;
+        }
+
+        const response = await postJSON<{ status?: string }>(
+            ENDPOINTS.CREATE_TRANSACTION,
+            payload,
+            {
+                callFor: "create",
+                referenceType: "App\\Models\\BeneficiaryTransaction",
+                referenceId: transaction.id,
+            },
+        );
+
+        if (response.success) {
+            const nextStatus = response.data?.status
+                ? mapProcessingUnitWithdrawStatus(response.data.status).mapped
+                : null;
+            if (nextStatus !== null && nextStatus !== transaction.status) {
+                const previousStatus = transaction.status;
+                transaction.status = nextStatus;
+                transaction.externalType = EXTERNAL_TYPE_PROCESSING_UNIT;
+                await transaction.save();
+                await writeWithdrawStatusHistory(
+                    transaction.id,
+                    previousStatus,
+                    nextStatus,
+                );
+            }
+            return;
+        }
+
+        // Provider rejected the initiation — mark PU_INITIATION_FAILED.
+        const failureStatus =
+            BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED;
+        const previousStatus = transaction.status;
+        transaction.status = failureStatus;
+        await transaction.save();
+        await writeWithdrawStatusHistory(
+            transaction.id,
+            previousStatus,
+            failureStatus,
+        );
+    } catch (providerError) {
+        // eslint-disable-next-line no-console
+        console.error(
+            "ProcessingUnit.make threw:",
+            transaction.uniqueId,
+            providerError,
+        );
+        // Only record a synthetic audit row when the shared http client
+        // didn't already write one for this create attempt.
+        const existingAudit = await ExternalServiceCall.findOne({
+            where: {
+                beneficiaryTransactionId: transaction.id,
+                externalType: EXTERNAL_TYPE_PROCESSING_UNIT,
+                action: "create",
+            },
+        });
+        if (!existingAudit) {
+            const errorMessage = `Pre-request or configuration failure: ${
+                providerError instanceof Error
+                    ? providerError.message
+                    : String(providerError)
+            }`;
+            await recordFailedInitiation(
+                transaction.id,
+                "make_failure",
+                errorMessage,
+                startTime,
+                payload,
+                ENDPOINTS.CREATE_TRANSACTION,
+            );
+        }
+
+        const failureStatus =
+            BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED;
+        const previousStatus = transaction.status;
+        transaction.status = failureStatus;
+        await transaction.save().catch(() => undefined);
+        await writeWithdrawStatusHistory(
+            transaction.id,
+            previousStatus,
+            failureStatus,
+        ).catch(() => undefined);
+    }
 };
 
 /**

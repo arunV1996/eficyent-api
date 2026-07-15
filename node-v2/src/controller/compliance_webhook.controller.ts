@@ -4,6 +4,8 @@ import sequelize from "../config/database";
 import { recordStatusHistory } from "../helpers/beneficiary_transaction.helper";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import ExternalServiceCall from "../models/external_service_call.model";
+import User from "../models/user.model";
+import * as processingUnit from "../services/processing_unit.service";
 import {
     BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED,
     BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD,
@@ -20,16 +22,9 @@ import {
  * Always returns 200 to prevent the upstream from retrying. Persists an
  * external_service_calls audit row regardless of outcome. On
  * `transaction.approved` + complianceStatus PASSED the transaction is
- * moved to COMPLIANCE_APPROVED; on `transaction.rejected` or
+ * moved to COMPLIANCE_APPROVED and immediately handed off to the
+ * Processing Unit for payout initiation; on `transaction.rejected` or
  * complianceStatus FAILED it moves to COMPLIANCE_REJECTED.
- *
- * DEFERRED (payout provider-client tranche): the legacy controller
- * fire-and-forgets ProcessingUnit.make(txn, user) after moving a
- * transaction to COMPLIANCE_APPROVED. The PU payout initiation client
- * (and its 576-line payload builder) is ported with the payout-side
- * provider tranche; the hand-off call is wired there. Until then the
- * approval is persisted and logged, and the legacy service (sharing the
- * same database) remains the initiator of record.
  */
 
 const PENDING_COMPLIANCE_STATUSES = [
@@ -174,13 +169,22 @@ export const complianceWebhook = async (
         }
 
         if (updates.status === BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED) {
-            // DEFERRED: ProcessingUnit.make(transaction, user) — the PU
-            // payout initiation hand-off lands with the payout-side
-            // provider-client tranche (see module doc comment).
-            // eslint-disable-next-line no-console
-            console.warn(
-                `Compliance approved for ${transaction.uniqueId}; ProcessingUnit hand-off pending payout provider-client tranche`,
-            );
+            // Hand off to the Processing Unit for payout initiation.
+            // Fire-and-forget (mirror of the legacy void call): the
+            // webhook must still answer 200 promptly regardless of how
+            // the downstream initiation resolves.
+            const transactionUser = await User.findByPk(transaction.userId);
+            if (transactionUser) {
+                void processingUnit
+                    .make(transaction, transactionUser)
+                    .catch((makeError) => {
+                        // eslint-disable-next-line no-console
+                        console.error(
+                            `ProcessingUnit.make failed for ${transaction.uniqueId}:`,
+                            makeError,
+                        );
+                    });
+            }
         }
 
         responseBody = data;
