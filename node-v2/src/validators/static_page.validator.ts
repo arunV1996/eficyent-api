@@ -1,4 +1,5 @@
 import { query, ValidationChain } from "express-validator";
+import { localizedError } from "./validation_message.helper";
 
 /**
  * express-validator chain for GET /static-pages/show — mirror of the
@@ -6,13 +7,6 @@ import { query, ValidationChain } from "express-validator";
  * `static_page_unique_id` is required; both are additive filters).
  */
 
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 export const staticPageShowQueryValidator: ValidationChain[] = [
     query("type")

@@ -5,6 +5,7 @@ import {
     USER_PERMISSION_MAP,
     USER_ROLE_MAP,
 } from "../utils/constants";
+import { localizedError } from "./validation_message.helper";
 
 /**
  * express-validator chains for the team surface — mirror of
@@ -12,13 +13,6 @@ import {
  * teamMemberCrudValidators.ts.
  */
 
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 const PASSWORD_FORMAT_MESSAGE = "Password format is invalid.";
 const CONFIRMATION_MESSAGE = "Password confirmation does not match.";

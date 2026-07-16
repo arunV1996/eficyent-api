@@ -3,19 +3,13 @@ import {
     EXTERNAL_TYPE_CALIZA,
     EXTERNAL_TYPE_FVBANK,
 } from "../utils/constants";
+import { localizedError } from "./validation_message.helper";
 
 /**
  * express-validator chains for the /accounts surface — mirror of
  * validators/virtualAccounts/virtualAccountValidators.ts.
  */
 
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 // Query strings only ever carry the string variants of the legacy
 // boolean-coercion union.

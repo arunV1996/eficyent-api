@@ -1,13 +1,7 @@
 import { query, ValidationChain } from "express-validator";
 import { ONBOARDING_STEP_MAP } from "../utils/constants";
+import { localizedError } from "./validation_message.helper";
 
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 /**
  * express-validator chain for GET /api/user/onboarding/get-form-fields.

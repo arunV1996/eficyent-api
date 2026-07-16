@@ -1,4 +1,5 @@
 import { query, ValidationChain } from "express-validator";
+import { localizedError } from "./validation_message.helper";
 
 /**
  * express-validator chain for GET /statement/export — mirror of the
@@ -6,13 +7,6 @@ import { query, ValidationChain } from "express-validator";
  * bank_account_id).
  */
 
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 export const statementExportQueryValidator: ValidationChain[] = [
     query("from_date")

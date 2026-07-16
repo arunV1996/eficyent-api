@@ -1,18 +1,12 @@
 import { body, query, ValidationChain } from "express-validator";
 import { USER_TYPE_MAP } from "../utils/constants";
+import { localizedError } from "./validation_message.helper";
 
 /**
  * express-validator chains for the /remitters surface — mirror of
  * validators/senders/senderValidators.ts.
  */
 
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 /**
  * GET /remitters/get-form-fields (mirror of

@@ -8,14 +8,8 @@ import {
     QUOTE_TYPE_REVERSE,
     USER_TYPE_MAP,
 } from "../utils/constants";
+import { localizedError } from "./validation_message.helper";
 
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 /**
  * express-validator chain for POST /quotes/store (body) and

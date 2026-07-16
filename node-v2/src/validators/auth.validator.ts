@@ -1,17 +1,7 @@
 import { body, ValidationChain } from "express-validator";
 import { USER_TYPE_BUSINESS, USER_TYPE_PENDING } from "../utils/constants";
+import { localizedError } from "./validation_message.helper";
 
-/**
- * Localized error factory used by every rule. Returns the `{msg, code}`
- * shape that our checkValidationErrors middleware understands.
- */
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 const emailRule = () =>
     body("email")

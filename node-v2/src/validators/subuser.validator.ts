@@ -1,19 +1,13 @@
 import { body, query, ValidationChain } from "express-validator";
 import { isDisposableEmail } from "../utils/common.utils";
 import { PASSWORD_REGEX, USER_TITLES } from "../utils/constants";
+import { localizedError } from "./validation_message.helper";
 
 /**
  * express-validator chains for the /subusers surface — mirror of
  * validators/subuser/subuserValidators.ts.
  */
 
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 const NAME_REGEX = /^[A-Za-z\s]+$/;
 

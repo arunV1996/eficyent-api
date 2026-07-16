@@ -4,19 +4,13 @@ import {
     DEPOSIT_SOURCE_OF_FUNDS,
     DEPOSIT_TYPE_MAP,
 } from "../utils/constants";
+import { localizedError } from "./validation_message.helper";
 
 /**
  * express-validator chains for the /deposits surface — mirror of
  * validators/deposits/depositValidators.ts.
  */
 
-const localizedError = (localeKey: string, code: number) => {
-    return (_: unknown, meta: { req: unknown }) => {
-        const request = meta.req as { __?: (key: string) => string };
-        const message = request.__ ? request.__(localeKey) : localeKey;
-        return { msg: message, code };
-    };
-};
 
 const DOCUMENT_INPUT_MESSAGE =
     "Must be an HTTPS URL or a base64 image/PDF data URL.";
