@@ -1,22 +1,30 @@
 import { Request } from "express";
 
+interface MulterFile {
+    fieldname: string;
+    buffer?: Buffer;
+}
+
 /**
  * Pulls uploaded file bytes off a request for the bulk-import
- * endpoints. The file arrives either as a multipart `file` field
- * (parsed by a route-level multer onto req.file) or as a base64 data:
- * URL / raw base64 string on req.body.file — mirror of the legacy
- * extractUploadedFileBuffer.
+ * endpoints (mirror of the legacy extractUploadedFileBuffer). The file
+ * arrives either:
+ *   - as a multipart part parsed by the global formDataHandler
+ *     (multer().any()) onto req.files — matched by field name, falling
+ *     back to the first file; or
+ *   - as a base64 data: URL / raw base64 string on req.body[field].
  */
-export const extractUploadedFileBuffer = (req: Request): Buffer | null => {
-    const multerFile = (req as Request & { file?: { buffer?: Buffer } }).file;
-    if (multerFile?.buffer && multerFile.buffer.length > 0) {
-        return multerFile.buffer;
-    }
-    const bodyFile = (req.body as { file?: unknown }).file;
-    if (typeof bodyFile === "string" && bodyFile.length > 0) {
-        const base64 = bodyFile.startsWith("data:")
-            ? (bodyFile.split(",", 2)[1] ?? "")
-            : bodyFile;
+export const extractUploadedFileBuffer = (
+    req: Request,
+    fieldName = "file",
+): Buffer | null => {
+    const bodyValue = (req.body as Record<string, unknown> | undefined)?.[
+        fieldName
+    ];
+    if (typeof bodyValue === "string" && bodyValue.length > 0) {
+        const base64 = bodyValue.startsWith("data:")
+            ? (bodyValue.split(",", 2)[1] ?? "")
+            : bodyValue;
         if (base64) {
             try {
                 return Buffer.from(base64, "base64");
@@ -25,5 +33,29 @@ export const extractUploadedFileBuffer = (req: Request): Buffer | null => {
             }
         }
     }
+
+    const filesUnknown = (req as Request & { files?: unknown }).files;
+    if (
+        filesUnknown &&
+        (Array.isArray(filesUnknown) || typeof filesUnknown === "object")
+    ) {
+        const fileList: MulterFile[] = Array.isArray(filesUnknown)
+            ? (filesUnknown as MulterFile[])
+            : Object.values(
+                  filesUnknown as Record<string, MulterFile[]>,
+              ).flat();
+        const match =
+            fileList.find((file) => file.fieldname === fieldName) ??
+            fileList[0];
+        if (match?.buffer && match.buffer.length > 0) {
+            return match.buffer;
+        }
+    }
+
+    const singleFile = (req as Request & { file?: MulterFile }).file;
+    if (singleFile?.buffer && singleFile.buffer.length > 0) {
+        return singleFile.buffer;
+    }
+
     return null;
 };

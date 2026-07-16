@@ -7,6 +7,7 @@ import hpp from "hpp";
 import i18n from "i18n";
 import path from "path";
 import sequelize from "./config/database";
+import { formDataHandler } from "./middleware/form_data";
 import { loadLocales } from "./middleware/locales";
 import { responseHelpers } from "./middleware/responseHelpers";
 import "./models/beneficiary_account.model";
@@ -170,6 +171,10 @@ app.use(
     }),
 );
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+// Parse multipart/form-data bodies globally (mirror of the legacy
+// app.use(multer().any())) — fields land on req.body, files on
+// req.files, so every endpoint accepts form-data like raw JSON.
+app.use(formDataHandler);
 app.use(hpp());
 
 const apiRateLimiter = rateLimit({

@@ -1,5 +1,4 @@
 import { Router } from "express";
-import multer from "multer";
 import {
     bulkStore as beneficiaryBulkStore,
     bulkTemplate as beneficiaryBulkTemplate,
@@ -211,9 +210,6 @@ import {
  * business mounts that reuse the user controllers (authTeam sets
  * req.user to the parent business user; req.teamMember drives the
  * corporate scoping and the maker/checker gates).
- *
- * Deferred with their user-side twins: the export/download PDF
- * endpoints.
  */
 
 // Mounted at "/" — paths carry their own /corporate + /team prefixes.
@@ -288,8 +284,6 @@ teamPublicRouter.post(
 // sits in front of the password-reset gate like the Laravel grouping.
 export const teamAuthedRouter = Router();
 
-// Route-level multipart parsing for the team bulk-store upload only.
-const teamBulkUpload = multer({ storage: multer.memoryStorage() });
 
 teamAuthedRouter.get(
     "/get-credentials",
@@ -453,7 +447,6 @@ teamAuthedRouter.get(
 );
 teamAuthedRouter.post(
     "/beneficiaries/bulk/store",
-    teamBulkUpload.single("file"),
     beneficiaryBulkStore,
 );
 
@@ -492,7 +485,6 @@ teamAuthedRouter.delete(
 teamAuthedRouter.get("/remitters/bulk/template", senderBulkTemplate);
 teamAuthedRouter.post(
     "/remitters/bulk/store",
-    teamBulkUpload.single("file"),
     senderBulkStore,
 );
 
@@ -601,7 +593,6 @@ teamAuthedRouter.get(
 );
 teamAuthedRouter.post(
     "/beneficiary-transactions/bulk/store",
-    teamBulkUpload.single("file"),
     transactionBulkStore,
 );
 

@@ -1,5 +1,4 @@
 import { Router } from "express";
-import multer from "multer";
 import {
     bulkStore,
     bulkTemplate,
@@ -14,8 +13,6 @@ import { beneficiaryApiRoutes } from "../utils/api.routes";
 
 const router = Router();
 
-// Route-level multipart parsing for the bulk-store upload only.
-const bulkUpload = multer({ storage: multer.memoryStorage() });
 
 router.get(
     beneficiaryApiRoutes.GET_FORM_FIELDS.path,
@@ -62,7 +59,6 @@ router.get(
 router.post(
     beneficiaryApiRoutes.BULK_STORE.path,
     ...beneficiaryApiRoutes.BULK_STORE.middleware,
-    bulkUpload.single("file"),
     bulkStore,
 );
 
