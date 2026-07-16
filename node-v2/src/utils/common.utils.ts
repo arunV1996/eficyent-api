@@ -31,11 +31,15 @@ import {
 /**
  * Standard Bcrypt password hashing (10 rounds) — matches Laravel's
  * default and the legacy /node passwordService, so hashes written by
- * any of the three services verify on all of them.
+ * any of the three services verify on all of them. The prefix is
+ * rewritten to Laravel's $2y$ variant: Laravel's BcryptHasher rejects
+ * $2a$/$2b$ hashes with "This password does not use the Bcrypt
+ * algorithm", while bcryptjs verifies $2y$ fine after normalization.
  */
 export const hashPassword = async (password: string): Promise<string> => {
     const salt = await bcrypt.genSalt(10);
-    return bcrypt.hash(password, salt);
+    const hash = await bcrypt.hash(password, salt);
+    return hash.replace(/^\$2[ab]\$/, "$2y$");
 };
 
 /**

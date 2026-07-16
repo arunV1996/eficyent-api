@@ -9,10 +9,15 @@ import bcrypt from "bcryptjs";
 export const passwordService = {
   /**
    * Hashes a plaintext password using standard Bcrypt with 10 rounds.
+   * The prefix is rewritten to Laravel's $2y$ variant: Laravel's
+   * BcryptHasher rejects $2a$/$2b$ hashes with "This password does not
+   * use the Bcrypt algorithm", while verify() below normalizes $2y$
+   * back to $2a$ for bcryptjs.
    */
   async hash(plain: string): Promise<string> {
     const salt = await bcrypt.genSalt(10);
-    return bcrypt.hash(plain, salt);
+    const hash = await bcrypt.hash(plain, salt);
+    return hash.replace(/^\$2[ab]\$/, "$2y$");
   },
 
   /**
