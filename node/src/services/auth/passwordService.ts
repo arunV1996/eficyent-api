@@ -32,13 +32,21 @@ export const passwordService = {
   },
 
   /**
-   * Verify and return status. Never upgrades or rehashes to Argon.
+   * Verify + upgrade (mirror of Laravel's login-time Hash::needsRehash
+   * pattern). On a successful verify against a non-$2y$ hash (rows
+   * written before the prefix fix carry $2a$/$2b$), `rehash` returns a
+   * fresh $2y$ hash for the login flow to persist — so existing users
+   * converge to the Laravel-compatible format on their next login.
+   * Never upgrades to Argon.
    */
   async verifyAndUpgrade(
     hash: string,
     plain: string,
   ): Promise<{ valid: boolean; rehash?: string }> {
     const valid = await this.verify(hash, plain);
+    if (valid && !hash.startsWith("$2y$")) {
+      return { valid, rehash: await this.hash(plain) };
+    }
     return { valid };
   },
 };

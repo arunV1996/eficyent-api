@@ -63,16 +63,21 @@ export const comparePassword = async (
 };
 
 /**
- * Verify + optional upgrade (mirror of the legacy
- * passwordService.verifyAndUpgrade). When the hashing configuration is
- * upgraded in the future, `rehash` carries the new hash for the caller
- * to persist; today it never rehashes — identical to legacy.
+ * Verify + upgrade (mirror of Laravel's login-time Hash::needsRehash
+ * pattern). On a successful verify against a hash that is not in
+ * Laravel's $2y$ format (rows written by bcryptjs before the prefix
+ * fix carry $2a$/$2b$), `rehash` returns a fresh $2y$ hash for the
+ * caller to persist — so existing users converge to the
+ * Laravel-compatible format transparently on their next login.
  */
 export const verifyAndUpgradePassword = async (
     storedHash: string,
     password: string,
 ): Promise<{ valid: boolean; rehash?: string }> => {
     const valid = await comparePassword(password, storedHash);
+    if (valid && !storedHash.startsWith("$2y$")) {
+        return { valid, rehash: await hashPassword(password) };
+    }
     return { valid };
 };
 
