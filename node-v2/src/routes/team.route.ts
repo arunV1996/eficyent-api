@@ -14,6 +14,7 @@ import {
     checkTransactionStatus,
     direct as transactionDirect,
     downloadList as transactionDownloadList,
+    exportReceipt as transactionExportReceipt,
     getFormFields as transactionGetFormFields,
     getProof,
     index as transactionIndex,
@@ -562,6 +563,12 @@ teamAuthedRouter.post(
     ...sendMoneyDirectBodyValidator,
     checkValidationErrors,
     transactionDirect,
+);
+teamAuthedRouter.get(
+    "/beneficiary-transactions/export",
+    ...transactionShowQueryValidator,
+    checkValidationErrors,
+    transactionExportReceipt,
 );
 // No validator — mirror of the legacy team mount.
 teamAuthedRouter.get(

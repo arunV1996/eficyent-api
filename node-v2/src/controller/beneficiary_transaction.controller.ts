@@ -25,6 +25,7 @@ import {
     createPayoutTransaction,
     isRemitterDepositEnabled,
 } from "../helpers/payout_transaction.helper";
+import { findValueByKey } from "../helpers/lookup.helper";
 import { validateAndNormalizeSender } from "../helpers/sender_normalizer.helper";
 import { teamMemberContext } from "../helpers/team_context.helper";
 import { Dispatch } from "../jobs";
@@ -52,6 +53,7 @@ import Quote from "../models/quote.model";
 import Sender from "../models/sender.model";
 import TeamMember from "../models/team_member.model";
 import User from "../models/user.model";
+import UserInformation from "../models/user_information.model";
 import VirtualAccount from "../models/virtual_account.model";
 import Wallet from "../models/wallet.model";
 import {
@@ -79,6 +81,7 @@ import {
     PAYOUT_JOB_STATUS_FAILED,
     PAYOUT_JOB_STATUS_PENDING,
     TAKE_COUNT,
+    USER_TYPE_BUSINESS,
 } from "../utils/constants";
 import Decimal from "decimal.js";
 
@@ -92,9 +95,6 @@ const USER_DOCUMENT_FILE_PATH = "user_documents";
  *
  * The public /retry-job and /check_external_service_status routes live
  * at the /user mount (no auth — mirror of Laravel).
- *
- * Deferred (documented per endpoint below where relevant):
- *   - /export (single-transaction PDF receipt)
  *
  * Team tokens (authTeam) flow through unchanged: req.teamMember is
  * threaded into the creator context, list scoping and the resource
@@ -1655,6 +1655,124 @@ export const downloadList = async (
         return res.sendResponse(
             { url: signedUrl },
             "Bulk export generated.",
+            200,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * GET /api/user/beneficiary-transactions/export — single-transaction
+ * PDF receipt, uploaded to S3 with a signed temporary URL in the
+ * response. Mirror of the legacy payoutController.export
+ * (BeneficiaryTransactionRepository::downloadReceipt): the transaction
+ * resolves by any public identifier, the receipt renders through the
+ * invoice.ejs template and prints to A4 via puppeteer.
+ */
+export const exportReceipt = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const query = req.query as Record<string, string | undefined>;
+        const transaction = await findTransactionByAnyId(req.user.id, {
+            beneficiary_transaction_id: query.beneficiary_transaction_id,
+            txn_ref_no: query.txn_ref_no,
+            client_reference_id: query.client_reference_id,
+        });
+        if (!transaction) {
+            return res.sendError("Transaction not found.", 124, 400);
+        }
+
+        const sender = transaction.senders ?? null;
+        const userInfo = await UserInformation.findOne({
+            where: { userId: req.user.id },
+        });
+
+        // Sender identity: the sender row when present, else the
+        // merchant/business name, else the user's own name.
+        let senderName = "";
+        if (sender) {
+            senderName =
+                `${sender.firstName ?? ""} ${sender.lastName ?? ""}`.trim();
+        } else {
+            let resolvedBusinessName = "";
+            if (req.user.merchantId) {
+                const merchant = await Merchant.findByPk(req.user.merchantId);
+                if (merchant?.name) {
+                    resolvedBusinessName = merchant.name;
+                }
+            }
+            if (
+                !resolvedBusinessName &&
+                Number(req.user.userType) === USER_TYPE_BUSINESS
+            ) {
+                resolvedBusinessName = userInfo?.businessName ?? "";
+            }
+            senderName =
+                resolvedBusinessName ||
+                `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim();
+        }
+
+        const beneficiaryAccount = transaction.beneficiaryAccount;
+        const detail = beneficiaryAccount?.additionalDetails?.[0] ?? null;
+
+        // Remarks fall back to the human label of the beneficiary's
+        // purpose-of-transaction lookup.
+        let finalRemarks = transaction.remarks ?? "";
+        if (!finalRemarks && detail?.purposeOfTransaction) {
+            finalRemarks =
+                (await findValueByKey(detail.purposeOfTransaction)) ?? "";
+        }
+
+        const statusLabel = beneficiaryTransactionStatusLabel(
+            transaction.status,
+        );
+
+        const html = await renderViewTemplate("invoice/invoice.ejs", {
+            invoice_details: {
+                unique_id: transaction.uniqueId,
+                created_at: formatDateHuman(transaction.createdAt),
+                txn_ref_no: transaction.txnRefNo ?? "",
+                utr_no: transaction.externalReferenceId ?? "",
+                sender_name: senderName,
+                sender_address: sender?.address1 ?? userInfo?.address1 ?? "",
+                sender_city: sender?.city ?? userInfo?.city ?? "",
+                sender_state: sender?.state ?? userInfo?.state ?? "",
+                sender_country: sender?.country ?? userInfo?.country ?? "",
+                sender_postal_code:
+                    sender?.postalCode ?? userInfo?.postalCode ?? "",
+                beneficiary_name:
+                    beneficiaryAccount?.businessName ||
+                    `${beneficiaryAccount?.firstName ?? ""} ${beneficiaryAccount?.lastName ?? ""}`.trim() ||
+                    "",
+                account_number: beneficiaryAccount?.accountNumber ?? "",
+                bank_name: beneficiaryAccount?.bankName ?? "",
+                bank_code: beneficiaryAccount?.swiftCode ?? "",
+                routing_number: beneficiaryAccount?.routingNumber ?? "",
+                currency: transaction.receivingCurrency ?? "",
+                amount: transaction.recipientAmount
+                    ? String(transaction.recipientAmount)
+                    : "",
+                remarks: finalRemarks,
+                purpose: transaction.purposeOfPayment ?? "",
+                status: statusLabel,
+            },
+        });
+        const buffer = await renderPdfFromHtml(html);
+
+        const key = await upload(
+            { buffer, contentType: "application/pdf", extension: "pdf" },
+            "exports/transaction-receipts",
+        );
+        const signedUrl = await temporaryUrl(key);
+        return res.sendResponse(
+            { url: signedUrl },
+            "Transaction receipt generated.",
             200,
         );
     } catch (error) {

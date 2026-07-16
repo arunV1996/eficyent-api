@@ -470,6 +470,15 @@ export const beneficiaryTransactionApiRoutes = {
         path: "/download",
         middleware: [...transactionBaseMiddleware],
     },
+    EXPORT: {
+        // Same query validator as /show (legacy parity).
+        path: "/export",
+        middleware: [
+            ...transactionBaseMiddleware,
+            transactionShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
 };
 
 // Shared stack for the wallets group (mirror of the legacy
