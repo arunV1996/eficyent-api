@@ -9,6 +9,11 @@ import path from "path";
 import sequelize from "./config/database";
 import { formDataHandler } from "./middleware/form_data";
 import { loadLocales } from "./middleware/locales";
+import {
+    fileRequestLogger,
+    responseBodyCapture,
+    terminalRequestLogger,
+} from "./middleware/request_logger";
 import { responseHelpers } from "./middleware/responseHelpers";
 import "./models/beneficiary_account.model";
 import "./models/beneficiary_account_validation.model";
@@ -176,6 +181,14 @@ app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 // req.files, so every endpoint accepts form-data like raw JSON.
 app.use(formDataHandler);
 app.use(hpp());
+
+// Request/response logging — after the body parsers (req.body is
+// populated) and before the routes. The capture middleware retains the
+// outgoing body; morgan emits on response finish, so the authenticated
+// user's email is available to the file logger by then.
+app.use(responseBodyCapture);
+app.use(terminalRequestLogger);
+app.use(fileRequestLogger);
 
 const apiRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,

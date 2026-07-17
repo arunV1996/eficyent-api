@@ -9,13 +9,14 @@ const databaseUser = process.env.DB_USERNAME || process.env.DB_USER || "root";
 const databasePassword = process.env.DB_PASSWORD || process.env.DB_PASS || "";
 const databaseName = process.env.DB_DATABASE || process.env.DB_NAME || "eficyent";
 const databaseDialect = (process.env.DB_DIALECT as Dialect | undefined) || "mysql";
-const isProduction = process.env.NODE_ENV === "production";
 
 const sequelize = new Sequelize(databaseName, databaseUser, databasePassword, {
     host: databaseHost,
     port: databasePort,
     dialect: databaseDialect,
-    logging: isProduction ? false : console.log,
+    // SQL queries are never printed to the terminal — request-level
+    // logging is handled by the morgan pipeline in middleware/request_logger.
+    logging: false,
     timezone: "+00:00",
     pool: {
         max: 10,
