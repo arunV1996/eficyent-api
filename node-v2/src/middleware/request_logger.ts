@@ -13,12 +13,13 @@ import { createStream } from "rotating-file-stream";
  *     old Sequelize query spam, which is now disabled).
  *   - fileRequestLogger additionally records the caller's email and the
  *     response body, and writes one JSON line per request to a daily
- *     log file (logs/YYYY-MM-DD.log) at the project root, outside src/.
+ *     log file (logs/daily_logs/YYYY-MM-DD.log) at the project root,
+ *     outside src/.
  */
 
 // __dirname is src/middleware (ts-node) or dist/middleware (build), so
 // two levels up lands on the project root in both cases.
-const logsDirectory = path.join(__dirname, "..", "..", "logs");
+const logsDirectory = path.join(__dirname, "..", "..", "logs", "daily_logs");
 fs.mkdirSync(logsDirectory, { recursive: true });
 
 const formatLogDate = (value: Date): string => {
