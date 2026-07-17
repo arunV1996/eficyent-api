@@ -78,74 +78,6 @@ import { index as walletIndex,
     showTransaction as walletShowTransaction,
     transactions as walletTransactions,
 } from "../controller/wallet.controller";
-import { idempotency } from "../middleware/idempotency";
-import {
-    beneficiaryFormFieldsQueryValidator,
-    beneficiaryListQueryValidator,
-    beneficiaryShowQueryValidator,
-} from "../validators/beneficiary_account.validator";
-import {
-    DIRECT_ALLOWED_KEYS,
-    payoutFormFieldsQueryValidator,
-    PROOF_REQUEST_ALLOWED_KEYS,
-    proofGetQueryValidator,
-    proofRequestBodyValidator,
-    sendMoneyDirectBodyValidator,
-    TRANSACTION_CANCEL_ALLOWED_KEYS,
-    TRANSACTION_STORE_ALLOWED_KEYS,
-    TRANSACTION_UPDATE_STATUS_ALLOWED_KEYS,
-    transactionCancelBodyValidator,
-    transactionListQueryValidator,
-    transactionShowQueryValidator,
-    transactionStoreBodyValidator,
-    transactionUpdateStatusBodyValidator,
-} from "../validators/beneficiary_transaction.validator";
-import {
-    dashboardChartsDataQueryValidator,
-    dashboardStatisticsQueryValidator,
-} from "../validators/dashboard.validator";
-import {
-    DEPOSIT_STORE_ALLOWED_KEYS,
-    depositListQueryValidator,
-    depositQuoteQueryValidator,
-    depositShowQueryValidator,
-    depositStoreBodyValidator,
-} from "../validators/deposit.validator";
-import {
-    ledgerListQueryValidator,
-    ledgerShowQueryValidator,
-} from "../validators/ledger.validator";
-import { receivingCountriesQueryValidator } from "../validators/lookup.validator";
-import {
-    quoteStoreCrossFieldRules,
-    quoteStoreValidator,
-    refreshRatesBodyValidator,
-} from "../validators/quote.validator";
-import {
-    senderFormFieldsQueryValidator,
-    senderListQueryValidator,
-    senderShowQueryValidator,
-    senderUpdateBodyValidator,
-} from "../validators/sender.validator";
-import { statementExportQueryValidator } from "../validators/statement.validator";
-import {
-    ACTIVATE_ALLOWED_KEYS,
-    activateBodyValidator,
-    virtualAccountIdQueryValidator,
-    virtualAccountListQueryValidator,
-} from "../validators/virtual_account.validator";
-import {
-    WALLET_CONVERT_ALLOWED_KEYS,
-    walletConvertBodyValidator,
-    walletListQueryValidator,
-    walletShowQueryValidator,
-    walletTransactionShowQueryValidator,
-    walletTransactionsQueryValidator,
-} from "../validators/wallet.validator";
-import {
-    QUOTE_MODE_QUOTATION,
-    QUOTE_MODE_RATE,
-} from "../utils/constants";
 import {
     corporateLogin,
     forceResetPassword,
@@ -169,185 +101,150 @@ import {
     getCredentials,
     profile,
 } from "../controller/team_profile.controller";
-import { checkValidationErrors } from "../middleware/checkValidationErrors";
-import { strictBody } from "../middleware/strictBody";
 import {
-    authTeam,
-    checkerAccess,
-    makerAccess,
-    ownerAccess,
-    teamPasswordResetGate,
-} from "../middleware/team_auth";
-import {
-    banksQueryValidator,
-    depositLookupsQueryValidator,
-    statesQueryValidator,
-} from "../validators/lookup.validator";
-import {
-    FORCE_RESET_ALLOWED_KEYS,
-    forceResetPasswordBodyValidator,
-    TEAM_CHANGE_PASSWORD_ALLOWED_KEYS,
-    TEAM_FORGOT_ALLOWED_KEYS,
-    TEAM_LOGIN_ALLOWED_KEYS,
-    TEAM_MEMBER_CREATE_ALLOWED_KEYS,
-    TEAM_MEMBER_UPDATE_ALLOWED_KEYS,
-    TEAM_RESET_PASSWORD_ALLOWED_KEYS,
-    TEAM_VERIFY_CODE_ALLOWED_KEYS,
-    teamChangePasswordBodyValidator,
-    teamForgotPasswordBodyValidator,
-    teamLoginBodyValidator,
-    teamMemberCreateBodyValidator,
-    teamMemberListQueryValidator,
-    teamMemberShowBodyValidator,
-    teamMemberShowQueryValidator,
-    teamMemberUpdateBodyValidator,
-    teamResetPasswordBodyValidator,
-    teamVerifyCodeBodyValidator,
-} from "../validators/team.validator";
+    QUOTE_MODE_QUOTATION,
+    QUOTE_MODE_RATE,
+} from "../utils/constants";
+import { teamApiRoutes, teamAuthApiRoutes } from "../utils/api.routes";
 
 /**
- * Mirror of routes/team_members.php (via the legacy team.routes.ts):
- * team auth + profile + Owner-only TeamMember CRUD, plus the shared
- * business mounts that reuse the user controllers (authTeam sets
- * req.user to the parent business user; req.teamMember drives the
- * corporate scoping and the maker/checker gates).
+ * Mirror of routes/team_members.php: team auth + profile + Owner-only
+ * TeamMember CRUD, plus the shared business mounts that reuse the user
+ * controllers (authTeam sets req.user to the parent business user;
+ * req.teamMember drives the corporate scoping and the maker/checker
+ * gates). Every path + middleware chain now lives in api.routes.ts
+ * (teamAuthApiRoutes for the public routes, teamApiRoutes for the
+ * authenticated ones); this file only binds the HTTP verb + handler.
  */
 
 // Mounted at "/" — paths carry their own /corporate + /team prefixes.
 export const teamPublicRouter = Router();
 
 teamPublicRouter.post(
-    "/corporate/login",
-    strictBody(TEAM_LOGIN_ALLOWED_KEYS),
-    ...teamLoginBodyValidator,
-    checkValidationErrors,
+    teamAuthApiRoutes.CORPORATE_LOGIN.path,
+    ...teamAuthApiRoutes.CORPORATE_LOGIN.middleware,
     corporateLogin,
 );
-
 teamPublicRouter.post(
-    "/team/login",
-    strictBody(TEAM_LOGIN_ALLOWED_KEYS),
-    ...teamLoginBodyValidator,
-    checkValidationErrors,
+    teamAuthApiRoutes.TEAM_LOGIN.path,
+    ...teamAuthApiRoutes.TEAM_LOGIN.middleware,
     login,
 );
-
 teamPublicRouter.post(
-    "/team/force-reset-password",
-    strictBody(FORCE_RESET_ALLOWED_KEYS),
-    ...forceResetPasswordBodyValidator,
-    checkValidationErrors,
+    teamAuthApiRoutes.FORCE_RESET_PASSWORD.path,
+    ...teamAuthApiRoutes.FORCE_RESET_PASSWORD.middleware,
     forceResetPassword,
 );
 
-teamPublicRouter.get("/team/get_settings", getAppSettings);
-
-teamPublicRouter.get("/team/lookups/mobile_country_codes", mobileCountryCodes);
-teamPublicRouter.get("/team/lookups/countries", countries);
 teamPublicRouter.get(
-    "/team/lookups/states",
-    ...statesQueryValidator,
-    checkValidationErrors,
+    teamAuthApiRoutes.GET_SETTINGS.path,
+    ...teamAuthApiRoutes.GET_SETTINGS.middleware,
+    getAppSettings,
+);
+
+teamPublicRouter.get(
+    teamAuthApiRoutes.LOOKUP_MOBILE_COUNTRY_CODES.path,
+    ...teamAuthApiRoutes.LOOKUP_MOBILE_COUNTRY_CODES.middleware,
+    mobileCountryCodes,
+);
+teamPublicRouter.get(
+    teamAuthApiRoutes.LOOKUP_COUNTRIES.path,
+    ...teamAuthApiRoutes.LOOKUP_COUNTRIES.middleware,
+    countries,
+);
+teamPublicRouter.get(
+    teamAuthApiRoutes.LOOKUP_STATES.path,
+    ...teamAuthApiRoutes.LOOKUP_STATES.middleware,
     states,
 );
-teamPublicRouter.get("/team/lookups/payment_rails", paymentRails);
 teamPublicRouter.get(
-    "/team/lookups/deposit_lookups",
-    ...depositLookupsQueryValidator,
-    checkValidationErrors,
+    teamAuthApiRoutes.LOOKUP_PAYMENT_RAILS.path,
+    ...teamAuthApiRoutes.LOOKUP_PAYMENT_RAILS.middleware,
+    paymentRails,
+);
+teamPublicRouter.get(
+    teamAuthApiRoutes.LOOKUP_DEPOSIT_LOOKUPS.path,
+    ...teamAuthApiRoutes.LOOKUP_DEPOSIT_LOOKUPS.middleware,
     depositLookups,
 );
-teamPublicRouter.get("/team/lookups/deposit_wallets", depositWallets);
+teamPublicRouter.get(
+    teamAuthApiRoutes.LOOKUP_DEPOSIT_WALLETS.path,
+    ...teamAuthApiRoutes.LOOKUP_DEPOSIT_WALLETS.middleware,
+    depositWallets,
+);
 
 teamPublicRouter.post(
-    "/team/forgot-password/send-reset-link",
-    strictBody(TEAM_FORGOT_ALLOWED_KEYS),
-    ...teamForgotPasswordBodyValidator,
-    checkValidationErrors,
+    teamAuthApiRoutes.FORGOT_SEND_RESET_LINK.path,
+    ...teamAuthApiRoutes.FORGOT_SEND_RESET_LINK.middleware,
     sendResetLink,
 );
 teamPublicRouter.post(
-    "/team/forgot-password/verify-code",
-    strictBody(TEAM_VERIFY_CODE_ALLOWED_KEYS),
-    ...teamVerifyCodeBodyValidator,
-    checkValidationErrors,
+    teamAuthApiRoutes.FORGOT_VERIFY_CODE.path,
+    ...teamAuthApiRoutes.FORGOT_VERIFY_CODE.middleware,
     verifyCode,
 );
 teamPublicRouter.post(
-    "/team/forgot-password/reset-password",
-    strictBody(TEAM_RESET_PASSWORD_ALLOWED_KEYS),
-    ...teamResetPasswordBodyValidator,
-    checkValidationErrors,
+    teamAuthApiRoutes.FORGOT_RESET_PASSWORD.path,
+    ...teamAuthApiRoutes.FORGOT_RESET_PASSWORD.middleware,
     resetPassword,
 );
 
-// Mounted at "/team" — everything requires team auth; get-credentials
-// sits in front of the password-reset gate like the Laravel grouping.
+// Mounted at "/team" — every route carries the shared team auth stack in
+// its middleware chain; get-credentials stays registered first, matching
+// the Laravel grouping where it sits in front of the password-reset gate.
 export const teamAuthedRouter = Router();
 
-
 teamAuthedRouter.get(
-    "/get-credentials",
-    authTeam,
-    teamPasswordResetGate,
+    teamApiRoutes.GET_CREDENTIALS.path,
+    ...teamApiRoutes.GET_CREDENTIALS.middleware,
     getCredentials,
 );
 
-teamAuthedRouter.use(authTeam, teamPasswordResetGate);
-
-teamAuthedRouter.post("/logout", logout);
-teamAuthedRouter.get("/profile", profile);
 teamAuthedRouter.post(
-    "/change-password",
-    strictBody(TEAM_CHANGE_PASSWORD_ALLOWED_KEYS),
-    ...teamChangePasswordBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.LOGOUT.path,
+    ...teamApiRoutes.LOGOUT.middleware,
+    logout,
+);
+teamAuthedRouter.get(
+    teamApiRoutes.PROFILE.path,
+    ...teamApiRoutes.PROFILE.middleware,
+    profile,
+);
+teamAuthedRouter.post(
+    teamApiRoutes.CHANGE_PASSWORD.path,
+    ...teamApiRoutes.CHANGE_PASSWORD.middleware,
     changePassword,
 );
 
 // Owner-only TeamMember CRUD.
 teamAuthedRouter.get(
-    "/team-members/list",
-    ownerAccess,
-    ...teamMemberListQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.TEAM_MEMBERS_LIST.path,
+    ...teamApiRoutes.TEAM_MEMBERS_LIST.middleware,
     teamMemberIndex,
 );
 teamAuthedRouter.post(
-    "/team-members/create",
-    ownerAccess,
-    strictBody(TEAM_MEMBER_CREATE_ALLOWED_KEYS),
-    ...teamMemberCreateBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.TEAM_MEMBERS_CREATE.path,
+    ...teamApiRoutes.TEAM_MEMBERS_CREATE.middleware,
     teamMemberStore,
 );
 teamAuthedRouter.get(
-    "/team-members/show",
-    ownerAccess,
-    ...teamMemberShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.TEAM_MEMBERS_SHOW.path,
+    ...teamApiRoutes.TEAM_MEMBERS_SHOW.middleware,
     teamMemberShow,
 );
 teamAuthedRouter.post(
-    "/team-members/update",
-    ownerAccess,
-    strictBody(TEAM_MEMBER_UPDATE_ALLOWED_KEYS),
-    ...teamMemberUpdateBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.TEAM_MEMBERS_UPDATE.path,
+    ...teamApiRoutes.TEAM_MEMBERS_UPDATE.middleware,
     teamMemberUpdate,
 );
 teamAuthedRouter.post(
-    "/team-members/update-status",
-    ownerAccess,
-    ...teamMemberShowBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.TEAM_MEMBERS_UPDATE_STATUS.path,
+    ...teamApiRoutes.TEAM_MEMBERS_UPDATE_STATUS.middleware,
     teamMemberUpdateStatus,
 );
 teamAuthedRouter.delete(
-    "/team-members/delete",
-    ownerAccess,
-    ...teamMemberShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.TEAM_MEMBERS_DELETE.path,
+    ...teamApiRoutes.TEAM_MEMBERS_DELETE.middleware,
     teamMemberDestroy,
 );
 
@@ -357,346 +254,307 @@ teamAuthedRouter.delete(
 
 // Virtual accounts
 teamAuthedRouter.get(
-    "/accounts/list",
-    ...virtualAccountListQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.ACCOUNTS_LIST.path,
+    ...teamApiRoutes.ACCOUNTS_LIST.middleware,
     virtualAccountIndex,
 );
 teamAuthedRouter.get(
-    "/accounts/show",
-    ...virtualAccountIdQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.ACCOUNTS_SHOW.path,
+    ...teamApiRoutes.ACCOUNTS_SHOW.middleware,
     virtualAccountShow,
 );
 teamAuthedRouter.get(
-    "/accounts/get_account_balance",
-    ...virtualAccountIdQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.ACCOUNTS_GET_BALANCE.path,
+    ...teamApiRoutes.ACCOUNTS_GET_BALANCE.middleware,
     virtualAccountGetBalance,
 );
 teamAuthedRouter.post(
-    "/accounts/activate",
-    strictBody(ACTIVATE_ALLOWED_KEYS),
-    ...activateBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.ACCOUNTS_ACTIVATE.path,
+    ...teamApiRoutes.ACCOUNTS_ACTIVATE.middleware,
     virtualAccountActivate,
 );
 teamAuthedRouter.get(
-    "/accounts/get_virtual_Accounts",
+    teamApiRoutes.ACCOUNTS_GET_VIRTUAL_ACCOUNTS.path,
+    ...teamApiRoutes.ACCOUNTS_GET_VIRTUAL_ACCOUNTS.middleware,
     getVirtualAccounts,
 );
 
 // Deposits
 teamAuthedRouter.get(
-    "/deposits/list",
-    ...depositListQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.DEPOSITS_LIST.path,
+    ...teamApiRoutes.DEPOSITS_LIST.middleware,
     depositIndex,
 );
 teamAuthedRouter.get(
-    "/deposits/quote",
-    ...depositQuoteQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.DEPOSITS_QUOTE.path,
+    ...teamApiRoutes.DEPOSITS_QUOTE.middleware,
     depositQuote,
 );
 teamAuthedRouter.post(
-    "/deposits/store",
-    idempotency(),
-    strictBody(DEPOSIT_STORE_ALLOWED_KEYS),
-    ...depositStoreBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.DEPOSITS_STORE.path,
+    ...teamApiRoutes.DEPOSITS_STORE.middleware,
     depositStore,
 );
 teamAuthedRouter.get(
-    "/deposits/show",
-    ...depositShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.DEPOSITS_SHOW.path,
+    ...teamApiRoutes.DEPOSITS_SHOW.middleware,
     depositShow,
 );
-// No validator — mirror of the legacy team mount.
-teamAuthedRouter.get("/deposits/export", depositExport);
+teamAuthedRouter.get(
+    teamApiRoutes.DEPOSITS_EXPORT.path,
+    ...teamApiRoutes.DEPOSITS_EXPORT.middleware,
+    depositExport,
+);
 
 // Beneficiary accounts
 teamAuthedRouter.get(
-    "/beneficiaries/get-form-fields",
-    ...beneficiaryFormFieldsQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARIES_GET_FORM_FIELDS.path,
+    ...teamApiRoutes.BENEFICIARIES_GET_FORM_FIELDS.middleware,
     beneficiaryGetFormFields,
 );
 teamAuthedRouter.get(
-    "/beneficiaries/list",
-    ...beneficiaryListQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARIES_LIST.path,
+    ...teamApiRoutes.BENEFICIARIES_LIST.middleware,
     beneficiaryIndex,
 );
-teamAuthedRouter.post("/beneficiaries/store", beneficiaryStore);
+teamAuthedRouter.post(
+    teamApiRoutes.BENEFICIARIES_STORE.path,
+    ...teamApiRoutes.BENEFICIARIES_STORE.middleware,
+    beneficiaryStore,
+);
 teamAuthedRouter.get(
-    "/beneficiaries/show",
-    ...beneficiaryShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARIES_SHOW.path,
+    ...teamApiRoutes.BENEFICIARIES_SHOW.middleware,
     beneficiaryShow,
 );
 teamAuthedRouter.delete(
-    "/beneficiaries/delete",
-    ...beneficiaryShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARIES_DELETE.path,
+    ...teamApiRoutes.BENEFICIARIES_DELETE.middleware,
     beneficiaryDestroy,
 );
 teamAuthedRouter.get(
-    "/beneficiaries/bulk/template",
+    teamApiRoutes.BENEFICIARIES_BULK_TEMPLATE.path,
+    ...teamApiRoutes.BENEFICIARIES_BULK_TEMPLATE.middleware,
     beneficiaryBulkTemplate,
 );
 teamAuthedRouter.post(
-    "/beneficiaries/bulk/store",
+    teamApiRoutes.BENEFICIARIES_BULK_STORE.path,
+    ...teamApiRoutes.BENEFICIARIES_BULK_STORE.middleware,
     beneficiaryBulkStore,
 );
 
-// Senders
+// Senders (remitters)
 teamAuthedRouter.get(
-    "/remitters/get-form-fields",
-    ...senderFormFieldsQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.REMITTERS_GET_FORM_FIELDS.path,
+    ...teamApiRoutes.REMITTERS_GET_FORM_FIELDS.middleware,
     senderGetFormFields,
 );
 teamAuthedRouter.get(
-    "/remitters/list",
-    ...senderListQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.REMITTERS_LIST.path,
+    ...teamApiRoutes.REMITTERS_LIST.middleware,
     senderIndex,
 );
-teamAuthedRouter.post("/remitters/store", senderStore);
 teamAuthedRouter.post(
-    "/remitters/update",
-    ...senderUpdateBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.REMITTERS_STORE.path,
+    ...teamApiRoutes.REMITTERS_STORE.middleware,
+    senderStore,
+);
+teamAuthedRouter.post(
+    teamApiRoutes.REMITTERS_UPDATE.path,
+    ...teamApiRoutes.REMITTERS_UPDATE.middleware,
     senderUpdate,
 );
 teamAuthedRouter.get(
-    "/remitters/show",
-    ...senderShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.REMITTERS_SHOW.path,
+    ...teamApiRoutes.REMITTERS_SHOW.middleware,
     senderShow,
 );
 teamAuthedRouter.delete(
-    "/remitters/delete",
-    ...senderShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.REMITTERS_DELETE.path,
+    ...teamApiRoutes.REMITTERS_DELETE.middleware,
     senderDestroy,
 );
-teamAuthedRouter.get("/remitters/bulk/template", senderBulkTemplate);
+teamAuthedRouter.get(
+    teamApiRoutes.REMITTERS_BULK_TEMPLATE.path,
+    ...teamApiRoutes.REMITTERS_BULK_TEMPLATE.middleware,
+    senderBulkTemplate,
+);
 teamAuthedRouter.post(
-    "/remitters/bulk/store",
+    teamApiRoutes.REMITTERS_BULK_STORE.path,
+    ...teamApiRoutes.REMITTERS_BULK_STORE.middleware,
     senderBulkStore,
 );
 
 // Quotes
 teamAuthedRouter.post(
-    "/quotes/store",
-    ...quoteStoreValidator,
-    checkValidationErrors,
-    quoteStoreCrossFieldRules,
+    teamApiRoutes.QUOTES_STORE.path,
+    ...teamApiRoutes.QUOTES_STORE.middleware,
     makeQuoteStore(QUOTE_MODE_QUOTATION),
 );
 teamAuthedRouter.get(
-    "/quotes/exchange-rate",
-    ...quoteStoreValidator,
-    checkValidationErrors,
-    quoteStoreCrossFieldRules,
+    teamApiRoutes.QUOTES_EXCHANGE_RATE.path,
+    ...teamApiRoutes.QUOTES_EXCHANGE_RATE.middleware,
     makeQuoteStore(QUOTE_MODE_RATE),
 );
 
 // Beneficiary transactions (the maker/checker dance)
 teamAuthedRouter.get(
-    "/beneficiary-transactions/list",
-    ...transactionListQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_LIST.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_LIST.middleware,
     transactionIndex,
 );
 teamAuthedRouter.post(
-    "/beneficiary-transactions/store",
-    makerAccess,
-    idempotency(),
-    strictBody(TRANSACTION_STORE_ALLOWED_KEYS),
-    ...transactionStoreBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_STORE.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_STORE.middleware,
     transactionStore,
 );
 teamAuthedRouter.get(
-    "/beneficiary-transactions/show",
-    ...transactionShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_SHOW.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_SHOW.middleware,
     transactionShow,
 );
 teamAuthedRouter.get(
-    "/beneficiary-transactions/check_transaction_status",
-    ...transactionShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_CHECK_TRANSACTION_STATUS.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_CHECK_TRANSACTION_STATUS.middleware,
     checkTransactionStatus,
 );
 teamAuthedRouter.post(
-    "/beneficiary-transactions/update-status",
-    checkerAccess,
-    idempotency(),
-    strictBody(TRANSACTION_UPDATE_STATUS_ALLOWED_KEYS),
-    ...transactionUpdateStatusBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_UPDATE_STATUS.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_UPDATE_STATUS.middleware,
     transactionUpdateStatus,
 );
 teamAuthedRouter.post(
-    "/beneficiary-transactions/cancel",
-    idempotency(),
-    strictBody(TRANSACTION_CANCEL_ALLOWED_KEYS),
-    ...transactionCancelBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_CANCEL.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_CANCEL.middleware,
     transactionCancel,
 );
 teamAuthedRouter.get(
-    "/beneficiary-transactions/get-form-fields",
-    ...payoutFormFieldsQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_GET_FORM_FIELDS.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_GET_FORM_FIELDS.middleware,
     transactionGetFormFields,
 );
 teamAuthedRouter.post(
-    "/beneficiary-transactions/direct",
-    idempotency(),
-    strictBody(DIRECT_ALLOWED_KEYS),
-    ...sendMoneyDirectBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_DIRECT.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_DIRECT.middleware,
     transactionDirect,
 );
 teamAuthedRouter.get(
-    "/beneficiary-transactions/export",
-    ...transactionShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_EXPORT.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_EXPORT.middleware,
     transactionExportReceipt,
 );
-// No validator — mirror of the legacy team mount.
 teamAuthedRouter.get(
-    "/beneficiary-transactions/download",
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_DOWNLOAD.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_DOWNLOAD.middleware,
     transactionDownloadList,
 );
 teamAuthedRouter.get(
-    "/beneficiary-transactions/transaction-form-fields",
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_TRANSACTION_FORM_FIELDS.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_TRANSACTION_FORM_FIELDS.middleware,
     transactionFormFields,
 );
 teamAuthedRouter.post(
-    "/beneficiary-transactions/request-proof",
-    strictBody(PROOF_REQUEST_ALLOWED_KEYS),
-    ...proofRequestBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_REQUEST_PROOF.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_REQUEST_PROOF.middleware,
     requestProof,
 );
 teamAuthedRouter.get(
-    "/beneficiary-transactions/get-proof",
-    ...proofGetQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_GET_PROOF.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_GET_PROOF.middleware,
     getProof,
 );
-// Bulk payout template/store — no maker gate (mirror of the legacy
-// team routes, which wrap only authTeam around these two).
 teamAuthedRouter.get(
-    "/beneficiary-transactions/bulk/template",
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_BULK_TEMPLATE.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_BULK_TEMPLATE.middleware,
     transactionPayoutTemplate,
 );
 teamAuthedRouter.post(
-    "/beneficiary-transactions/bulk/store",
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_BULK_STORE.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_BULK_STORE.middleware,
     transactionBulkStore,
 );
 
 // Ledgers
 teamAuthedRouter.get(
-    "/ledgers/list",
-    ...ledgerListQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.LEDGERS_LIST.path,
+    ...teamApiRoutes.LEDGERS_LIST.middleware,
     ledgerIndex,
 );
 teamAuthedRouter.get(
-    "/ledgers/show",
-    ...ledgerShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.LEDGERS_SHOW.path,
+    ...teamApiRoutes.LEDGERS_SHOW.middleware,
     ledgerShow,
 );
 teamAuthedRouter.get(
-    "/ledgers/export",
-    ...ledgerListQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.LEDGERS_EXPORT.path,
+    ...teamApiRoutes.LEDGERS_EXPORT.middleware,
     ledgerExport,
 );
 
 // Statements
 teamAuthedRouter.get(
-    "/statement/export",
-    ...statementExportQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.STATEMENT_EXPORT.path,
+    ...teamApiRoutes.STATEMENT_EXPORT.middleware,
     exportStatement,
 );
 
 // Authenticated lookups
 teamAuthedRouter.get(
-    "/lookups/receiving_countries",
-    ...receivingCountriesQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.LOOKUPS_RECEIVING_COUNTRIES.path,
+    ...teamApiRoutes.LOOKUPS_RECEIVING_COUNTRIES.middleware,
     receivingCountries,
 );
-teamAuthedRouter.get("/lookups/get-rates", getRates);
+teamAuthedRouter.get(
+    teamApiRoutes.LOOKUPS_GET_RATES.path,
+    ...teamApiRoutes.LOOKUPS_GET_RATES.middleware,
+    getRates,
+);
 teamAuthedRouter.post(
-    "/lookups/refresh-rates",
-    ...refreshRatesBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.LOOKUPS_REFRESH_RATES.path,
+    ...teamApiRoutes.LOOKUPS_REFRESH_RATES.middleware,
     refreshRates,
 );
 teamAuthedRouter.get(
-    "/lookups/banks",
-    ...banksQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.LOOKUPS_BANKS.path,
+    ...teamApiRoutes.LOOKUPS_BANKS.middleware,
     banks,
 );
 
 // Dashboard
 teamAuthedRouter.get(
-    "/dashboard/statistics",
-    ...dashboardStatisticsQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.DASHBOARD_STATISTICS.path,
+    ...teamApiRoutes.DASHBOARD_STATISTICS.middleware,
     teamStatistics,
 );
 teamAuthedRouter.get(
-    "/dashboard/charts-data",
-    ...dashboardChartsDataQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.DASHBOARD_CHARTS_DATA.path,
+    ...teamApiRoutes.DASHBOARD_CHARTS_DATA.middleware,
     teamChartsData,
 );
 
 // Wallets
 teamAuthedRouter.get(
-    "/wallets/list",
-    ...walletListQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.WALLETS_LIST.path,
+    ...teamApiRoutes.WALLETS_LIST.middleware,
     walletIndex,
 );
 teamAuthedRouter.get(
-    "/wallets/show",
-    ...walletShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.WALLETS_SHOW.path,
+    ...teamApiRoutes.WALLETS_SHOW.middleware,
     walletShow,
 );
 teamAuthedRouter.post(
-    "/wallets/convert",
-    ownerAccess,
-    idempotency(),
-    strictBody(WALLET_CONVERT_ALLOWED_KEYS),
-    ...walletConvertBodyValidator,
-    checkValidationErrors,
+    teamApiRoutes.WALLETS_CONVERT.path,
+    ...teamApiRoutes.WALLETS_CONVERT.middleware,
     walletConvert,
 );
 teamAuthedRouter.get(
-    "/wallets/transactions/list",
-    ...walletTransactionsQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.WALLETS_TRANSACTIONS_LIST.path,
+    ...teamApiRoutes.WALLETS_TRANSACTIONS_LIST.middleware,
     walletTransactions,
 );
 teamAuthedRouter.get(
-    "/wallets/transactions/show",
-    ...walletTransactionShowQueryValidator,
-    checkValidationErrors,
+    teamApiRoutes.WALLETS_TRANSACTIONS_SHOW.path,
+    ...teamApiRoutes.WALLETS_TRANSACTIONS_SHOW.middleware,
     walletShowTransaction,
 );

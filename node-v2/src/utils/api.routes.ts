@@ -6,6 +6,13 @@ import {
 } from "../middleware/auth";
 import { checkValidationErrors } from "../middleware/checkValidationErrors";
 import { appSignatureIfEnforced } from "../middleware/appSignature";
+import {
+    authTeam,
+    checkerAccess,
+    makerAccess,
+    ownerAccess,
+    teamPasswordResetGate,
+} from "../middleware/team_auth";
 import { fvbankWebhookSignature } from "../middleware/fvbank_webhook_signature";
 import { idempotency } from "../middleware/idempotency";
 import { strictBody } from "../middleware/strictBody";
@@ -113,6 +120,27 @@ import {
     UPDATE_PROFILE_ALLOWED_KEYS,
     updateProfileBodyValidator,
 } from "../validators/profile.validator";
+import {
+    FORCE_RESET_ALLOWED_KEYS,
+    forceResetPasswordBodyValidator,
+    TEAM_CHANGE_PASSWORD_ALLOWED_KEYS,
+    TEAM_FORGOT_ALLOWED_KEYS,
+    TEAM_LOGIN_ALLOWED_KEYS,
+    TEAM_MEMBER_CREATE_ALLOWED_KEYS,
+    TEAM_MEMBER_UPDATE_ALLOWED_KEYS,
+    TEAM_RESET_PASSWORD_ALLOWED_KEYS,
+    TEAM_VERIFY_CODE_ALLOWED_KEYS,
+    teamChangePasswordBodyValidator,
+    teamForgotPasswordBodyValidator,
+    teamLoginBodyValidator,
+    teamMemberCreateBodyValidator,
+    teamMemberListQueryValidator,
+    teamMemberShowBodyValidator,
+    teamMemberShowQueryValidator,
+    teamMemberUpdateBodyValidator,
+    teamResetPasswordBodyValidator,
+    teamVerifyCodeBodyValidator,
+} from "../validators/team.validator";
 
 /**
  * Central registry of every route's path + middleware chain.
@@ -1001,6 +1029,630 @@ export const quoteApiRoutes = {
             quoteStoreValidator,
             checkValidationErrors,
             quoteStoreCrossFieldRules,
+        ],
+    },
+};
+
+/**
+ * Team (corporate) public routes — mounted at "/" so each path carries
+ * its own /corporate or /team prefix. No auth: these are the login,
+ * force-reset, public lookup and forgot-password endpoints. Mirror of
+ * the pre-refactor teamPublicRouter in routes/team.route.ts.
+ */
+export const teamAuthApiRoutes = {
+    CORPORATE_LOGIN: {
+        path: "/corporate/login",
+        middleware: [
+            strictBody(TEAM_LOGIN_ALLOWED_KEYS),
+            teamLoginBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    TEAM_LOGIN: {
+        path: "/team/login",
+        middleware: [
+            strictBody(TEAM_LOGIN_ALLOWED_KEYS),
+            teamLoginBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    FORCE_RESET_PASSWORD: {
+        path: "/team/force-reset-password",
+        middleware: [
+            strictBody(FORCE_RESET_ALLOWED_KEYS),
+            forceResetPasswordBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    GET_SETTINGS: {
+        path: "/team/get_settings",
+        middleware: [],
+    },
+    LOOKUP_MOBILE_COUNTRY_CODES: {
+        path: "/team/lookups/mobile_country_codes",
+        middleware: [],
+    },
+    LOOKUP_COUNTRIES: {
+        path: "/team/lookups/countries",
+        middleware: [],
+    },
+    LOOKUP_STATES: {
+        path: "/team/lookups/states",
+        middleware: [statesQueryValidator, checkValidationErrors],
+    },
+    LOOKUP_PAYMENT_RAILS: {
+        path: "/team/lookups/payment_rails",
+        middleware: [],
+    },
+    LOOKUP_DEPOSIT_LOOKUPS: {
+        path: "/team/lookups/deposit_lookups",
+        middleware: [depositLookupsQueryValidator, checkValidationErrors],
+    },
+    LOOKUP_DEPOSIT_WALLETS: {
+        path: "/team/lookups/deposit_wallets",
+        middleware: [],
+    },
+    FORGOT_SEND_RESET_LINK: {
+        path: "/team/forgot-password/send-reset-link",
+        middleware: [
+            strictBody(TEAM_FORGOT_ALLOWED_KEYS),
+            teamForgotPasswordBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    FORGOT_VERIFY_CODE: {
+        path: "/team/forgot-password/verify-code",
+        middleware: [
+            strictBody(TEAM_VERIFY_CODE_ALLOWED_KEYS),
+            teamVerifyCodeBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    FORGOT_RESET_PASSWORD: {
+        path: "/team/forgot-password/reset-password",
+        middleware: [
+            strictBody(TEAM_RESET_PASSWORD_ALLOWED_KEYS),
+            teamResetPasswordBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+};
+
+/**
+ * Shared stack for every authenticated team route (mounted at "/team").
+ * authTeam sets req.user to the parent business user and req.teamMember
+ * drives the corporate scoping; teamPasswordResetGate blocks callers who
+ * must reset before continuing. Team routes stay unsigned — the app
+ * signature resolver only understands User callers today, so
+ * appSignatureIfEnforced is intentionally excluded here.
+ */
+const teamBaseMiddleware = [authTeam, teamPasswordResetGate];
+
+export const teamApiRoutes = {
+    GET_CREDENTIALS: {
+        path: "/get-credentials",
+        middleware: [...teamBaseMiddleware],
+    },
+    LOGOUT: {
+        path: "/logout",
+        middleware: [...teamBaseMiddleware],
+    },
+    PROFILE: {
+        path: "/profile",
+        middleware: [...teamBaseMiddleware],
+    },
+    CHANGE_PASSWORD: {
+        path: "/change-password",
+        middleware: [
+            ...teamBaseMiddleware,
+            strictBody(TEAM_CHANGE_PASSWORD_ALLOWED_KEYS),
+            teamChangePasswordBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+
+    // Owner-only TeamMember CRUD.
+    TEAM_MEMBERS_LIST: {
+        path: "/team-members/list",
+        middleware: [
+            ...teamBaseMiddleware,
+            ownerAccess,
+            teamMemberListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    TEAM_MEMBERS_CREATE: {
+        path: "/team-members/create",
+        middleware: [
+            ...teamBaseMiddleware,
+            ownerAccess,
+            strictBody(TEAM_MEMBER_CREATE_ALLOWED_KEYS),
+            teamMemberCreateBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    TEAM_MEMBERS_SHOW: {
+        path: "/team-members/show",
+        middleware: [
+            ...teamBaseMiddleware,
+            ownerAccess,
+            teamMemberShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    TEAM_MEMBERS_UPDATE: {
+        path: "/team-members/update",
+        middleware: [
+            ...teamBaseMiddleware,
+            ownerAccess,
+            strictBody(TEAM_MEMBER_UPDATE_ALLOWED_KEYS),
+            teamMemberUpdateBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    TEAM_MEMBERS_UPDATE_STATUS: {
+        path: "/team-members/update-status",
+        middleware: [
+            ...teamBaseMiddleware,
+            ownerAccess,
+            teamMemberShowBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    TEAM_MEMBERS_DELETE: {
+        path: "/team-members/delete",
+        middleware: [
+            ...teamBaseMiddleware,
+            ownerAccess,
+            teamMemberShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+
+    // Virtual accounts
+    ACCOUNTS_LIST: {
+        path: "/accounts/list",
+        middleware: [
+            ...teamBaseMiddleware,
+            virtualAccountListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    ACCOUNTS_SHOW: {
+        path: "/accounts/show",
+        middleware: [
+            ...teamBaseMiddleware,
+            virtualAccountIdQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    ACCOUNTS_GET_BALANCE: {
+        path: "/accounts/get_account_balance",
+        middleware: [
+            ...teamBaseMiddleware,
+            virtualAccountIdQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    ACCOUNTS_ACTIVATE: {
+        path: "/accounts/activate",
+        middleware: [
+            ...teamBaseMiddleware,
+            strictBody(ACTIVATE_ALLOWED_KEYS),
+            activateBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    ACCOUNTS_GET_VIRTUAL_ACCOUNTS: {
+        path: "/accounts/get_virtual_Accounts",
+        middleware: [...teamBaseMiddleware],
+    },
+
+    // Deposits
+    DEPOSITS_LIST: {
+        path: "/deposits/list",
+        middleware: [
+            ...teamBaseMiddleware,
+            depositListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    DEPOSITS_QUOTE: {
+        path: "/deposits/quote",
+        middleware: [
+            ...teamBaseMiddleware,
+            depositQuoteQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    DEPOSITS_STORE: {
+        path: "/deposits/store",
+        middleware: [
+            ...teamBaseMiddleware,
+            idempotency(),
+            strictBody(DEPOSIT_STORE_ALLOWED_KEYS),
+            depositStoreBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    DEPOSITS_SHOW: {
+        path: "/deposits/show",
+        middleware: [
+            ...teamBaseMiddleware,
+            depositShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    DEPOSITS_EXPORT: {
+        // No validator — mirror of the legacy team mount.
+        path: "/deposits/export",
+        middleware: [...teamBaseMiddleware],
+    },
+
+    // Beneficiary accounts
+    BENEFICIARIES_GET_FORM_FIELDS: {
+        path: "/beneficiaries/get-form-fields",
+        middleware: [
+            ...teamBaseMiddleware,
+            beneficiaryFormFieldsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARIES_LIST: {
+        path: "/beneficiaries/list",
+        middleware: [
+            ...teamBaseMiddleware,
+            beneficiaryListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARIES_STORE: {
+        path: "/beneficiaries/store",
+        middleware: [...teamBaseMiddleware],
+    },
+    BENEFICIARIES_SHOW: {
+        path: "/beneficiaries/show",
+        middleware: [
+            ...teamBaseMiddleware,
+            beneficiaryShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARIES_DELETE: {
+        path: "/beneficiaries/delete",
+        middleware: [
+            ...teamBaseMiddleware,
+            beneficiaryShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARIES_BULK_TEMPLATE: {
+        path: "/beneficiaries/bulk/template",
+        middleware: [...teamBaseMiddleware],
+    },
+    BENEFICIARIES_BULK_STORE: {
+        path: "/beneficiaries/bulk/store",
+        middleware: [...teamBaseMiddleware],
+    },
+
+    // Senders (remitters)
+    REMITTERS_GET_FORM_FIELDS: {
+        path: "/remitters/get-form-fields",
+        middleware: [
+            ...teamBaseMiddleware,
+            senderFormFieldsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    REMITTERS_LIST: {
+        path: "/remitters/list",
+        middleware: [
+            ...teamBaseMiddleware,
+            senderListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    REMITTERS_STORE: {
+        path: "/remitters/store",
+        middleware: [...teamBaseMiddleware],
+    },
+    REMITTERS_UPDATE: {
+        path: "/remitters/update",
+        middleware: [
+            ...teamBaseMiddleware,
+            senderUpdateBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    REMITTERS_SHOW: {
+        path: "/remitters/show",
+        middleware: [
+            ...teamBaseMiddleware,
+            senderShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    REMITTERS_DELETE: {
+        path: "/remitters/delete",
+        middleware: [
+            ...teamBaseMiddleware,
+            senderShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    REMITTERS_BULK_TEMPLATE: {
+        path: "/remitters/bulk/template",
+        middleware: [...teamBaseMiddleware],
+    },
+    REMITTERS_BULK_STORE: {
+        path: "/remitters/bulk/store",
+        middleware: [...teamBaseMiddleware],
+    },
+
+    // Quotes
+    QUOTES_STORE: {
+        path: "/quotes/store",
+        middleware: [
+            ...teamBaseMiddleware,
+            quoteStoreValidator,
+            checkValidationErrors,
+            quoteStoreCrossFieldRules,
+        ],
+    },
+    QUOTES_EXCHANGE_RATE: {
+        path: "/quotes/exchange-rate",
+        middleware: [
+            ...teamBaseMiddleware,
+            quoteStoreValidator,
+            checkValidationErrors,
+            quoteStoreCrossFieldRules,
+        ],
+    },
+
+    // Beneficiary transactions (the maker/checker dance)
+    BENEFICIARY_TRANSACTIONS_LIST: {
+        path: "/beneficiary-transactions/list",
+        middleware: [
+            ...teamBaseMiddleware,
+            transactionListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_STORE: {
+        path: "/beneficiary-transactions/store",
+        middleware: [
+            ...teamBaseMiddleware,
+            makerAccess,
+            idempotency(),
+            strictBody(TRANSACTION_STORE_ALLOWED_KEYS),
+            transactionStoreBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_SHOW: {
+        path: "/beneficiary-transactions/show",
+        middleware: [
+            ...teamBaseMiddleware,
+            transactionShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_CHECK_TRANSACTION_STATUS: {
+        path: "/beneficiary-transactions/check_transaction_status",
+        middleware: [
+            ...teamBaseMiddleware,
+            transactionShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_UPDATE_STATUS: {
+        path: "/beneficiary-transactions/update-status",
+        middleware: [
+            ...teamBaseMiddleware,
+            checkerAccess,
+            idempotency(),
+            strictBody(TRANSACTION_UPDATE_STATUS_ALLOWED_KEYS),
+            transactionUpdateStatusBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_CANCEL: {
+        path: "/beneficiary-transactions/cancel",
+        middleware: [
+            ...teamBaseMiddleware,
+            idempotency(),
+            strictBody(TRANSACTION_CANCEL_ALLOWED_KEYS),
+            transactionCancelBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_GET_FORM_FIELDS: {
+        path: "/beneficiary-transactions/get-form-fields",
+        middleware: [
+            ...teamBaseMiddleware,
+            payoutFormFieldsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_DIRECT: {
+        path: "/beneficiary-transactions/direct",
+        middleware: [
+            ...teamBaseMiddleware,
+            idempotency(),
+            strictBody(DIRECT_ALLOWED_KEYS),
+            sendMoneyDirectBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_EXPORT: {
+        path: "/beneficiary-transactions/export",
+        middleware: [
+            ...teamBaseMiddleware,
+            transactionShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_DOWNLOAD: {
+        // No validator — mirror of the legacy team mount.
+        path: "/beneficiary-transactions/download",
+        middleware: [...teamBaseMiddleware],
+    },
+    BENEFICIARY_TRANSACTIONS_TRANSACTION_FORM_FIELDS: {
+        path: "/beneficiary-transactions/transaction-form-fields",
+        middleware: [...teamBaseMiddleware],
+    },
+    BENEFICIARY_TRANSACTIONS_REQUEST_PROOF: {
+        path: "/beneficiary-transactions/request-proof",
+        middleware: [
+            ...teamBaseMiddleware,
+            strictBody(PROOF_REQUEST_ALLOWED_KEYS),
+            proofRequestBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_GET_PROOF: {
+        path: "/beneficiary-transactions/get-proof",
+        middleware: [
+            ...teamBaseMiddleware,
+            proofGetQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_BULK_TEMPLATE: {
+        path: "/beneficiary-transactions/bulk/template",
+        middleware: [...teamBaseMiddleware],
+    },
+    BENEFICIARY_TRANSACTIONS_BULK_STORE: {
+        path: "/beneficiary-transactions/bulk/store",
+        middleware: [...teamBaseMiddleware],
+    },
+
+    // Ledgers
+    LEDGERS_LIST: {
+        path: "/ledgers/list",
+        middleware: [
+            ...teamBaseMiddleware,
+            ledgerListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    LEDGERS_SHOW: {
+        path: "/ledgers/show",
+        middleware: [
+            ...teamBaseMiddleware,
+            ledgerShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    LEDGERS_EXPORT: {
+        path: "/ledgers/export",
+        middleware: [
+            ...teamBaseMiddleware,
+            ledgerListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+
+    // Statements
+    STATEMENT_EXPORT: {
+        path: "/statement/export",
+        middleware: [
+            ...teamBaseMiddleware,
+            statementExportQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+
+    // Authenticated lookups
+    LOOKUPS_RECEIVING_COUNTRIES: {
+        path: "/lookups/receiving_countries",
+        middleware: [
+            ...teamBaseMiddleware,
+            receivingCountriesQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    LOOKUPS_GET_RATES: {
+        path: "/lookups/get-rates",
+        middleware: [...teamBaseMiddleware],
+    },
+    LOOKUPS_REFRESH_RATES: {
+        path: "/lookups/refresh-rates",
+        middleware: [
+            ...teamBaseMiddleware,
+            refreshRatesBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    LOOKUPS_BANKS: {
+        path: "/lookups/banks",
+        middleware: [
+            ...teamBaseMiddleware,
+            banksQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+
+    // Dashboard
+    DASHBOARD_STATISTICS: {
+        path: "/dashboard/statistics",
+        middleware: [
+            ...teamBaseMiddleware,
+            dashboardStatisticsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    DASHBOARD_CHARTS_DATA: {
+        path: "/dashboard/charts-data",
+        middleware: [
+            ...teamBaseMiddleware,
+            dashboardChartsDataQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+
+    // Wallets
+    WALLETS_LIST: {
+        path: "/wallets/list",
+        middleware: [
+            ...teamBaseMiddleware,
+            walletListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    WALLETS_SHOW: {
+        path: "/wallets/show",
+        middleware: [
+            ...teamBaseMiddleware,
+            walletShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    WALLETS_CONVERT: {
+        path: "/wallets/convert",
+        middleware: [
+            ...teamBaseMiddleware,
+            ownerAccess,
+            idempotency(),
+            strictBody(WALLET_CONVERT_ALLOWED_KEYS),
+            walletConvertBodyValidator,
+            checkValidationErrors,
+        ],
+    },
+    WALLETS_TRANSACTIONS_LIST: {
+        path: "/wallets/transactions/list",
+        middleware: [
+            ...teamBaseMiddleware,
+            walletTransactionsQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    WALLETS_TRANSACTIONS_SHOW: {
+        path: "/wallets/transactions/show",
+        middleware: [
+            ...teamBaseMiddleware,
+            walletTransactionShowQueryValidator,
+            checkValidationErrors,
         ],
     },
 };
