@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import moment from "moment-timezone";
 import {
     ALPHA3_TO_ALPHA2,
@@ -109,17 +109,14 @@ export const fingerprintToken = (plaintextToken: string): string => {
 };
 
 /**
- * Generates a unique_id string of the requested length using
- * lowercase alphanumerics. Used for public-facing IDs on user rows.
+ * Generates a standard RFC 4122 version 4 UUID (fixed 36 characters).
+ * Used for public-facing IDs on user rows. The `length` parameter is
+ * retained for backwards compatibility with existing callers but is
+ * ignored — the full randomUUID() string is always returned.
  */
 export const generateUniqueId = (length = 24): string => {
-    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-    let uniqueId = "";
-    const bytes = randomBytes(length);
-    for (let position = 0; position < length; position += 1) {
-        uniqueId += alphabet[bytes[position] % alphabet.length];
-    }
-    return uniqueId;
+    void length;
+    return randomUUID();
 };
 
 /**
