@@ -5,6 +5,7 @@ import {
     onboardingShouldBeCompleted,
 } from "../middleware/auth";
 import { checkValidationErrors } from "../middleware/checkValidationErrors";
+import { appSignatureIfEnforced } from "../middleware/appSignature";
 import { fvbankWebhookSignature } from "../middleware/fvbank_webhook_signature";
 import { idempotency } from "../middleware/idempotency";
 import { strictBody } from "../middleware/strictBody";
@@ -166,7 +167,7 @@ export const authApiRoutes = {
 export const profileApiRoutes = {
     PROFILE: {
         path: "/profile",
-        middleware: [authSanctum, validateMerchant],
+        middleware: [authSanctum, appSignatureIfEnforced, validateMerchant],
     },
     GET_CREDENTIALS: {
         path: "/get-credentials",
@@ -176,6 +177,7 @@ export const profileApiRoutes = {
         path: "/change-password",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             validateMerchant,
             changePasswordValidator,
             checkValidationErrors,
@@ -183,12 +185,13 @@ export const profileApiRoutes = {
     },
     UPDATE_TOUR_STATUS: {
         path: "/update-tour-status",
-        middleware: [authSanctum, validateMerchant],
+        middleware: [authSanctum, appSignatureIfEnforced, validateMerchant],
     },
     DELETE_ACCOUNT: {
         path: "/delete-account",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             validateMerchant,
             strictBody(PASSWORD_ONLY_ALLOWED_KEYS),
             passwordOnlyBodyValidator,
@@ -197,16 +200,17 @@ export const profileApiRoutes = {
     },
     CHECK_USER_STATUS: {
         path: "/check_user_status",
-        middleware: [authSanctum, validateMerchant],
+        middleware: [authSanctum, appSignatureIfEnforced, validateMerchant],
     },
     SETUP_TFA: {
         path: "/setup-tfa",
-        middleware: [authSanctum, validateMerchant],
+        middleware: [authSanctum, appSignatureIfEnforced, validateMerchant],
     },
     TFA_STATUS: {
         path: "/tfa-status",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             validateMerchant,
             strictBody(TFA_STATUS_ALLOWED_KEYS),
             passwordVerificationBodyValidator,
@@ -217,6 +221,7 @@ export const profileApiRoutes = {
         path: "/regenerate-backup-codes",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             validateMerchant,
             strictBody(PASSWORD_ONLY_ALLOWED_KEYS),
             passwordOnlyBodyValidator,
@@ -225,12 +230,13 @@ export const profileApiRoutes = {
     },
     UPDATE_PROFILE_FORM_FIELDS: {
         path: "/update-profile-form-fields",
-        middleware: [authSanctum, validateMerchant],
+        middleware: [authSanctum, appSignatureIfEnforced, validateMerchant],
     },
     UPDATE_PROFILE: {
         path: "/update-profile",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             validateMerchant,
             strictBody(UPDATE_PROFILE_ALLOWED_KEYS),
             updateProfileBodyValidator,
@@ -244,6 +250,7 @@ export const onboardingApiRoutes = {
         path: "/get-form-fields",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             validateMerchant,
             emailShouldBeVerified,
             getFormFieldsQueryValidator,
@@ -252,11 +259,11 @@ export const onboardingApiRoutes = {
     },
     STEP_TWO: {
         path: "/stepTwo",
-        middleware: [authSanctum, validateMerchant, emailShouldBeVerified],
+        middleware: [authSanctum, appSignatureIfEnforced, validateMerchant, emailShouldBeVerified],
     },
     STEP_THREE: {
         path: "/stepThree",
-        middleware: [authSanctum, validateMerchant, emailShouldBeVerified],
+        middleware: [authSanctum, appSignatureIfEnforced, validateMerchant, emailShouldBeVerified],
     },
 };
 
@@ -264,6 +271,7 @@ export const onboardingApiRoutes = {
 // router-level middleware ordering).
 const beneficiaryBaseMiddleware = [
     authSanctum,
+    appSignatureIfEnforced,
     validateMerchant,
     emailShouldBeVerified,
     onboardingShouldBeCompleted,
@@ -331,6 +339,7 @@ export const beneficiaryApiRoutes = {
 // money-moving POSTs additionally run the Idempotency-Key middleware.
 const transactionBaseMiddleware = [
     authSanctum,
+    appSignatureIfEnforced,
     validateMerchant,
     emailShouldBeVerified,
     onboardingShouldBeCompleted,
@@ -485,6 +494,7 @@ export const beneficiaryTransactionApiRoutes = {
 // wallets.routes router-level ordering).
 const walletBaseMiddleware = [
     authSanctum,
+    appSignatureIfEnforced,
     validateMerchant,
     emailShouldBeVerified,
     onboardingShouldBeCompleted,
@@ -539,6 +549,7 @@ export const walletApiRoutes = {
 // deposits.routes router-level ordering).
 const depositBaseMiddleware = [
     authSanctum,
+    appSignatureIfEnforced,
     validateMerchant,
     emailShouldBeVerified,
     onboardingShouldBeCompleted,
@@ -591,6 +602,7 @@ export const depositApiRoutes = {
 // virtualAccounts.routes router-level ordering).
 const virtualAccountBaseMiddleware = [
     authSanctum,
+    appSignatureIfEnforced,
     validateMerchant,
     emailShouldBeVerified,
     onboardingShouldBeCompleted,
@@ -648,6 +660,7 @@ export const virtualAccountApiRoutes = {
 // senders.routes router-level ordering).
 const senderBaseMiddleware = [
     authSanctum,
+    appSignatureIfEnforced,
     validateMerchant,
     emailShouldBeVerified,
     onboardingShouldBeCompleted,
@@ -715,6 +728,7 @@ export const senderApiRoutes = {
 // ledgers, statement) — mirror of the legacy router-level ordering.
 const reportingBaseMiddleware = [
     authSanctum,
+    appSignatureIfEnforced,
     validateMerchant,
     emailShouldBeVerified,
     onboardingShouldBeCompleted,
@@ -801,6 +815,7 @@ export const staticPageApiRoutes = {
 // validateMerchant on this group).
 const subuserBaseMiddleware = [
     authSanctum,
+    appSignatureIfEnforced,
     emailShouldBeVerified,
     validateMerchant,
     onboardingShouldBeCompleted,
@@ -929,6 +944,7 @@ export const lookupApiRoutes = {
         path: "/receiving_countries",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             emailShouldBeVerified,
             validateMerchant,
             onboardingShouldBeCompleted,
@@ -940,6 +956,7 @@ export const lookupApiRoutes = {
         path: "/get-rates",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             emailShouldBeVerified,
             validateMerchant,
             onboardingShouldBeCompleted,
@@ -949,6 +966,7 @@ export const lookupApiRoutes = {
         path: "/refresh-rates",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             emailShouldBeVerified,
             validateMerchant,
             onboardingShouldBeCompleted,
@@ -963,6 +981,7 @@ export const quoteApiRoutes = {
         path: "/store",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             validateMerchant,
             emailShouldBeVerified,
             onboardingShouldBeCompleted,
@@ -975,6 +994,7 @@ export const quoteApiRoutes = {
         path: "/exchange-rate",
         middleware: [
             authSanctum,
+            appSignatureIfEnforced,
             validateMerchant,
             emailShouldBeVerified,
             onboardingShouldBeCompleted,
