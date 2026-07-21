@@ -204,7 +204,7 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                     !!req.teamMember,
                 ),
             },
-            res.__("s108"),
+            res.__("success.108"),
             "",
         );
     } catch (error) {
@@ -430,7 +430,7 @@ export const requestProof = async (
             status: PAYMENT_PROOF_REQUESTED,
             requestedAt: new Date(),
         });
-        return res.sendResponse([], res.__("s114"), 114);
+        return res.sendResponse([], res.__("success.114"), 114);
     } catch (error) {
         return sendCodedError(res, error);
     }
@@ -474,7 +474,7 @@ export const getProof = async (
                     req.user.timezone,
                 ),
             },
-            res.__("s115"),
+            res.__("success.115"),
             115,
         );
     } catch (error) {
@@ -859,7 +859,7 @@ export const direct = async (req: Request, res: Response): Promise<void> => {
                     !!req.teamMember,
                 ),
             },
-            res.__("s108"),
+            res.__("success.108"),
             108,
         );
     } catch (error) {
@@ -907,7 +907,7 @@ export const instant = async (req: Request, res: Response): Promise<void> => {
             payoutJobUniqueId: payoutJob.uniqueId,
             userId: String(req.user.id),
         });
-        return res.sendResponse([], res.__("s112"), 112);
+        return res.sendResponse([], res.__("success.112"), 112);
     } catch (error) {
         return sendCodedError(res, error);
     }
@@ -1064,7 +1064,7 @@ export const retryExternalService = async (
             await processingUnitService.make(transaction, user);
         }
 
-        return res.sendResponse([], res.__("s118"), 118);
+        return res.sendResponse([], res.__("success.118"), 118);
     } catch (error) {
         return sendCodedError(res, error);
     }
@@ -1341,7 +1341,7 @@ export const retryJob = async (req: Request, res: Response): Promise<void> => {
             payoutJobUniqueId: payoutJob.uniqueId,
             userId: String(req.user.id),
         });
-        return res.sendResponse([], res.__("s176"), 176);
+        return res.sendResponse([], res.__("success.176"), 176);
     } catch (error) {
         return sendCodedError(res, error);
     }

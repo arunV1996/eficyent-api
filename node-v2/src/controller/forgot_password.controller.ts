@@ -46,7 +46,7 @@ export const sendResetLink = async (
         });
         await UserAuthEmail.forgotPassword(user);
 
-        return res.sendResponse({ email: user.email }, res.__("s109"), 109);
+        return res.sendResponse({ email: user.email }, res.__("success.109"), 109);
     } catch (error) {
         return res.handleError(error);
     }
@@ -110,7 +110,7 @@ export const verifyCode = async (
 
         return res.sendResponse(
             { reset_token: token, email: user.email },
-            res.__("s110"),
+            res.__("success.110"),
             110,
         );
     } catch (error) {
@@ -161,7 +161,7 @@ export const resetPassword = async (
             });
         });
 
-        return res.sendResponse({}, res.__("s111"), 111);
+        return res.sendResponse({}, res.__("success.111"), 111);
     } catch (error) {
         return res.handleError(error);
     }

@@ -84,14 +84,14 @@ const loginCommon = async (
     if (!member.lastPasswordReset) {
         // Force reset before any token issuance.
         data.password_reset = true;
-        return res.sendResponse(data, res.__("s104"), 104);
+        return res.sendResponse(data, res.__("success.104"), 104);
     }
 
     // One active token per member (mirror of tokens()->delete()).
     await revokeAllTeamTokens(member.id);
     const issued = await issueTeamToken(member, null);
     data.access_token = issued.plaintext;
-    return res.sendResponse(data, res.__("s104"), 104);
+    return res.sendResponse(data, res.__("success.104"), 104);
 };
 
 /**
@@ -128,7 +128,7 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
             return res.sendError(res.__("102"), 102, 400);
         }
         await revokeTeamToken(req.tokenId, req.teamMember.id);
-        return res.sendResponse([], res.__("s105"), 105);
+        return res.sendResponse([], res.__("success.105"), 105);
     } catch (error) {
         return res.handleError(error);
     }
@@ -167,7 +167,7 @@ export const forceResetPassword = async (
         const issued = await issueTeamToken(updated, null);
         return res.sendResponse(
             { access_token: issued.plaintext },
-            res.__("s111"),
+            res.__("success.111"),
             111,
         );
     } catch (error) {
@@ -207,7 +207,7 @@ export const sendResetLink = async (
         } catch {
             // Mail failures never break the response.
         }
-        return res.sendResponse({ email: member.email }, res.__("s109"), 109);
+        return res.sendResponse({ email: member.email }, res.__("success.109"), 109);
     } catch (error) {
         return res.handleError(error);
     }
@@ -262,7 +262,7 @@ export const verifyCode = async (
 
         return res.sendResponse(
             { reset_token: token, email: member.email },
-            res.__("s110"),
+            res.__("success.110"),
             110,
         );
     } catch (error) {
@@ -306,7 +306,7 @@ export const resetPassword = async (
         await PasswordResetToken.destroy({
             where: { token: String(req.body.reset_token) },
         });
-        return res.sendResponse([], res.__("s111"), 111);
+        return res.sendResponse([], res.__("success.111"), 111);
     } catch (error) {
         return res.handleError(error);
     }

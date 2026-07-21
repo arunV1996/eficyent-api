@@ -65,7 +65,7 @@ export const verifyOtp = async (
                 user: shapeVerifyUser(user),
                 access_token: issued.plaintext,
             },
-            res.__("s102"),
+            res.__("success.102"),
             102,
         );
     } catch (error) {
@@ -90,7 +90,7 @@ export const resendOtp = async (
             return res.sendError(res.__("106"), 106, 400);
         }
         await UserAuthEmail.emailVerificationCode(user);
-        return res.sendResponse({}, res.__("s103"), 103);
+        return res.sendResponse({}, res.__("success.103"), 103);
     } catch (error) {
         return res.handleError(error);
     }

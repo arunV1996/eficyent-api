@@ -512,7 +512,7 @@ export const retryDeposit = async (
                 },
             );
         }
-        return res.sendResponse([], res.__("s118"), 118);
+        return res.sendResponse([], res.__("success.118"), 118);
     } catch (error) {
         return sendCodedError(res, error);
     }

@@ -298,7 +298,7 @@ export const acceptInvite = async (
                 user: shapeVerifyUser(user),
                 access_token: issued.plaintext,
             },
-            res.__("s102"),
+            res.__("success.102"),
             102,
         );
     } catch (error) {

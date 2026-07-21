@@ -243,7 +243,7 @@ export const register = async (
                     role: "ADMIN",
                 },
             },
-            res.__("s101"),
+            res.__("success.101"),
             101,
         );
     } catch (error) {
@@ -325,7 +325,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
                         expires_at: issued.expiresAt?.toISOString(),
                         expires_in: ttlSeconds,
                     },
-                    res.__("s104"),
+                    res.__("success.104"),
                     104,
                 );
             }
@@ -335,7 +335,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             // No token issued; client must follow up with /tfa-login.
             return res.sendResponse(
                 { user: shapeLoginUser(user) },
-                res.__("s104"),
+                res.__("success.104"),
                 104,
             );
         }
@@ -348,7 +348,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         );
         return res.sendResponse(
             { user: shapeLoginUser(user), access_token: issued.plaintext },
-            res.__("s104"),
+            res.__("success.104"),
             104,
         );
     } catch (error) {
@@ -419,7 +419,7 @@ export const tfaLogin = async (
         );
         return res.sendResponse(
             { user: shapeLoginUser(user), access_token: issued.plaintext },
-            res.__("s104"),
+            res.__("success.104"),
             104,
         );
     } catch (error) {
@@ -443,7 +443,7 @@ export const logout = async (
             { privateKey: null, publicKey: null, deviceToken: null },
             { where: { id: req.user.id } },
         );
-        return res.sendResponse({}, res.__("s105"), 105);
+        return res.sendResponse({}, res.__("success.105"), 105);
     } catch (error) {
         return res.handleError(error);
     }

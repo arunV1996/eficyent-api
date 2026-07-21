@@ -354,7 +354,7 @@ export const convert = async (req: Request, res: Response): Promise<void> => {
                     req.user.timezone,
                 ),
             },
-            res.__("s108"),
+            res.__("success.108"),
             108,
         );
     } catch (error) {

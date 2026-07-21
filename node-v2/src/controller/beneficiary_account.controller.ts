@@ -493,7 +493,7 @@ export const validateAccount = async (
         if (cachedValidation) {
             return res.sendResponse(
                 { account: validationToJSON(cachedValidation) },
-                res.__("s113"),
+                res.__("success.113"),
                 113,
             );
         }
@@ -530,7 +530,7 @@ export const validateAccount = async (
         if (concurrentValidation) {
             return res.sendResponse(
                 { account: validationToJSON(concurrentValidation) },
-                res.__("s113"),
+                res.__("success.113"),
                 113,
             );
         }
@@ -561,7 +561,7 @@ export const validateAccount = async (
 
         return res.sendResponse(
             { account: validationToJSON(createdValidation) },
-            res.__("s113"),
+            res.__("success.113"),
             113,
         );
     } catch (error) {
