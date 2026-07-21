@@ -59,7 +59,27 @@ export const registerValidator: ValidationChain[] = [
             code: 422,
         })),
 
-    body("password_confirmation").optional().isString(),
+    // Mandatory, mirrors the password rules exactly, and must match
+    // the password field.
+    body("password_confirmation")
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100))
+        .bail()
+        .isString()
+        .isLength({ min: 8, max: 128 })
+        .withMessage(localizedError("1103", 1103))
+        .bail()
+        .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/)
+        .withMessage(() => ({
+            msg: "Password must include upper, lower, digit, and symbol.",
+            code: 422,
+        }))
+        .bail()
+        .custom((value, { req }) => value === req.body.password)
+        .withMessage(() => ({
+            msg: "Password confirmation does not match.",
+            code: 422,
+        })),
 
     body("title").optional().isString().isLength({ max: 5 }),
 

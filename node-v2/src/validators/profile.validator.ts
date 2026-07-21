@@ -70,14 +70,16 @@ export const changePasswordValidator: ValidationChain[] = [
             code: 422,
         })),
 
+    // Mandatory, mirrors the password rules exactly, and must match
+    // the password field.
     body("password_confirmation")
         .notEmpty()
         .withMessage(localizedError("1100", 1100))
         .bail()
         .isString()
-        .isLength({ min: 1, max: 128 })
+        .matches(PASSWORD_REGEX)
         .withMessage(() => ({
-            msg: "password_confirmation must be between 1 and 128 characters.",
+            msg: "Password format is invalid.",
             code: 422,
         }))
         .bail()
