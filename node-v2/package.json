@@ -5,15 +5,16 @@
     "description": "Restructured Node.js API for Eficyent (pilot module: auth). See README.md.",
     "main": "dist/app.js",
     "scripts": {
-        "dev": "nodemon --watch src --ext ts --exec ts-node src/app.ts",
+        "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts",
         "build": "tsc && cp -r src/locales dist/ && cp -r src/views dist/",
-        "start": "node dist/app.js",
+        "start": "node dist/index.js",
         "migrate": "sequelize-cli db:migrate",
         "db:migrate:undo": "sequelize-cli db:migrate:undo",
         "db:migrate:undo:all": "sequelize-cli db:migrate:undo:all"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1086.0",
+        "@aws-sdk/client-secrets-manager": "^3.1091.0",
         "@aws-sdk/s3-request-presigner": "^3.1086.0",
         "@types/ejs": "^3.1.5",
         "@types/multer": "^2.2.0",
