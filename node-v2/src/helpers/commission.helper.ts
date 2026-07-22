@@ -7,6 +7,7 @@ import {
     FEE_TYPE_FLAT,
     FEE_TYPE_PERCENTAGE,
     FX_FEE,
+    MERCHANT_TYPE_PAYOUTINTEGRATOR,
     MERCHANT_TYPE_WHITELABEL,
     MORPH_MERCHANT,
     MORPH_USER,
@@ -22,9 +23,10 @@ import {
  *   ownerType=User,     ownerId=u.id  -> per-user override
  *   ownerType=Merchant, ownerId=m.id  -> per-merchant override
  *
- * IMPORTANT filter semantic preserved from the legacy Prisma queries:
- * a null/undefined currency or mode OMITS the filter entirely (matches
- * any value) — it does NOT match only NULL columns.
+ * IMPORTANT filter semantic: an UNDEFINED currency or mode omits the
+ * filter entirely (matches any value); an explicit NULL is actively
+ * queried (WHERE currency_1 IS NULL) because a NULL column represents
+ * the wildcard fee row.
  */
 
 export interface FeeRow {
@@ -49,13 +51,15 @@ const feeWhereFromQuery = (
     const whereClause: Record<string, unknown> = {
         feeName: feeQuery.feeName,
     };
-    if (feeQuery.currency1 !== null && feeQuery.currency1 !== undefined) {
+    // null must reach the query (Sequelize renders WHERE ... IS NULL,
+    // matching the wildcard fee rows); only undefined omits the filter.
+    if (feeQuery.currency1 !== undefined) {
         whereClause.currency1 = feeQuery.currency1;
     }
-    if (feeQuery.currency2 !== null && feeQuery.currency2 !== undefined) {
+    if (feeQuery.currency2 !== undefined) {
         whereClause.currency2 = feeQuery.currency2;
     }
-    if (feeQuery.mode !== null && feeQuery.mode !== undefined) {
+    if (feeQuery.mode !== undefined) {
         whereClause.mode = feeQuery.mode;
     }
     return whereClause;
@@ -241,6 +245,10 @@ export const calcFxCommissions = async (
     const currency2 = quoteInput.receivingCurrency.toUpperCase();
 
     const hasMerchant = context.merchantId !== null;
+    const userFeeEligible =
+        !hasMerchant ||
+        context.merchantType === MERCHANT_TYPE_WHITELABEL ||
+        context.merchantType === MERCHANT_TYPE_PAYOUTINTEGRATOR;
 
     let userCommission = 0;
     let merchantCommission = 0;
@@ -248,13 +256,13 @@ export const calcFxCommissions = async (
     let isMerchantFixed = false;
 
     let userFee: FeeRow | null = null;
-    if (!hasMerchant) {
+    if (userFeeEligible) {
         userFee = await findUserFee(context.userId, {
             feeName: FX_FEE,
             currency1,
             currency2,
         });
-        if (!userFee) {
+        if (!userFee && !hasMerchant) {
             userFee = await findGlobalFee({
                 feeName: FX_FEE,
                 currency1,
@@ -289,41 +297,21 @@ export const calcFxCommissions = async (
         }
     }
 
-    if (isUserFixed || isMerchantFixed) {
-        const fixedRate = isUserFixed ? userCommission : merchantCommission;
-        const sendingAmount =
-            quoteInput.quoteType === QUOTE_TYPE_FORWARD
-                ? quoteInput.amount
-                : quoteInput.receivingAmount / fixedRate;
-        const receivingAmount =
-            quoteInput.quoteType === QUOTE_TYPE_FORWARD
-                ? quoteInput.amount * fixedRate
-                : quoteInput.receivingAmount;
-        return {
-            commission_value: 0,
-            fx_rate: fixedRate,
-            internal_fx_rate: fixedRate,
-            receiving_amount: receivingAmount,
-            amount: sendingAmount,
-        };
-    }
+    // No fixed-fee short-circuit: fixed fees flow through the same
+    // internal/final rate math so a fixed rate on one side still honors
+    // the other side's fee. A FIXED fee value IS the rate (it replaces
+    // the rate instead of being deducted from it), so fixed components
+    // contribute no spread to the commission value.
+    const merchantSpread = isMerchantFixed ? 0 : merchantCommission;
+    const userSpread = isUserFixed ? 0 : userCommission;
 
-    let internalFxRate: number;
-    let finalFxRate: number;
-    let totalCommission: number;
-    if (hasMerchant && userFee) {
-        internalFxRate = baseRate - merchantCommission;
-        finalFxRate = baseRate - (merchantCommission + userCommission);
-        totalCommission = merchantCommission + userCommission;
-    } else if (hasMerchant) {
-        internalFxRate = baseRate - merchantCommission;
-        finalFxRate = internalFxRate;
-        totalCommission = merchantCommission;
-    } else {
-        internalFxRate = baseRate - userCommission;
-        finalFxRate = internalFxRate;
-        totalCommission = userCommission;
-    }
+    const internalFxRate = isMerchantFixed
+        ? merchantCommission
+        : baseRate - merchantSpread;
+    const finalFxRate = isUserFixed
+        ? userCommission
+        : internalFxRate - userSpread;
+    const totalCommission = merchantSpread + userSpread;
 
     const sendingAmount =
         quoteInput.quoteType === QUOTE_TYPE_FORWARD
@@ -374,16 +362,20 @@ export const calcTransactionCommissions = async (
             ? (transactionInput.paymentRail ?? null)
             : null;
     const hasMerchant = context.merchantId !== null;
+    const userFeeEligible =
+        !hasMerchant ||
+        context.merchantType === MERCHANT_TYPE_WHITELABEL ||
+        context.merchantType === MERCHANT_TYPE_PAYOUTINTEGRATOR;
 
     let userFee: FeeRow | null = null;
-    if (!hasMerchant) {
+    if (userFeeEligible) {
         userFee = await findUserFee(context.userId, {
             feeName: TRANSACTION_FEE,
             currency1: lookupCurrency,
             currency2,
             mode,
         });
-        if (!userFee) {
+        if (!userFee && !hasMerchant) {
             userFee = await findGlobalFee({
                 feeName: TRANSACTION_FEE,
                 currency1: lookupCurrency,
@@ -400,49 +392,29 @@ export const calcTransactionCommissions = async (
 
     let commissionAmount = 0;
 
+    // No whitelabel fee stacking: every merchant type resolves the
+    // merchant fee first and falls back to the global fee only when no
+    // merchant fee exists.
     if (hasMerchant) {
-        const isWhitelabel = context.merchantType === MERCHANT_TYPE_WHITELABEL;
-        if (isWhitelabel) {
-            const generalFee = await findGlobalFee({
+        let merchantFee = await findMerchantFee(context.merchantId!, {
+            feeName: TRANSACTION_FEE,
+            currency1: lookupCurrency,
+            currency2,
+            mode,
+        });
+        if (!merchantFee) {
+            merchantFee = await findGlobalFee({
                 feeName: TRANSACTION_FEE,
                 currency1: lookupCurrency,
                 currency2,
                 mode,
             });
-            const merchantFee = await findMerchantFee(context.merchantId!, {
-                feeName: TRANSACTION_FEE,
-                currency1: lookupCurrency,
-                currency2,
-                mode,
-            });
-            const generalFeeAmount = generalFee
-                ? calcFlatFee(generalFee, transactionInput.amount)
-                : 0;
-            const merchantFeeAmount = merchantFee
-                ? calcFlatFee(merchantFee, transactionInput.amount)
-                : 0;
-            commissionAmount = generalFeeAmount + merchantFeeAmount;
-        } else {
-            let merchantFee = await findMerchantFee(context.merchantId!, {
-                feeName: TRANSACTION_FEE,
-                currency1: lookupCurrency,
-                currency2,
-                mode,
-            });
-            if (!merchantFee) {
-                merchantFee = await findGlobalFee({
-                    feeName: TRANSACTION_FEE,
-                    currency1: lookupCurrency,
-                    currency2,
-                    mode,
-                });
-            }
-            if (merchantFee) {
-                commissionAmount = calcFlatFee(
-                    merchantFee,
-                    transactionInput.amount,
-                );
-            }
+        }
+        if (merchantFee) {
+            commissionAmount = calcFlatFee(
+                merchantFee,
+                transactionInput.amount,
+            );
         }
     }
 
@@ -467,14 +439,18 @@ export const calcDepositCommissions = async (
 ): Promise<CalcTransactionResult> => {
     const lookupCurrency = currency.toUpperCase();
     const hasMerchant = context.merchantId !== null;
+    const userFeeEligible =
+        !hasMerchant ||
+        context.merchantType === MERCHANT_TYPE_WHITELABEL ||
+        context.merchantType === MERCHANT_TYPE_PAYOUTINTEGRATOR;
 
     let userFee: FeeRow | null = null;
-    if (!hasMerchant) {
+    if (userFeeEligible) {
         userFee = await findUserFee(context.userId, {
             feeName: DEPOSIT_FEE,
             currency1: lookupCurrency,
         });
-        if (!userFee) {
+        if (!userFee && !hasMerchant) {
             userFee = await findGlobalFee({
                 feeName: DEPOSIT_FEE,
                 currency1: lookupCurrency,
@@ -489,38 +465,22 @@ export const calcDepositCommissions = async (
 
     let commissionAmount = 0;
 
+    // No whitelabel fee stacking: every merchant type resolves the
+    // merchant fee first and falls back to the global fee only when no
+    // merchant fee exists.
     if (hasMerchant) {
-        const isWhitelabel = context.merchantType === MERCHANT_TYPE_WHITELABEL;
-        if (isWhitelabel) {
-            const generalFee = await findGlobalFee({
+        let merchantFee = await findMerchantFee(context.merchantId!, {
+            feeName: DEPOSIT_FEE,
+            currency1: lookupCurrency,
+        });
+        if (!merchantFee) {
+            merchantFee = await findGlobalFee({
                 feeName: DEPOSIT_FEE,
                 currency1: lookupCurrency,
             });
-            const merchantFee = await findMerchantFee(context.merchantId!, {
-                feeName: DEPOSIT_FEE,
-                currency1: lookupCurrency,
-            });
-            const generalFeeAmount = generalFee
-                ? calcFlatFee(generalFee, amount)
-                : 0;
-            const merchantFeeAmount = merchantFee
-                ? calcFlatFee(merchantFee, amount)
-                : 0;
-            commissionAmount = generalFeeAmount + merchantFeeAmount;
-        } else {
-            let merchantFee = await findMerchantFee(context.merchantId!, {
-                feeName: DEPOSIT_FEE,
-                currency1: lookupCurrency,
-            });
-            if (!merchantFee) {
-                merchantFee = await findGlobalFee({
-                    feeName: DEPOSIT_FEE,
-                    currency1: lookupCurrency,
-                });
-            }
-            if (merchantFee) {
-                commissionAmount = calcFlatFee(merchantFee, amount);
-            }
+        }
+        if (merchantFee) {
+            commissionAmount = calcFlatFee(merchantFee, amount);
         }
     }
 
