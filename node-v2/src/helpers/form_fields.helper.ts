@@ -832,6 +832,24 @@ const bankFieldsByCountry = (
 
     switch (country.toUpperCase()) {
         case "CHN":
+            return isForeignCurrency
+                ? [accountTypeField, genericAccountNumberField, swiftCodeField]
+                : [
+                      accountTypeField,
+                      genericAccountNumberField,
+                      // No validation preset — Chinese ID formats vary,
+                      // so the value is accepted as unstructured text.
+                      make("id_number", "ID Number"),
+                  ];
+        case "SGP":
+            return isForeignCurrency
+                ? [accountTypeField, genericAccountNumberField, swiftCodeField]
+                : [
+                      accountTypeField,
+                      genericAccountNumberField,
+                      // Local-currency corridor: ISO code, no preset.
+                      make("code", "ISO Code"),
+                  ];
         case "THA":
         case "IDN":
         case "MYS":
@@ -1131,7 +1149,8 @@ export const beneficiaryFormFields = async (payload: {
         supportedCountry.externalType === EXTERNAL_TYPE_IME ||
         supportedCountry.externalType === EXTERNAL_TYPE_MOBI ||
         payload.currency === "CNY" ||
-        payload.currency === "THB"
+        payload.currency === "THB" ||
+        payload.currency === "SGD"
     ) {
         const serviceBankRequired = [
             "NPL",
@@ -1142,8 +1161,9 @@ export const beneficiaryFormFields = async (payload: {
             "PHL",
             "THA",
             "CHN",
+            "SGP",
         ].includes(supportedCountry.countryCode);
-        const serviceBankExternalType = ["CNY", "THB"].includes(
+        const serviceBankExternalType = ["CNY", "THB", "SGD"].includes(
             payload.currency,
         )
             ? null
