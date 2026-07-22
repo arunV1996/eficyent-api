@@ -11,7 +11,12 @@ import { decryptEnvelope } from "../helpers/crypto.helper";
  *   X-Api-Timestamp  - unix seconds; 300s replay window enforced
  *   X-Api-Signature  - base64( RSA-SHA256( HMAC-SHA256(plain, salt) ) )
  *
- *   plain = "/<lastPathSegment>" + json(body) + timestamp + salt_key
+ *   plain = "/<lastPathSegment>" + json(payload) + timestamp + salt_key
+ *
+ * payload mirrors Laravel's $request->all(): query parameters and the
+ * parsed body merged into one object (body keys win, like Laravel's
+ * input-source precedence) — so GET endpoints sign their query string
+ * (skip/take/...) exactly like the legacy backend.
  *
  * salt_key and public_key are stored Laravel-encrypted on the user
  * row and decrypted here. Team-member and merchant callers arrive
@@ -82,7 +87,9 @@ export const appSignature = async (
 
         const lastSegment = req.path.split("/").filter(Boolean).pop() ?? "";
         const endpoint = `/${lastSegment}`;
-        const cleanedBody = cleanBody(req.body ?? {});
+        // Laravel $request->all(): query + body merged, body wins.
+        const rawPayload = { ...req.query, ...(req.body || {}) };
+        const cleanedBody = cleanBody(rawPayload);
         const bodyJson =
             cleanedBody && Object.keys(cleanedBody as object).length === 0
                 ? "{}"
