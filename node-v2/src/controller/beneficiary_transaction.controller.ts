@@ -494,21 +494,24 @@ const resolvePartyTypes = (
     beneficiary_type: 1 | 2;
     remitter_type: 1 | 2;
 } => {
+    // Case-insensitive: "b2c" must map to B2C, not fall through to the
+    // C2C default.
+    const typeRaw = typeToken?.toUpperCase();
     let paymentType: "C2C" | "C2B" | "B2C" | "B2B" = "C2C";
     if (
-        typeToken === "C2C" ||
-        typeToken === "C2B" ||
-        typeToken === "B2C" ||
-        typeToken === "B2B"
+        typeRaw === "C2C" ||
+        typeRaw === "C2B" ||
+        typeRaw === "B2C" ||
+        typeRaw === "B2B"
     ) {
-        paymentType = typeToken;
+        paymentType = typeRaw;
     } else if (
-        typeToken === "1" ||
-        typeToken === "INDIVIDUAL" ||
-        typeToken === "PERSONAL"
+        typeRaw === "1" ||
+        typeRaw === "INDIVIDUAL" ||
+        typeRaw === "PERSONAL"
     ) {
         paymentType = "C2C";
-    } else if (typeToken === "2" || typeToken === "BUSINESS") {
+    } else if (typeRaw === "2" || typeRaw === "BUSINESS") {
         paymentType = "C2B";
     }
     const partyMap: Record<
