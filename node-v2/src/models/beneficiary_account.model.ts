@@ -30,6 +30,7 @@ interface BeneficiaryAccountAttributes {
     accountType: string | null;
     swiftCode: string | null;
     iban: string | null;
+    idNumber: string | null;
     intermediaryBankSwiftCode: string | null;
     intermediaryBankName: string | null;
     intermediaryBankAba: string | null;
@@ -90,6 +91,7 @@ class BeneficiaryAccount
     public accountType!: string | null;
     public swiftCode!: string | null;
     public iban!: string | null;
+    public idNumber!: string | null;
     public intermediaryBankSwiftCode!: string | null;
     public intermediaryBankName!: string | null;
     public intermediaryBankAba!: string | null;
@@ -164,6 +166,7 @@ BeneficiaryAccount.init(
         accountType: { type: DataTypes.STRING(255), allowNull: true },
         swiftCode: { type: DataTypes.STRING(255), allowNull: true },
         iban: { type: DataTypes.STRING(255), allowNull: true },
+        idNumber: { type: DataTypes.STRING(255), allowNull: true },
         intermediaryBankSwiftCode: {
             type: DataTypes.STRING(255),
             allowNull: true,

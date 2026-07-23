@@ -563,6 +563,16 @@ export const buildPayoutPayload = async (
                 : ownerUser.email,
         mobile_country_code: beneficiaryMobileCountryCode,
         mobile: beneficiaryMobile,
+        id_number: account.idNumber ?? null,
+        intermediary_bank_swift_code: account.intermediaryBankSwiftCode ?? null,
+        intermediary_bank_name: account.intermediaryBankName ?? null,
+        intermediary_bank_aba: account.intermediaryBankAba ?? null,
+        intermediary_bank_address: account.intermediaryBankAddress ?? null,
+        intermediary_bank_city: account.intermediaryBankCity ?? null,
+        intermediary_bank_state: account.intermediaryBankState ?? null,
+        intermediary_bank_postal_code:
+            account.intermediaryBankPostalCode ?? null,
+        intermediary_bank_country: account.intermediaryBankCountry ?? null,
     };
 
     const remitter = sender
