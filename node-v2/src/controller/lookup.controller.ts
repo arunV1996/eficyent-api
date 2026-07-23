@@ -20,6 +20,7 @@ import { getFlagUrl, relativeTime } from "../utils/common.utils";
 import {
     DEPOSIT_PURPOSE,
     DEPOSIT_SOURCE_OF_FUNDS,
+    EXTERNAL_TYPE_DIGININE,
     LOOKUP_TYPE_SOURCE_OF_FUNDS,
     PAYMENT_RAILS,
     USER_TYPE_MAP,
@@ -99,8 +100,27 @@ export const banks = async (req: Request, res: Response): Promise<void> => {
         const { country_code: countryCode } = req.query as {
             country_code: string;
         };
+
+        // Resolve the provider from the corridor instead of blindly
+        // defaulting to Diginine — IME/MOBI countries would otherwise
+        // match zero rows.
+        const supportedCountry = await SupportedCountry.findOne({
+            where: { countryCode },
+        });
+        let externalType: string | null =
+            supportedCountry?.externalType ?? EXTERNAL_TYPE_DIGININE;
+
+        // These Asian corridors store their banks with a NULL
+        // external_type ("N/A" records), so force the filter to null.
+        if (
+            ["CNY", "THB", "SGD"].includes(supportedCountry?.currency ?? "") ||
+            ["CHN", "THA", "SGP"].includes(countryCode)
+        ) {
+            externalType = null;
+        }
+
         return res.sendResponse(
-            { banks: await serviceBanks(countryCode) },
+            { banks: await serviceBanks(countryCode, undefined, externalType) },
             "",
             "",
         );
