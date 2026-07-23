@@ -1,24 +1,20 @@
 import { JobsOptions } from "bullmq";
 import {
-    dispatchProcessBulkPayout,
-    ProcessBulkPayoutPayload,
-} from "./ProcessBulkPayoutJob";
+    dispatchCompliance,
+    CompliancePayload,
+} from "./ComplianceJob";
 import {
     dispatchProcessCalizaWebhook,
     ProcessCalizaWebhookPayload,
 } from "./ProcessCalizaWebhookJob";
 import {
-    dispatchProcessDeposit,
-    ProcessDepositPayload,
-} from "./ProcessDepositJob";
-import {
     dispatchProcessDiginineWebhook,
     ProcessDiginineWebhookPayload,
 } from "./ProcessDiginineWebhookJob";
 import {
-    dispatchProcessPayout,
-    ProcessPayoutPayload,
-} from "./ProcessPayoutJob";
+    dispatchProcessingUnit,
+    ProcessingUnitPayload,
+} from "./ProcessingUnitJob";
 import {
     dispatchRefreshFxRates,
     RefreshFxRatesPayload,
@@ -33,41 +29,84 @@ import {
 } from "./SendDebitNotificationJob";
 
 /**
- * Barrel for the Laravel-style jobs module. Each file under src/jobs/
- * is one job (interface + dispatch + execute); src/worker.ts is the
- * queue:work equivalent that routes job names to execute functions.
- * The Dispatch facade keeps the pre-refactor call sites unchanged.
+ * Barrel for the jobs module — jobs are grouped by EXTERNAL SYSTEM
+ * (ProcessingUnit, Compliance, webhooks, callbacks, FX, notifications),
+ * not by user action. src/worker.ts routes job names to execute
+ * functions. The Dispatch facade keeps the pre-refactor controller
+ * call sites compiling unchanged: payout/deposit/bulkPayout map their
+ * legacy argument shapes into a ProcessingUnitPayload.
  */
 
 export { closeQueue, closeQueues, getQueue, queueName } from "./config";
 
-export * from "./ProcessBulkPayoutJob";
+export * from "./ComplianceJob";
 export * from "./ProcessCalizaWebhookJob";
-export * from "./ProcessDepositJob";
 export * from "./ProcessDiginineWebhookJob";
-export * from "./ProcessPayoutJob";
+export * from "./ProcessingUnitJob";
 export * from "./RefreshFxRatesJob";
 export * from "./SendCallbackJob";
 export * from "./SendDebitNotificationJob";
 
+// Legacy argument shapes accepted by the Dispatch facade.
+export interface PayoutDispatchArgs {
+    beneficiaryTransactionId?: string;
+    payoutJobUniqueId: string;
+    userId: string;
+    source: "direct" | "instant" | "approval" | "bulk";
+}
+
+export interface BulkPayoutDispatchArgs {
+    payoutJobUniqueId: string;
+    userId: string;
+}
+
+export interface DepositDispatchArgs {
+    depositTransactionId: string;
+    userId: string;
+}
+
 export const Dispatch = {
     payout(
-        payload: ProcessPayoutPayload,
+        payload: PayoutDispatchArgs,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchProcessPayout(payload, options);
+        const processingUnitPayload: ProcessingUnitPayload = {
+            action: "payout",
+            transactionId: payload.beneficiaryTransactionId ?? "",
+            userId: payload.userId,
+            payoutJobUniqueId: payload.payoutJobUniqueId,
+        };
+        return dispatchProcessingUnit(processingUnitPayload, options);
     },
     bulkPayout(
-        payload: ProcessBulkPayoutPayload,
+        payload: BulkPayoutDispatchArgs,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchProcessBulkPayout(payload, options);
+        const processingUnitPayload: ProcessingUnitPayload = {
+            action: "bulk_payout",
+            transactionId: "",
+            userId: payload.userId,
+            payoutJobUniqueId: payload.payoutJobUniqueId,
+        };
+        return dispatchProcessingUnit(processingUnitPayload, options);
     },
     deposit(
-        payload: ProcessDepositPayload,
+        payload: DepositDispatchArgs,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchProcessDeposit(payload, options);
+        const processingUnitPayload: ProcessingUnitPayload = {
+            action: "deposit",
+            transactionId: payload.depositTransactionId,
+            userId: payload.userId,
+            payoutJobUniqueId: "",
+        };
+        return dispatchProcessingUnit(processingUnitPayload, options);
+    },
+    compliance(
+        payload: CompliancePayload,
+        options?: JobsOptions,
+    ): Promise<string> {
+        return dispatchCompliance(payload, options);
     },
     callback(
         payload: SendCallbackPayload,

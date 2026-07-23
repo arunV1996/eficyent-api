@@ -7,25 +7,21 @@ import {
     queueName,
 } from "./jobs/config";
 import {
-    executeProcessBulkPayout,
-    PROCESS_BULK_PAYOUT_JOB,
-} from "./jobs/ProcessBulkPayoutJob";
+    executeCompliance,
+    COMPLIANCE_JOB,
+} from "./jobs/ComplianceJob";
 import {
     executeProcessCalizaWebhook,
     PROCESS_CALIZA_WEBHOOK_JOB,
 } from "./jobs/ProcessCalizaWebhookJob";
 import {
-    executeProcessDeposit,
-    PROCESS_DEPOSIT_JOB,
-} from "./jobs/ProcessDepositJob";
-import {
     executeProcessDiginineWebhook,
     PROCESS_DIGININE_WEBHOOK_JOB,
 } from "./jobs/ProcessDiginineWebhookJob";
 import {
-    executeProcessPayout,
-    PROCESS_PAYOUT_JOB,
-} from "./jobs/ProcessPayoutJob";
+    executeProcessingUnit,
+    PROCESSING_UNIT_JOB,
+} from "./jobs/ProcessingUnitJob";
 import {
     executeRefreshFxRates,
     REFRESH_FX_RATES_JOB,
@@ -53,9 +49,8 @@ import { loadSecretsIntoEnv } from "./services/secrets_manager.service";
 dotenv.config();
 
 const jobRegistry: Record<string, (job: Job) => Promise<unknown>> = {
-    [PROCESS_PAYOUT_JOB]: executeProcessPayout,
-    [PROCESS_BULK_PAYOUT_JOB]: executeProcessBulkPayout,
-    [PROCESS_DEPOSIT_JOB]: executeProcessDeposit,
+    [PROCESSING_UNIT_JOB]: executeProcessingUnit,
+    [COMPLIANCE_JOB]: executeCompliance,
     [SEND_CALLBACK_JOB]: executeSendCallback,
     [REFRESH_FX_RATES_JOB]: executeRefreshFxRates,
     [PROCESS_CALIZA_WEBHOOK_JOB]: executeProcessCalizaWebhook,
