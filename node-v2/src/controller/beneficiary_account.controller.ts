@@ -459,7 +459,10 @@ const validationToJSON = (
     const data: Record<string, unknown> = {
         account_number: validationRow.accountNumber ?? "",
         ifsc: validationRow.code ?? "",
-        is_nre_account: validationRow.isNreAccount === 1,
+        // String literals on purpose — the consumer expects "true"/"false".
+        is_nre_account: validationRow.isNreAccount === 1 ? "true" : "false",
+        is_account_exists:
+            validationRow.isAccountExists === 1 ? "true" : "false",
     };
     if (validationRow.accountName) {
         data.account_name = validationRow.accountName;
