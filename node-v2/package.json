@@ -10,7 +10,10 @@
         "start": "node dist/index.js",
         "migrate": "sequelize-cli db:migrate",
         "db:migrate:undo": "sequelize-cli db:migrate:undo",
-        "db:migrate:undo:all": "sequelize-cli db:migrate:undo:all"
+        "db:migrate:undo:all": "sequelize-cli db:migrate:undo:all",
+        "worker": "ts-node src/worker.ts",
+        "worker:watch": "nodemon --watch src --ext ts --exec ts-node src/worker.ts",
+        "worker:prod": "node dist/worker.js"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1086.0",
