@@ -1,33 +1,115 @@
+import { Job, Worker } from "bullmq";
 import dotenv from "dotenv";
+import {
+    bullmqPrefix,
+    closeQueue,
+    connectionOptions,
+    queueName,
+} from "./jobs/config";
+import {
+    executeProcessBulkPayout,
+    PROCESS_BULK_PAYOUT_JOB,
+} from "./jobs/ProcessBulkPayoutJob";
+import {
+    executeProcessCalizaWebhook,
+    PROCESS_CALIZA_WEBHOOK_JOB,
+} from "./jobs/ProcessCalizaWebhookJob";
+import {
+    executeProcessDeposit,
+    PROCESS_DEPOSIT_JOB,
+} from "./jobs/ProcessDepositJob";
+import {
+    executeProcessDiginineWebhook,
+    PROCESS_DIGININE_WEBHOOK_JOB,
+} from "./jobs/ProcessDiginineWebhookJob";
+import {
+    executeProcessPayout,
+    PROCESS_PAYOUT_JOB,
+} from "./jobs/ProcessPayoutJob";
+import {
+    executeRefreshFxRates,
+    REFRESH_FX_RATES_JOB,
+} from "./jobs/RefreshFxRatesJob";
+import {
+    executeSendCallback,
+    SEND_CALLBACK_JOB,
+} from "./jobs/SendCallbackJob";
+import {
+    executeSendDebitNotification,
+    SEND_DEBIT_NOTIFICATION_JOB,
+} from "./jobs/SendDebitNotificationJob";
 import { loadSecretsIntoEnv } from "./services/secrets_manager.service";
 
 /**
- * Dedicated worker-process entry point — run with `npm run worker`
- * (ts-node) or `node dist/worker.js` in production. Completely
- * independent of the API server (src/index.ts): neither process
- * imports the other.
+ * Centralized worker — the `php artisan queue:work` equivalent, run
+ * with `npm run worker` (ts-node) or `node dist/worker.js` in
+ * production. Entirely independent of the API server (src/index.ts).
  *
- * Env is loaded (dotenv + optional AWS Secrets Manager) BEFORE the
- * worker modules are imported, because each worker file connects to
- * Redis at import time with the per-queue WORKER_*_CONCURRENCY
- * settings.
+ * One BullMQ Worker consumes the core queue; the processor routes each
+ * job.name to the matching execute function from src/jobs/. Register
+ * new jobs by adding their (JOB_NAME -> execute) pair to jobRegistry.
  */
+
 dotenv.config();
 
-const startWorkerFleet = async (): Promise<void> => {
+const jobRegistry: Record<string, (job: Job) => Promise<unknown>> = {
+    [PROCESS_PAYOUT_JOB]: executeProcessPayout,
+    [PROCESS_BULK_PAYOUT_JOB]: executeProcessBulkPayout,
+    [PROCESS_DEPOSIT_JOB]: executeProcessDeposit,
+    [SEND_CALLBACK_JOB]: executeSendCallback,
+    [REFRESH_FX_RATES_JOB]: executeRefreshFxRates,
+    [PROCESS_CALIZA_WEBHOOK_JOB]: executeProcessCalizaWebhook,
+    [PROCESS_DIGININE_WEBHOOK_JOB]: executeProcessDiginineWebhook,
+    [SEND_DEBIT_NOTIFICATION_JOB]: executeSendDebitNotification,
+};
+
+const routeJob = async (job: Job): Promise<unknown> => {
+    const execute = jobRegistry[job.name];
+    if (!execute) {
+        throw new Error(`No job registered for name "${job.name}".`);
+    }
+    return execute(job);
+};
+
+const startWorker = async (): Promise<void> => {
     await loadSecretsIntoEnv();
 
-    const [{ allWorkers }, { closeQueues }] = await Promise.all([
-        import("./jobs/workers"),
-        import("./jobs/config"),
-    ]);
+    const concurrency = (() => {
+        const parsed = parseInt(process.env.QUEUE_CONCURRENCY ?? "", 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+    })();
 
-    // Workers connect lazily under the hood; waitUntilReady surfaces
-    // connection failures at startup instead of on the first job.
-    await Promise.all(allWorkers.map((worker) => worker.waitUntilReady()));
+    const worker = new Worker(queueName(), routeJob, {
+        connection: connectionOptions(),
+        prefix: bullmqPrefix(),
+        concurrency,
+        autorun: true,
+        lockDuration: 60_000,
+        stalledInterval: 30_000,
+    });
+
+    worker.on("completed", (job) => {
+        // eslint-disable-next-line no-console
+        console.log(`[worker] completed job ${job.id} (${job.name})`);
+    });
+    worker.on("failed", (job, error) => {
+        // eslint-disable-next-line no-console
+        console.error(
+            `[worker] failed job ${job?.id} (${job?.name}):`,
+            error?.message ?? error,
+        );
+    });
+    worker.on("error", (error) => {
+        // eslint-disable-next-line no-console
+        console.error("[worker] worker error:", error);
+    });
+
+    await worker.waitUntilReady();
     // eslint-disable-next-line no-console
     console.log(
-        `Worker fleet running: ${allWorkers.length} workers connected to Redis (${
+        `Queue worker running: queue "${queueName()}" (prefix "${bullmqPrefix()}", concurrency ${concurrency}, ${
+            Object.keys(jobRegistry).length
+        } jobs registered) connected to Redis (${
             process.env.REDIS_HOST || "127.0.0.1"
         }:${process.env.REDIS_PORT || "6379"}).`,
     );
@@ -39,13 +121,11 @@ const startWorkerFleet = async (): Promise<void> => {
         }
         shuttingDown = true;
         // eslint-disable-next-line no-console
-        console.log(`${signal} received — closing worker fleet...`);
-        await Promise.allSettled(
-            allWorkers.map((worker) => worker.close()),
-        );
-        await closeQueues();
+        console.log(`${signal} received — closing queue worker...`);
+        await worker.close();
+        await closeQueue();
         // eslint-disable-next-line no-console
-        console.log("Worker fleet shut down cleanly.");
+        console.log("Queue worker shut down cleanly.");
         process.exit(0);
     };
 
@@ -62,8 +142,8 @@ const startWorkerFleet = async (): Promise<void> => {
     });
 };
 
-startWorkerFleet().catch((startupError) => {
+startWorker().catch((startupError) => {
     // eslint-disable-next-line no-console
-    console.error("Failed to start worker fleet:", startupError);
+    console.error("Failed to start queue worker:", startupError);
     process.exit(1);
 });

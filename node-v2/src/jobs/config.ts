@@ -1,37 +1,17 @@
 import { JobsOptions, Queue } from "bullmq";
 
 /**
- * Shared BullMQ configuration: Redis connection options, queue name
- * registry, and lazily-created Queue instances used by the dispatchers.
+ * Shared queue configuration — the Laravel queue.php equivalent.
  *
- * CRITICAL COMPATIBILITY NOTE: queue names, the BULLMQ_PREFIX, job
- * names, and payload shapes are kept byte-identical to the legacy
- * /node service. During the migration both services share the same
- * Redis, so jobs enqueued by node-v2 can be processed by the legacy
- * worker fleet and vice versa.
+ * One core queue carries every job (like Laravel's "default" queue);
+ * jobs are distinguished by job name, and the centralized worker
+ * (src/worker.ts) routes each name to its execute function.
  *
  * Configuration: REDIS_HOST, REDIS_PORT, REDIS_PASSWORD (optional),
- * BULLMQ_PREFIX (default "eficyent"), BULLMQ_DEFAULT_ATTEMPTS
- * (default 3), BULLMQ_DEFAULT_BACKOFF_MS (default 5000).
+ * QUEUE_NAME (default "default"), BULLMQ_PREFIX (default "eficyent"),
+ * BULLMQ_DEFAULT_ATTEMPTS (default 3), BULLMQ_DEFAULT_BACKOFF_MS
+ * (default 5000).
  */
-
-export const QueueNames = {
-    Payout: "payout",
-    Deposit: "deposit",
-    Compliance: "compliance",
-    Remittance: "remittance",
-    BeneficiaryValidation: "beneficiary-validation",
-    FxRates: "fx-rates",
-    Callback: "callback",
-    BulkPayout: "bulk-payout",
-    DebitNotification: "debit-notification",
-    CalizaWebhook: "caliza-webhook",
-    DiginineWebhook: "diginine-webhook",
-} as const;
-
-export type QueueName = (typeof QueueNames)[keyof typeof QueueNames];
-
-const queues = new Map<QueueName, Queue>();
 
 export const connectionOptions = () => ({
     host: process.env.REDIS_HOST || "127.0.0.1",
@@ -45,12 +25,15 @@ export const connectionOptions = () => ({
 export const bullmqPrefix = (): string =>
     process.env.BULLMQ_PREFIX || "eficyent";
 
-export const getQueue = (name: QueueName): Queue => {
-    let queue = queues.get(name);
-    if (queue) {
-        return queue;
+export const queueName = (): string => process.env.QUEUE_NAME || "default";
+
+let coreQueue: Queue | null = null;
+
+export const getQueue = (): Queue => {
+    if (coreQueue) {
+        return coreQueue;
     }
-    queue = new Queue(name, {
+    coreQueue = new Queue(queueName(), {
         connection: connectionOptions(),
         prefix: bullmqPrefix(),
         defaultJobOptions: {
@@ -66,25 +49,25 @@ export const getQueue = (name: QueueName): Queue => {
             removeOnFail: { count: 10_000, age: 60 * 60 * 24 * 30 },
         } satisfies JobsOptions,
     });
-    queues.set(name, queue);
-    return queue;
+    return coreQueue;
 };
 
-/** Shared producer helper used by every dispatcher. */
-export const enqueueJob = async (
-    queueName: QueueName,
+/** Shared producer helper used by every job's dispatch function. */
+export const enqueue = async (
     jobName: string,
     data: unknown,
     options?: JobsOptions,
 ): Promise<string> => {
-    const queue = getQueue(queueName);
-    const job = await queue.add(jobName, data, options);
+    const job = await getQueue().add(jobName, data, options);
     return job.id ?? "";
 };
 
-export const closeQueues = async (): Promise<void> => {
-    await Promise.allSettled(
-        [...queues.values()].map((queue) => queue.close()),
-    );
-    queues.clear();
+export const closeQueue = async (): Promise<void> => {
+    if (coreQueue) {
+        await coreQueue.close();
+        coreQueue = null;
+    }
 };
+
+/** Backwards-compatible alias (pre-refactor callers used closeQueues). */
+export const closeQueues = closeQueue;

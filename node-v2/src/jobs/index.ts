@@ -1,113 +1,102 @@
 import { JobsOptions } from "bullmq";
 import {
-    dispatchCallback,
-    CallbackJobPayload,
-} from "./dispatchers/callback.dispatcher";
+    dispatchProcessBulkPayout,
+    ProcessBulkPayoutPayload,
+} from "./ProcessBulkPayoutJob";
 import {
-    dispatchDeposit,
-    DepositJobPayload,
-} from "./dispatchers/deposit.dispatcher";
+    dispatchProcessCalizaWebhook,
+    ProcessCalizaWebhookPayload,
+} from "./ProcessCalizaWebhookJob";
 import {
-    dispatchFxRates,
-    FxRatesJobPayload,
-} from "./dispatchers/fx_rates.dispatcher";
+    dispatchProcessDeposit,
+    ProcessDepositPayload,
+} from "./ProcessDepositJob";
 import {
-    dispatchDebitNotification,
-    DebitNotificationJobPayload,
-} from "./dispatchers/notification.dispatcher";
+    dispatchProcessDiginineWebhook,
+    ProcessDiginineWebhookPayload,
+} from "./ProcessDiginineWebhookJob";
 import {
-    dispatchBulkPayout,
-    dispatchPayout,
-    BulkPayoutJobPayload,
-    PayoutJobPayload,
-} from "./dispatchers/payout.dispatcher";
+    dispatchProcessPayout,
+    ProcessPayoutPayload,
+} from "./ProcessPayoutJob";
 import {
-    dispatchCalizaWebhook,
-    dispatchDiginineWebhook,
-    CalizaWebhookJobPayload,
-    DiginineWebhookJobPayload,
-} from "./dispatchers/webhook.dispatcher";
+    dispatchRefreshFxRates,
+    RefreshFxRatesPayload,
+} from "./RefreshFxRatesJob";
+import {
+    dispatchSendCallback,
+    SendCallbackPayload,
+} from "./SendCallbackJob";
+import {
+    dispatchSendDebitNotification,
+    SendDebitNotificationPayload,
+} from "./SendDebitNotificationJob";
 
 /**
- * Barrel for the jobs module. The queue plumbing lives in ./config,
- * producers live under ./dispatchers, consumers under ./workers (only
- * ever imported by src/worker.ts). The Dispatch object keeps the
- * pre-refactor call sites working unchanged.
+ * Barrel for the Laravel-style jobs module. Each file under src/jobs/
+ * is one job (interface + dispatch + execute); src/worker.ts is the
+ * queue:work equivalent that routes job names to execute functions.
+ * The Dispatch facade keeps the pre-refactor call sites unchanged.
  */
 
-export { closeQueues, getQueue, QueueNames } from "./config";
-export type { QueueName } from "./config";
+export { closeQueue, closeQueues, getQueue, queueName } from "./config";
 
-export {
-    dispatchBulkPayout,
-    dispatchCallback,
-    dispatchCalizaWebhook,
-    dispatchDebitNotification,
-    dispatchDeposit,
-    dispatchDiginineWebhook,
-    dispatchFxRates,
-    dispatchPayout,
-};
-export type {
-    BulkPayoutJobPayload,
-    CallbackJobPayload,
-    CalizaWebhookJobPayload,
-    DebitNotificationJobPayload,
-    DepositJobPayload,
-    DiginineWebhookJobPayload,
-    FxRatesJobPayload,
-    PayoutJobPayload,
-};
+export * from "./ProcessBulkPayoutJob";
+export * from "./ProcessCalizaWebhookJob";
+export * from "./ProcessDepositJob";
+export * from "./ProcessDiginineWebhookJob";
+export * from "./ProcessPayoutJob";
+export * from "./RefreshFxRatesJob";
+export * from "./SendCallbackJob";
+export * from "./SendDebitNotificationJob";
 
-// Aggregated dispatcher facade — method names, queue names, job names,
-// and dedup ids are identical to the pre-refactor monolith.
 export const Dispatch = {
     payout(
-        payload: PayoutJobPayload,
+        payload: ProcessPayoutPayload,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchPayout(payload, options);
+        return dispatchProcessPayout(payload, options);
     },
     bulkPayout(
-        payload: BulkPayoutJobPayload,
+        payload: ProcessBulkPayoutPayload,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchBulkPayout(payload, options);
+        return dispatchProcessBulkPayout(payload, options);
     },
     deposit(
-        payload: DepositJobPayload,
+        payload: ProcessDepositPayload,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchDeposit(payload, options);
+        return dispatchProcessDeposit(payload, options);
     },
     callback(
-        payload: CallbackJobPayload,
+        payload: SendCallbackPayload,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchCallback(payload, options);
+        return dispatchSendCallback(payload, options);
     },
     fxRates(
-        payload: FxRatesJobPayload,
+        payload: RefreshFxRatesPayload,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchFxRates(payload, options);
+        return dispatchRefreshFxRates(payload, options);
     },
     calizaWebhook(
-        payload: CalizaWebhookJobPayload,
+        payload: ProcessCalizaWebhookPayload,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchCalizaWebhook(payload, options);
+        return dispatchProcessCalizaWebhook(payload, options);
     },
     diginineWebhook(
-        payload: DiginineWebhookJobPayload,
+        payload: ProcessDiginineWebhookPayload,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchDiginineWebhook(payload, options);
+        return dispatchProcessDiginineWebhook(payload, options);
     },
     debitNotification(
-        payload: DebitNotificationJobPayload,
+        payload: SendDebitNotificationPayload,
         options?: JobsOptions,
     ): Promise<string> {
-        return dispatchDebitNotification(payload, options);
+        return dispatchSendDebitNotification(payload, options);
     },
 };
