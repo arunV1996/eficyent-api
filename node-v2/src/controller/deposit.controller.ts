@@ -20,7 +20,7 @@ import {
 import { depositTransactionToJSON } from "../resources/deposit_transaction.resource";
 import { generateExcel } from "../services/excel_export.service";
 import { makeDeposit as invoiceMateMakeDeposit } from "../services/invoice_mate.service";
-import { createDeposit as processingUnitCreateDeposit } from "../services/processing_unit.service";
+import { Dispatch } from "../jobs";
 import { temporaryUrl, upload, uploadBase64 } from "../services/s3.service";
 import { depositReceived as telegramDepositReceived } from "../services/telegram.service";
 import { generateUniqueId } from "../utils/common.utils";
@@ -425,8 +425,9 @@ export const store = async (req: Request, res: Response): Promise<void> => {
         );
 
         // External-service dispatch (best-effort, non-blocking) —
-        // mirror of the legacy post-store fan-out. Failures are logged
-        // and never affect this response.
+        // mirror of the legacy post-store fan-out. The ProcessingUnit
+        // initiation now rides the BullMQ worker instead of running
+        // synchronously in the request thread.
         void Promise.all([
             telegramDepositReceived({
                 id: created.uniqueId,
@@ -436,7 +437,7 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                 status: "PROCESSING",
                 created_at: (created.createdAt || new Date()).toISOString(),
             }),
-            processingUnitCreateDeposit(created),
+            Dispatch.deposit({ depositTransactionUniqueId: created.uniqueId }),
             invoiceMateMakeDeposit(created),
         ]).catch((dispatchError) => {
             // eslint-disable-next-line no-console
@@ -501,16 +502,16 @@ export const retryDeposit = async (
                 changedAt: new Date(),
             });
 
-            void processingUnitCreateDeposit(updated).catch(
-                (dispatchError) => {
-                    // eslint-disable-next-line no-console
-                    console.warn(
-                        "ProcessingUnit redispatch failed (background):",
-                        updated.uniqueId,
-                        dispatchError,
-                    );
-                },
-            );
+            void Dispatch.deposit({
+                depositTransactionUniqueId: updated.uniqueId,
+            }).catch((dispatchError) => {
+                // eslint-disable-next-line no-console
+                console.warn(
+                    "ProcessingUnit redispatch failed (background):",
+                    updated.uniqueId,
+                    dispatchError,
+                );
+            });
         }
         return res.sendResponse([], res.__("success.118"), 118);
     } catch (error) {

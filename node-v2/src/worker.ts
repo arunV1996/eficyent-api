@@ -83,6 +83,14 @@ const startWorker = async (): Promise<void> => {
         stalledInterval: 30_000,
     });
 
+    worker.on("active", (job) => {
+        // eslint-disable-next-line no-console
+        console.log(
+            `[worker] picked up job ${job.id} (${job.name}) attempt ${
+                job.attemptsMade + 1
+            }`,
+        );
+    });
     worker.on("completed", (job) => {
         // eslint-disable-next-line no-console
         console.log(`[worker] completed job ${job.id} (${job.name})`);

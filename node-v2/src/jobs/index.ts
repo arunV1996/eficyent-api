@@ -61,8 +61,7 @@ export interface BulkPayoutDispatchArgs {
 }
 
 export interface DepositDispatchArgs {
-    depositTransactionId: string;
-    userId: string;
+    depositTransactionUniqueId: string;
 }
 
 export const Dispatch = {
@@ -96,8 +95,8 @@ export const Dispatch = {
     ): Promise<string> {
         const processingUnitPayload: ProcessingUnitPayload = {
             action: "deposit",
-            transactionId: payload.depositTransactionId,
-            userId: payload.userId,
+            transactionId: payload.depositTransactionUniqueId,
+            userId: "",
             payoutJobUniqueId: "",
         };
         return dispatchProcessingUnit(processingUnitPayload, options);

@@ -3,13 +3,11 @@ import { Job, JobsOptions } from "bullmq";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import DepositTransaction from "../models/deposit_transaction.model";
 import PayoutJob from "../models/payout_job.model";
+import { createDeposit } from "../services/processing_unit.service";
 import {
     BENEFICIARY_TRANSACTION_COMPLETED,
     BENEFICIARY_TRANSACTION_FAILED,
     BENEFICIARY_TRANSACTION_PROCESSING,
-    DEPOSIT_TRANSACTION_COMPLETED,
-    DEPOSIT_TRANSACTION_FAILED,
-    DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING,
     PAYOUT_JOB_STATUS_PROCESSING,
 } from "../utils/constants";
 import { enqueue } from "./config";
@@ -127,9 +125,18 @@ const handlePayout = async (
 const handleDeposit = async (
     payload: ProcessingUnitPayload,
 ): Promise<void> => {
-    const transaction = await DepositTransaction.findByPk(
-        Number(payload.transactionId),
+    // eslint-disable-next-line no-console
+    console.log(
+        `[job:${PROCESSING_UNIT_JOB}] Started processing deposit ${payload.transactionId}`,
     );
+
+    // The controller dispatches the row's unique_id; numeric ids are
+    // still accepted for direct/legacy dispatches.
+    const transaction = /^\d+$/.test(payload.transactionId)
+        ? await DepositTransaction.findByPk(Number(payload.transactionId))
+        : await DepositTransaction.findOne({
+              where: { uniqueId: payload.transactionId },
+          });
     if (!transaction) {
         throw new Error(
             `Deposit transaction ${payload.transactionId} not found.`,
@@ -137,36 +144,22 @@ const handleDeposit = async (
     }
 
     try {
-        const response = await processingUnitClient().post("/deposits", {
-            reference_id: transaction.uniqueId,
-            amount: transaction.amount,
-            currency: transaction.depositCurrency,
-            user_id: payload.userId,
-        });
-
-        const isCompleted =
-            String(
-                (response.data as { status?: string })?.status ?? "",
-            ).toUpperCase() === "COMPLETED";
-        await transaction.update({
-            status: isCompleted
-                ? DEPOSIT_TRANSACTION_COMPLETED
-                : DEPOSIT_TRANSACTION_PROCESSING_UNIT_PROCESSING,
-        });
+        // Full ported ProcessingUnit initiation: payload build, upstream
+        // call, status mapping + history, merchant callback enqueue.
+        await createDeposit(transaction);
         // eslint-disable-next-line no-console
         console.log(
-            `[job:${PROCESSING_UNIT_JOB}] deposit ${transaction.uniqueId} -> ${
-                isCompleted ? "Completed" : "Processing"
-            }`,
+            `[job:${PROCESSING_UNIT_JOB}] Successfully completed deposit ${payload.transactionId}`,
         );
-    } catch (apiError) {
-        await transaction.update({ status: DEPOSIT_TRANSACTION_FAILED });
+    } catch (serviceError) {
         // eslint-disable-next-line no-console
         console.error(
-            `[job:${PROCESSING_UNIT_JOB}] deposit ${transaction.uniqueId} failed:`,
-            apiError instanceof Error ? apiError.message : apiError,
+            `[job:${PROCESSING_UNIT_JOB}] Deposit ${payload.transactionId} failed:`,
+            serviceError instanceof Error
+                ? serviceError.message
+                : serviceError,
         );
-        throw apiError;
+        throw serviceError;
     }
 };
 
