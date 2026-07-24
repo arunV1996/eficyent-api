@@ -594,6 +594,11 @@ export const createDeposit = async (
             referenceId: deposit.id,
         });
 
+        // Surface the raw upstream payload in the worker terminal so
+        // Processing Unit rejections carry their exact error detail.
+        // eslint-disable-next-line no-console
+        console.log("[PU_RESPONSE]", JSON.stringify(response, null, 2));
+
         if (response.success) {
             const depositTransactionObject =
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
