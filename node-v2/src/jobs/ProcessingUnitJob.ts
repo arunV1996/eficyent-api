@@ -1,15 +1,13 @@
-import axios from "axios";
 import { Job, JobsOptions } from "bullmq";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import DepositTransaction from "../models/deposit_transaction.model";
 import PayoutJob from "../models/payout_job.model";
-import { createDeposit } from "../services/processing_unit.service";
+import User from "../models/user.model";
 import {
-    BENEFICIARY_TRANSACTION_COMPLETED,
-    BENEFICIARY_TRANSACTION_FAILED,
-    BENEFICIARY_TRANSACTION_PROCESSING,
-    PAYOUT_JOB_STATUS_PROCESSING,
-} from "../utils/constants";
+    createDeposit,
+    make as makePayout,
+} from "../services/processing_unit.service";
+import { PAYOUT_JOB_STATUS_PROCESSING } from "../utils/constants";
 import { enqueue } from "./config";
 
 /**
@@ -49,30 +47,6 @@ export const dispatchProcessingUnit = async (
         ...options,
     });
 
-const processingUnitClient = () => {
-    const baseUrl =
-        process.env.EXTERNAL_PROCESSINGUNIT_URL ||
-        process.env.PROCESSING_UNIT_URL ||
-        "";
-    return axios.create({
-        baseURL: baseUrl.replace(/\/+$/, ""),
-        timeout:
-            parseInt(process.env.PROCESSING_UNIT_TIMEOUT_SEC || "90", 10) *
-            1000,
-        headers: {
-            "Content-Type": "application/json",
-            "x-api-key":
-                process.env.EXTERNAL_PROCESSINGUNIT_API_KEY ||
-                process.env.PROCESSING_UNIT_API_KEY ||
-                "",
-            "x-api-secret":
-                process.env.EXTERNAL_PROCESSINGUNIT_API_SECRET ||
-                process.env.PROCESSING_UNIT_API_SECRET ||
-                "",
-        },
-    });
-};
-
 const handlePayout = async (
     payload: ProcessingUnitPayload,
 ): Promise<void> => {
@@ -84,41 +58,29 @@ const handlePayout = async (
             `Beneficiary transaction ${payload.transactionId} not found.`,
         );
     }
+    const user = await User.findByPk(Number(payload.userId));
+    if (!user) {
+        throw new Error(`User ${payload.userId} not found.`);
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(
+        `[job:${PROCESSING_UNIT_JOB}] Started processing payout ${payload.transactionId}`,
+    );
 
     try {
-        const response = await processingUnitClient().post("/payouts", {
-            reference_id: transaction.uniqueId,
-            amount: transaction.amount,
-            currency: transaction.receivingCurrency,
-            user_id: payload.userId,
-            payout_job_unique_id: payload.payoutJobUniqueId || undefined,
-        });
-
-        const isCompleted =
-            String(
-                (response.data as { status?: string })?.status ?? "",
-            ).toUpperCase() === "COMPLETED";
-        await transaction.update({
-            status: isCompleted
-                ? BENEFICIARY_TRANSACTION_COMPLETED
-                : BENEFICIARY_TRANSACTION_PROCESSING,
-        });
+        await makePayout(transaction, user);
         // eslint-disable-next-line no-console
         console.log(
-            `[job:${PROCESSING_UNIT_JOB}] payout ${transaction.uniqueId} -> ${
-                isCompleted ? "Completed" : "Processing"
-            }`,
+            `[job:${PROCESSING_UNIT_JOB}] Successfully completed payout ${payload.transactionId}`,
         );
-    } catch (apiError) {
-        await transaction.update({
-            status: BENEFICIARY_TRANSACTION_FAILED,
-        });
+    } catch (serviceError) {
         // eslint-disable-next-line no-console
         console.error(
-            `[job:${PROCESSING_UNIT_JOB}] payout ${transaction.uniqueId} failed:`,
-            apiError instanceof Error ? apiError.message : apiError,
+            `[job:${PROCESSING_UNIT_JOB}] Payout ${payload.transactionId} failed:`,
+            serviceError instanceof Error ? serviceError.message : serviceError,
         );
-        throw apiError;
+        throw serviceError;
     }
 };
 

@@ -373,6 +373,11 @@ export const make = async (
             },
         );
 
+        // Surface the raw upstream payload in the worker terminal so
+        // Processing Unit payout rejections carry their exact detail.
+        // eslint-disable-next-line no-console
+        console.log("[PU_PAYOUT_RESPONSE]", JSON.stringify(response, null, 2));
+
         if (response.success) {
             const nextStatus = response.data?.status
                 ? mapProcessingUnitWithdrawStatus(response.data.status).mapped
