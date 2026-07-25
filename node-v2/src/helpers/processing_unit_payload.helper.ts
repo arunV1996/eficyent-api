@@ -504,7 +504,10 @@ export const buildPayoutPayload = async (
         side: quote.quoteType,
         remarks: transaction.remarks,
         supporting_document: transaction.supportingDocument,
-        purpose_of_payment: additional?.purposeOfTransaction ?? null,
+        purpose_of_payment:
+            transaction.purposeOfPayment ??
+            additional?.purposeOfTransaction ??
+            null,
         rail: (account.paymentRail
             ? account.paymentRail
             : account.currency === "USD"

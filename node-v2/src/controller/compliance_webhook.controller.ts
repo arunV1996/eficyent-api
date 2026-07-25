@@ -2,15 +2,19 @@ import { Request, Response } from "express";
 import { literal, Op } from "sequelize";
 import sequelize from "../config/database";
 import { recordStatusHistory } from "../helpers/beneficiary_transaction.helper";
+import { beneficiaryTransactionCallbackPayload } from "../helpers/callback_payload.helper";
+import { createRefund } from "../helpers/refund.helper";
 import { Dispatch } from "../jobs";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import ExternalServiceCall from "../models/external_service_call.model";
 import PayoutJob from "../models/payout_job.model";
+import User from "../models/user.model";
 import {
     BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED,
     BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD,
     BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATED,
     BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED,
+    CALLBACK_PAYOUT_REJECTED,
     EXTERNAL_CALL_FOR_CALLBACK,
     EXTERNAL_TYPE_COMPLIANCE,
 } from "../utils/constants";
@@ -170,24 +174,41 @@ export const complianceWebhook = async (
 
         if (updates.status === BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED) {
             // Hand off to the Processing Unit via the background queue
-            // instead of initiating synchronously — the webhook must
-            // still answer 200 promptly regardless of how the
-            // downstream initiation resolves.
-            const payoutJob = await PayoutJob.findOne({
-                where: { beneficiaryTransactionId: transaction.id },
-            });
-            void Dispatch.payout({
-                beneficiaryTransactionId: String(transaction.id),
-                payoutJobUniqueId: payoutJob?.uniqueId ?? "",
-                userId: String(transaction.userId),
-                source: "approval",
-            }).catch((dispatchError) => {
-                // eslint-disable-next-line no-console
-                console.error(
-                    `ProcessingUnit dispatch failed for ${transaction.uniqueId}:`,
-                    dispatchError,
+            // instead of initiating synchronously.
+            const transactionUser = await User.findByPk(transaction.userId);
+            if (transactionUser) {
+                const payoutJob = await PayoutJob.findOne({
+                    where: { beneficiaryTransactionId: transaction.id },
+                });
+                await Dispatch.payout({
+                    beneficiaryTransactionId: String(transaction.id),
+                    payoutJobUniqueId: payoutJob ? payoutJob.uniqueId : "",
+                    userId: String(transactionUser.id),
+                    source: "approval",
+                }).catch((err) =>
+                    // eslint-disable-next-line no-console
+                    console.error(`Dispatch to PU failed:`, err),
                 );
-            });
+            }
+        }
+
+        if (updates.status === BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED) {
+            // Notify the merchant and refund the debited amount — same
+            // rejection handling as the Processing Unit webhook.
+            await Dispatch.callback({
+                userId: String(transaction.userId),
+                eventType: CALLBACK_PAYOUT_REJECTED,
+                payload: beneficiaryTransactionCallbackPayload(transaction),
+                beneficiaryTransactionUniqueId: transaction.uniqueId,
+                // eslint-disable-next-line no-console
+            }).catch((callbackError) => console.error(callbackError));
+
+            if (oldStatus !== BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED) {
+                await createRefund(transaction).catch((refundError) =>
+                    // eslint-disable-next-line no-console
+                    console.error(refundError),
+                );
+            }
         }
 
         responseBody = data;

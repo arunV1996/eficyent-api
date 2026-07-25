@@ -11,6 +11,7 @@ import MerchantSetting from "../models/merchant_setting.model";
 import PayoutJob from "../models/payout_job.model";
 import Quote from "../models/quote.model";
 import Sender from "../models/sender.model";
+import Setting from "../models/setting.model";
 import User from "../models/user.model";
 import VirtualAccount from "../models/virtual_account.model";
 import Wallet from "../models/wallet.model";
@@ -103,22 +104,18 @@ export const isRemitterDepositEnabled = async (
 };
 
 /**
- * True when the merchant has the 'is_compliance_enabled' setting turned
- * on — such merchants' payouts are screened by the Compliance panel
- * before reaching the Processing Unit.
+ * True when the global 'compliance_panel' setting is turned on — every
+ * payout is then screened by the Compliance panel before reaching the
+ * Processing Unit.
  */
-export const isComplianceEnabled = async (
-    merchantId: number | null,
-): Promise<boolean> => {
-    if (!merchantId) {
-        return false;
-    }
-    const setting = await MerchantSetting.findOne({
-        where: { merchantId, key: "is_compliance_enabled" },
+export const isComplianceEnabled = async (): Promise<boolean> => {
+    const setting = await Setting.findOne({
+        where: { key: "compliance_panel" },
     });
     return (
         setting?.value === "1" ||
-        setting?.value?.toLowerCase() === "true"
+        setting?.value?.toLowerCase() === "true" ||
+        setting?.value?.toLowerCase() === "yes"
     );
 };
 
@@ -450,17 +447,15 @@ export const createPayoutTransaction = async (
 
     // 9. Dispatch when the transaction is in a queueable state.
     //    CORPORATE_INITIATED is intentionally excluded — it must not
-    //    dispatch until a checker approves it. Compliance-enabled
-    //    merchants screen through the Compliance panel first (the
+    //    dispatch until a checker approves it. With the compliance
+    //    panel enabled, payouts screen through Compliance first (the
     //    approval webhook then queues the Processing Unit hand-off);
-    //    everyone else goes straight to the Processing Unit.
+    //    otherwise they go straight to the Processing Unit.
     if (
         finalStatus === BENEFICIARY_TRANSACTION_APPROVED ||
         finalStatus === BENEFICIARY_TRANSACTION_INITIATED
     ) {
-        const complianceEnabled = await isComplianceEnabled(
-            user.merchantId,
-        );
+        const complianceEnabled = await isComplianceEnabled();
         if (complianceEnabled) {
             await Dispatch.compliance({
                 action: "screen_transaction",
