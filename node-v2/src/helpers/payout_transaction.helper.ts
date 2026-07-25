@@ -102,6 +102,26 @@ export const isRemitterDepositEnabled = async (
     return setting?.value === "1";
 };
 
+/**
+ * True when the merchant has the 'is_compliance_enabled' setting turned
+ * on — such merchants' payouts are screened by the Compliance panel
+ * before reaching the Processing Unit.
+ */
+export const isComplianceEnabled = async (
+    merchantId: number | null,
+): Promise<boolean> => {
+    if (!merchantId) {
+        return false;
+    }
+    const setting = await MerchantSetting.findOne({
+        where: { merchantId, key: "is_compliance_enabled" },
+    });
+    return (
+        setting?.value === "1" ||
+        setting?.value?.toLowerCase() === "true"
+    );
+};
+
 export const createPayoutTransaction = async (
     payload: PayoutCreatePayload,
     user: User,
@@ -430,17 +450,31 @@ export const createPayoutTransaction = async (
 
     // 9. Dispatch when the transaction is in a queueable state.
     //    CORPORATE_INITIATED is intentionally excluded — it must not
-    //    dispatch until a checker approves it.
+    //    dispatch until a checker approves it. Compliance-enabled
+    //    merchants screen through the Compliance panel first (the
+    //    approval webhook then queues the Processing Unit hand-off);
+    //    everyone else goes straight to the Processing Unit.
     if (
         finalStatus === BENEFICIARY_TRANSACTION_APPROVED ||
         finalStatus === BENEFICIARY_TRANSACTION_INITIATED
     ) {
-        await Dispatch.payout({
-            beneficiaryTransactionId: String(created.transactionRow.id),
-            payoutJobUniqueId: created.payoutJob.uniqueId,
-            userId: String(user.id),
-            source: "approval",
-        });
+        const complianceEnabled = await isComplianceEnabled(
+            user.merchantId,
+        );
+        if (complianceEnabled) {
+            await Dispatch.compliance({
+                action: "screen_transaction",
+                transactionId: String(created.transactionRow.id),
+                userId: String(user.id),
+            });
+        } else {
+            await Dispatch.payout({
+                beneficiaryTransactionId: String(created.transactionRow.id),
+                payoutJobUniqueId: created.payoutJob.uniqueId,
+                userId: String(user.id),
+                source: "approval",
+            });
+        }
     }
 
     // Fire-and-forget ops notification (mirror of the legacy

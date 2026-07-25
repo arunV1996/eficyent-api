@@ -2,10 +2,10 @@ import { Request, Response } from "express";
 import { literal, Op } from "sequelize";
 import sequelize from "../config/database";
 import { recordStatusHistory } from "../helpers/beneficiary_transaction.helper";
+import { Dispatch } from "../jobs";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import ExternalServiceCall from "../models/external_service_call.model";
-import User from "../models/user.model";
-import * as processingUnit from "../services/processing_unit.service";
+import PayoutJob from "../models/payout_job.model";
 import {
     BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED,
     BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD,
@@ -169,22 +169,25 @@ export const complianceWebhook = async (
         }
 
         if (updates.status === BENEFICIARY_TRANSACTION_COMPLIANCE_APPROVED) {
-            // Hand off to the Processing Unit for payout initiation.
-            // Fire-and-forget (mirror of the legacy void call): the
-            // webhook must still answer 200 promptly regardless of how
-            // the downstream initiation resolves.
-            const transactionUser = await User.findByPk(transaction.userId);
-            if (transactionUser) {
-                void processingUnit
-                    .make(transaction, transactionUser)
-                    .catch((makeError) => {
-                        // eslint-disable-next-line no-console
-                        console.error(
-                            `ProcessingUnit.make failed for ${transaction.uniqueId}:`,
-                            makeError,
-                        );
-                    });
-            }
+            // Hand off to the Processing Unit via the background queue
+            // instead of initiating synchronously — the webhook must
+            // still answer 200 promptly regardless of how the
+            // downstream initiation resolves.
+            const payoutJob = await PayoutJob.findOne({
+                where: { beneficiaryTransactionId: transaction.id },
+            });
+            void Dispatch.payout({
+                beneficiaryTransactionId: String(transaction.id),
+                payoutJobUniqueId: payoutJob?.uniqueId ?? "",
+                userId: String(transaction.userId),
+                source: "approval",
+            }).catch((dispatchError) => {
+                // eslint-disable-next-line no-console
+                console.error(
+                    `ProcessingUnit dispatch failed for ${transaction.uniqueId}:`,
+                    dispatchError,
+                );
+            });
         }
 
         responseBody = data;

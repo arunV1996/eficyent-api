@@ -2,9 +2,8 @@ import axios from "axios";
 import { Job, JobsOptions } from "bullmq";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import Sender from "../models/sender.model";
-import {
-    BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD,
-} from "../utils/constants";
+import User from "../models/user.model";
+import { make as makeCompliance } from "../services/compliance.service";
 import { enqueue } from "./config";
 
 /**
@@ -62,28 +61,34 @@ const handleTransactionScreening = async (
             `Beneficiary transaction ${payload.transactionId} not found.`,
         );
     }
-
-    const response = await complianceClient().post("/screening/transaction", {
-        reference_id: transaction.uniqueId,
-        amount: transaction.amount,
-        currency: transaction.receivingCurrency,
-        user_id: payload.userId,
-    });
-
-    if (isSuspicious(response.data)) {
-        await transaction.update({
-            status: BENEFICIARY_TRANSACTION_COMPLIANCE_HOLD,
-        });
-        // eslint-disable-next-line no-console
-        console.warn(
-            `[job:${COMPLIANCE_JOB}] transaction ${transaction.uniqueId} flagged Suspicious -> status Hold`,
-        );
-        return;
+    const user = await User.findByPk(Number(payload.userId));
+    if (!user) {
+        throw new Error(`User ${payload.userId} not found.`);
     }
+
     // eslint-disable-next-line no-console
     console.log(
-        `[job:${COMPLIANCE_JOB}] transaction ${transaction.uniqueId} screening passed`,
+        `[job:${COMPLIANCE_JOB}] Started screening transaction ${payload.transactionId}`,
     );
+
+    try {
+        // Full ported Compliance submission: quote lookup, payload
+        // build, upstream call, status mapping + history.
+        await makeCompliance(transaction, user);
+        // eslint-disable-next-line no-console
+        console.log(
+            `[job:${COMPLIANCE_JOB}] Successfully screened transaction ${payload.transactionId}`,
+        );
+    } catch (serviceError) {
+        // eslint-disable-next-line no-console
+        console.error(
+            `[job:${COMPLIANCE_JOB}] Screening ${payload.transactionId} failed:`,
+            serviceError instanceof Error
+                ? serviceError.message
+                : serviceError,
+        );
+        throw serviceError;
+    }
 };
 
 const handleUserScreening = async (
