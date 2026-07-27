@@ -1,3 +1,4 @@
+import axios from "axios";
 import { setTimeout as wait } from "timers/promises";
 import ExternalServiceCall from "../models/external_service_call.model";
 import {
@@ -10,9 +11,10 @@ import {
  * services/external/httpClient.ts, including the corrected
  * external_service_calls audit mapping).
  *
- * One entry per outbound call to an external provider. Wraps fetch
- * with:
- *   - Per-request timeout (AbortController)
+ * One entry per outbound call to an external provider. Wraps axios
+ * (with validateStatus: () => true so it resolves for every HTTP
+ * status, exactly like the fetch it replaced) with:
+ *   - Per-request timeout
  *   - Retry with exponential backoff for transient errors (5xx, network)
  *   - Connection-error -> 0 status mapping
  *   - Audit row in `external_service_calls` for every attempt
@@ -218,24 +220,33 @@ export const call = async <T = unknown>(
     let lastResponse: HttpResponse<T> | null = null;
 
     while (attempt <= retries) {
-        const abortController = new AbortController();
-        const abortTimer = setTimeout(
-            () => abortController.abort(),
-            timeoutMs,
-        );
         const attemptStart = Date.now();
 
         try {
-            const fetchResponse = await fetch(url, {
+            const axiosResponse = await axios.request<string>({
                 method: options.method,
+                url,
                 headers: requestHeaders,
-                body:
+                data:
                     options.method === "GET" || !options.body
                         ? undefined
-                        : bodyJson,
-                signal: abortController.signal,
+                        : options.body,
+                timeout: timeoutMs,
+                // Behave exactly like fetch: resolve for every HTTP
+                // status (4xx/5xx included) instead of throwing.
+                validateStatus: () => true,
+                // Keep the raw provider bytes — parsing stays under our
+                // control so non-JSON responses survive in `raw`.
+                responseType: "text",
+                transformResponse: [(responseData) => responseData],
             });
-            const rawBody = await fetchResponse.text();
+            const rawBody =
+                typeof axiosResponse.data === "string"
+                    ? axiosResponse.data
+                    : "";
+            const responseStatus = axiosResponse.status;
+            const responseOk =
+                responseStatus >= 200 && responseStatus < 300;
 
             let parsedBody: T | null = null;
             try {
@@ -245,13 +256,15 @@ export const call = async <T = unknown>(
             }
 
             const responseHeaders: Record<string, string> = {};
-            fetchResponse.headers.forEach((headerValue, headerName) => {
-                responseHeaders[headerName] = headerValue;
-            });
+            for (const [headerName, headerValue] of Object.entries(
+                axiosResponse.headers ?? {},
+            )) {
+                responseHeaders[headerName] = String(headerValue);
+            }
 
             const response: HttpResponse<T> = {
-                ok: fetchResponse.ok,
-                status: fetchResponse.status,
+                ok: responseOk,
+                status: responseStatus,
                 body: parsedBody,
                 raw: rawBody,
                 headers: responseHeaders,
@@ -265,23 +278,26 @@ export const call = async <T = unknown>(
                 options.method,
                 requestHeaders,
                 options.body,
-                fetchResponse.status,
+                responseStatus,
                 rawBody,
                 response.durationMs,
                 null,
             );
 
-            if (fetchResponse.ok || !isRetryable(fetchResponse.status, null)) {
+            if (responseOk || !isRetryable(responseStatus, null)) {
                 return response;
             }
             lastResponse = response;
-        } catch (fetchError) {
+        } catch (requestError) {
+            // With validateStatus: () => true only network-level
+            // failures (timeouts, DNS, connection resets) land here —
+            // the same failure class fetch threw for.
             const durationMs = Date.now() - attemptStart;
-            lastError = fetchError;
+            lastError = requestError;
             const errorMessage =
-                fetchError instanceof Error
-                    ? fetchError.message
-                    : String(fetchError);
+                requestError instanceof Error
+                    ? requestError.message
+                    : String(requestError);
             await persistAudit(
                 context,
                 url,
@@ -293,11 +309,9 @@ export const call = async <T = unknown>(
                 durationMs,
                 errorMessage,
             );
-            if (!isRetryable(0, fetchError)) {
-                throw fetchError;
+            if (!isRetryable(0, requestError)) {
+                throw requestError;
             }
-        } finally {
-            clearTimeout(abortTimer);
         }
 
         if (attempt < retries) {
