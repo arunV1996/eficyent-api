@@ -711,13 +711,17 @@ export const make = async (
                 agentName: "",
                 agentLocation: "",
             },
-            isExternalClient: 1,
-            externalClient: {
-                id: config.externalClientId,
-                name: config.externalClientName,
-                code: config.externalClientCode,
-            },
-            metadata: [],
+            isExternalClient: config.externalClientId ? 1 : 0,
+            ...(config.externalClientId
+                ? {
+                      externalClient: {
+                          id: config.externalClientId,
+                          name: config.externalClientName,
+                          code: config.externalClientCode,
+                      },
+                  }
+                : {}),
+            metadata: {},
         };
 
         let sourceOfFundsRaw = "";
