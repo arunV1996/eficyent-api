@@ -307,10 +307,21 @@ const mapPurposeOfPayment = (value: string | null | undefined): string => {
     );
 };
 
+// Keys the compliance schema requires even when their values are empty.
+// Verbatim keys skip cleaning entirely (externalClient must go out with
+// whatever the env provides, metadata stays the literal [] / {}).
+const PRESERVE_VERBATIM_KEYS = new Set(["metadata", "externalClient"]);
+// Required nested objects: inner fields are still cleaned, but the
+// object itself survives even when everything inside was empty.
+const PRESERVE_OBJECT_KEYS = new Set(["address", "bankDetails"]);
+// Required scalars: kept (as "") instead of being stripped when empty.
+const PRESERVE_SCALAR_KEYS = new Set(["bankName", "routingNumber"]);
+
 /**
  * Mirror of the legacy removeEmptyValues — recursively strips
- * null/undefined/"" and empty arrays/objects, but preserves the
- * "metadata" key verbatim (even when empty).
+ * null/undefined/"" and empty arrays/objects, EXCEPT for the schema-
+ * required keys above, which the compliance gateway expects to always
+ * be present in the payload.
  */
 export const removeEmptyValues = (data: any): any => {
     if (data === null || data === undefined || data === "") {
@@ -328,8 +339,22 @@ export const removeEmptyValues = (data: any): any => {
         }
         const result: Record<string, any> = {};
         for (const [key, value] of Object.entries(data)) {
-            if (key === "metadata") {
+            if (PRESERVE_VERBATIM_KEYS.has(key)) {
                 result[key] = value;
+                continue;
+            }
+            if (
+                PRESERVE_OBJECT_KEYS.has(key) &&
+                value !== null &&
+                typeof value === "object" &&
+                !Array.isArray(value)
+            ) {
+                result[key] = removeEmptyValues(value) ?? {};
+                continue;
+            }
+            if (PRESERVE_SCALAR_KEYS.has(key)) {
+                const cleaned = removeEmptyValues(value);
+                result[key] = cleaned !== undefined ? cleaned : (value ?? "");
                 continue;
             }
             const cleaned = removeEmptyValues(value);
@@ -692,7 +717,7 @@ export const make = async (
                 name: config.externalClientName,
                 code: config.externalClientCode,
             },
-            metadata: {},
+            metadata: [],
         };
 
         let sourceOfFundsRaw = "";
