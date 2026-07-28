@@ -1,4 +1,5 @@
 import { Op } from "sequelize";
+import { getFixedRate } from "./commission.helper";
 import FxRate from "../models/fx_rate.model";
 import Lookup from "../models/lookup.model";
 import MerchantSetting from "../models/merchant_setting.model";
@@ -409,11 +410,14 @@ export const receivingCountries = async (
 };
 
 /**
- * Cached FX rates for the user's available `from` currencies vs the
- * supported countries. Mirror of LookupRepository::rates.
+ * FX rates for the user's available `from` currencies vs the supported
+ * countries. Mirror of LookupRepository::rates, with per-caller
+ * settlement overrides: an admin-configured FIXED fx fee for the pair
+ * (user -> merchant -> global via getFixedRate) wins over the cached
+ * global rate, so custom rates surface without a /refresh-rates hit.
  */
 export const rates = async (
-    _user: User,
+    user: User,
     searchKey?: string,
 ): Promise<
     {
@@ -468,6 +472,19 @@ export const rates = async (
             if (!cachedRate) {
                 continue;
             }
+
+            // Per-caller settlement override: an admin-configured
+            // FIXED rate for this pair (user -> merchant -> global)
+            // beats the cached global rate.
+            const fixedRate = await getFixedRate(
+                user.id,
+                user.merchantId ?? null,
+                fromCurrency,
+                supportedRow.currency,
+            );
+            const effectiveRate =
+                fixedRate !== null ? fixedRate : Number(cachedRate.rate);
+
             const countryCodeRow = await MobileCountryCode.findOne({
                 where: { alpha3Code: supportedRow.countryCode },
                 attributes: ["alpha2Code"],
@@ -475,7 +492,7 @@ export const rates = async (
             rateRows.push({
                 from_currency: cachedRate.fromCurrency,
                 to_currency: supportedRow.currency,
-                fx_rate: Number(cachedRate.rate).toFixed(4),
+                fx_rate: effectiveRate.toFixed(4),
                 flag: getFlagUrl(countryCodeRow?.alpha2Code, baseUrl),
                 last_updated: relativeTime(cachedRate.updatedAt ?? new Date()),
             });
