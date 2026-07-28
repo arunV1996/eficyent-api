@@ -495,6 +495,12 @@ export const PAYMENT_RAILS: { label: string; value: string }[] = [
     { label: "Swift", value: "swift" },
 ];
 
+// BDT (Bangladesh) local payment rails.
+export const BDT_RAIL_BANK = "bank";
+export const BDT_RAIL_BKASH = "bkash";
+export const BDT_RAIL_NAGAD = "nagad";
+export const BDT_RAIL_ROCKET = "rocket";
+
 // Mirror of get_account_types()
 export const ACCOUNT_TYPES: { label: string; value: string }[] = [
     { label: "Checking", value: "Checking" },

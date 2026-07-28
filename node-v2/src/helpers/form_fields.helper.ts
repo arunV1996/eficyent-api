@@ -29,6 +29,10 @@ import {
     ONBOARDING_STEP_THREE,
     ONBOARDING_STEP_TWO,
     PASSWORD_REGEX,
+    BDT_RAIL_BANK,
+    BDT_RAIL_BKASH,
+    BDT_RAIL_NAGAD,
+    BDT_RAIL_ROCKET,
     USER_TYPE_BUSINESS,
     USER_TYPE_PERSONAL,
 } from "../utils/constants";
@@ -935,21 +939,35 @@ const bankFieldsByCountry = (
                 }),
             ];
         case "BGD":
-            return [
-                accountTypeField,
-                make("account_number", "Account Number", {
-                    validation: { regex: "^[0-9]{10,17}$" },
-                }),
-                make(
-                    "code",
-                    isForeignCurrency ? "SWIFT/BIC" : "Routing Number",
-                    {
-                        validation: isForeignCurrency
-                            ? VALIDATION_PRESETS.swift
-                            : { regex: "^[0-9]{9}$" },
-                    },
-                ),
-            ];
+            if (isForeignCurrency) {
+                return [
+                    accountTypeField,
+                    make("account_number", "Account Number", {
+                        validation: VALIDATION_PRESETS.generic_account,
+                    }),
+                    make("code", "SWIFT/BIC", {
+                        validation: VALIDATION_PRESETS.swift,
+                    }),
+                ];
+            } else {
+                return [
+                    accountTypeField,
+                    make("payment_rail", "Payment Rail", {
+                        values: [
+                            { label: "Bank", value: BDT_RAIL_BANK },
+                            { label: "Bkash", value: BDT_RAIL_BKASH },
+                            { label: "Nagad", value: BDT_RAIL_NAGAD },
+                            { label: "Rocket", value: BDT_RAIL_ROCKET },
+                        ],
+                    }),
+                    make("account_number", "Account Number", {
+                        validation: VALIDATION_PRESETS.generic_account,
+                    }),
+                    make("code", "Routing Number", {
+                        validation: VALIDATION_PRESETS.routing,
+                    }),
+                ];
+            }
         case "PHL":
             return [
                 accountTypeField,
