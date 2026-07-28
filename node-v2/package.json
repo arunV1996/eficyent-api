@@ -8,12 +8,13 @@
         "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts",
         "build": "tsc && cp -r src/locales dist/ && cp -r src/views dist/",
         "start": "node dist/index.js",
-        "migrate": "sequelize-cli db:migrate",
+        "migrate": "node scripts/resilient_migrate.js",
         "db:migrate:undo": "sequelize-cli db:migrate:undo",
         "db:migrate:undo:all": "sequelize-cli db:migrate:undo:all",
         "worker": "ts-node src/worker.ts",
         "worker:watch": "nodemon --watch src --ext ts --exec ts-node src/worker.ts",
-        "worker:prod": "node dist/worker.js"
+        "worker:prod": "node dist/worker.js",
+        "migrate:raw": "sequelize-cli db:migrate"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1086.0",
