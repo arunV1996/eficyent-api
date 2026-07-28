@@ -22,6 +22,7 @@ import {
     ONBOARDING_STEP_FOUR_COMPLETED,
     QUOTE_SUBMITTED,
     TAKE_COUNT,
+    BUSINESS_MODEL_DEAL_BASED,
     TRANSACTION_TYPE_CREDIT,
     WALLET_STATUS_ACTIVE,
     WALLET_STATUS_MAP,
@@ -136,6 +137,15 @@ export const index = async (req: Request, res: Response): Promise<void> => {
         }
         if (query.search_key) {
             where.currency = { [Op.like]: `%${query.search_key}%` };
+        }
+        const dealBased = query.deal_based as unknown;
+        if (
+            dealBased === true ||
+            dealBased === "true" ||
+            dealBased === 1 ||
+            dealBased === "1"
+        ) {
+            where.businessModel = BUSINESS_MODEL_DEAL_BASED;
         }
 
         const rows = await Wallet.findAll({ where });

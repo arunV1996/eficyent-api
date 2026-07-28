@@ -298,7 +298,7 @@ export async function processBulkPayout(
       if (user.merchantId) {
         const bizModel = await getBusinessModel(user.merchantId);
         writePayoutLog(orderId, `Merchant Business Model: ${bizModel}`);
-        if (bizModel.toUpperCase() === BUSINESS_MODEL_DEAL_BASED) {
+        if (bizModel.toLowerCase() === BUSINESS_MODEL_DEAL_BASED) {
           const wallet = await prisma().wallet.findFirst({
             where: {
               userId: user.id,

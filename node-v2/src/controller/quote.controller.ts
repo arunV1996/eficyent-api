@@ -6,7 +6,6 @@ import {
     calcTransactionCommissions,
     getFixedRate,
 } from "../helpers/commission.helper";
-import { getBusinessModel } from "../helpers/merchant.helper";
 import { getVirtualAccountScope } from "../helpers/virtual_account.helper";
 import Merchant from "../models/merchant.model";
 import Quote from "../models/quote.model";
@@ -423,27 +422,23 @@ export const makeQuoteStore = (quoteMode: QuoteMode) => {
             const recipientTypeNumeric =
                 USER_TYPE_MAP[payload.recipient_type] ?? 1;
 
-            // Deal-based wallet override: merchants on the DEAL_BASED
-            // model with a wallet in the receiving currency are forced
-            // onto that wallet (same-currency transfer).
-            if (quoteMode === QUOTE_MODE_QUOTATION && req.user.merchantId) {
-                const businessModel = await getBusinessModel(
-                    req.user.merchantId,
-                );
+            // Deal-based wallet override: the business model now lives
+            // on the wallet row itself — a deal_based wallet in the
+            // receiving currency forces the quote onto that wallet
+            // (same-currency transfer).
+            if (quoteMode === QUOTE_MODE_QUOTATION) {
+                const wallet = await Wallet.findOne({
+                    where: {
+                        userId: req.user.id,
+                        currency: payload.receiving_currency.toUpperCase(),
+                    },
+                });
                 if (
-                    businessModel.toUpperCase() === BUSINESS_MODEL_DEAL_BASED
+                    wallet &&
+                    wallet.businessModel === BUSINESS_MODEL_DEAL_BASED
                 ) {
-                    const wallet = await Wallet.findOne({
-                        where: {
-                            userId: req.user.id,
-                            currency:
-                                payload.receiving_currency.toUpperCase(),
-                        },
-                    });
-                    if (wallet) {
-                        payload.bank_account_id = undefined;
-                        payload.wallet_id = wallet.uniqueId;
-                    }
+                    payload.bank_account_id = undefined;
+                    payload.wallet_id = wallet.uniqueId;
                 }
             }
 

@@ -384,7 +384,7 @@ export const quotesController = (mode: QuoteMode["mode"]) => ({
     // receiving currency, we force the source to be that wallet (making it a same-currency transfer).
     if (mode === QUOTE_MODE_QUOTATION && req.user.merchantId) {
       const bizModel = await getBusinessModel(req.user.merchantId);
-      if (bizModel.toUpperCase() === BUSINESS_MODEL_DEAL_BASED) {
+      if (bizModel.toLowerCase() === BUSINESS_MODEL_DEAL_BASED) {
         const wallet = await prisma().wallet.findFirst({
           where: {
             userId: req.user.id,

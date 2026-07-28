@@ -49,6 +49,16 @@ export const walletListQueryValidator: ValidationChain[] = [
         .isIn(BOOLEAN_LIKE_VALUES)
         .withMessage(localizedError("1100", 1100)),
 
+    // Boolean-like: true/false, "true"/"false", 1/0, "1"/"0".
+    query("deal_based")
+        .optional()
+        .custom((value) =>
+            [true, false, "true", "false", 1, 0, "1", "0"].includes(
+                value as never,
+            ),
+        )
+        .withMessage(localizedError("1104", 1104)),
+
     query("skip").optional().isInt({ min: 0, max: 100_000 }).toInt(),
 
     query("take").optional().isInt({ min: 1 }).toInt(),

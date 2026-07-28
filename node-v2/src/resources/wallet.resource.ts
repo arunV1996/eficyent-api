@@ -6,7 +6,12 @@ import {
     walletStatusLabel,
     walletTransactionStatusLabel,
 } from "../utils/common.utils";
-import { MORPH_VIRTUAL_ACCOUNT, MORPH_WALLET } from "../utils/constants";
+import {
+    BUSINESS_MODEL_DEAL_BASED,
+    BUSINESS_MODEL_MTO,
+    MORPH_VIRTUAL_ACCOUNT,
+    MORPH_WALLET,
+} from "../utils/constants";
 import { quoteToJSON, QuoteDto } from "./quote.resource";
 import {
     virtualAccountToJSON,
@@ -25,6 +30,7 @@ export interface WalletDto {
     unique_id: string;
     currency: string;
     balance: number;
+    business_model: string;
     status: string;
     created_at: string;
     flag: string | null;
@@ -38,6 +44,10 @@ export const walletToJSON = (
         unique_id: wallet.uniqueId,
         currency: wallet.currency,
         balance: Number(parseFloat(wallet.balance ?? "0").toFixed(2)),
+        business_model:
+            wallet.businessModel === BUSINESS_MODEL_DEAL_BASED
+                ? BUSINESS_MODEL_DEAL_BASED
+                : BUSINESS_MODEL_MTO,
         status: walletStatusLabel(wallet.status),
         created_at: wallet.createdAt
             ? formatDateHuman(wallet.createdAt, timezone)

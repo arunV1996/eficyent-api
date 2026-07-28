@@ -198,7 +198,7 @@ export const DEPOSIT_TYPE_MAP: Record<string, string> = {
 };
 
 // Business models
-export const BUSINESS_MODEL_DEAL_BASED = "DEAL_BASED";
+export const BUSINESS_MODEL_DEAL_BASED = "deal_based";
 
 // Fee / commission configuration (mirror of legacy constants)
 export const MERCHANT_TYPE_WHITELABEL = 2;

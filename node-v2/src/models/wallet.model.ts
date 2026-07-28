@@ -12,13 +12,17 @@ interface WalletAttributes {
     userId: number;
     currency: string;
     balance: string;
+    businessModel: string | null;
     status: number;
     createdAt?: Date | null;
     updatedAt?: Date | null;
 }
 
 interface WalletCreationAttributes
-    extends Optional<WalletAttributes, "id" | "balance" | "status"> {}
+    extends Optional<
+        WalletAttributes,
+        "id" | "balance" | "businessModel" | "status"
+    > {}
 
 class Wallet
     extends Model<WalletAttributes, WalletCreationAttributes>
@@ -29,6 +33,7 @@ class Wallet
     public userId!: number;
     public currency!: string;
     public balance!: string;
+    public businessModel!: string | null;
     public status!: number;
 
     public readonly createdAt!: Date | null;
@@ -59,6 +64,11 @@ Wallet.init(
             type: DataTypes.DECIMAL(20, 4),
             allowNull: false,
             defaultValue: 0,
+        },
+        businessModel: {
+            type: DataTypes.STRING(64),
+            allowNull: true,
+            defaultValue: "mto",
         },
         status: {
             type: DataTypes.TINYINT,

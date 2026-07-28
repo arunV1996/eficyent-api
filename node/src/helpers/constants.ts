@@ -33,7 +33,7 @@ export const MERCHANT_TYPE_PAYINCOLLECTION = 4;
 export const BUSINESS_MODEL_MTO = "mto";
 export const BUSINESS_MODEL_B2B = "B2B";
 export const BUSINESS_MODEL_COLLECTION = "COLLECTION";
-export const BUSINESS_MODEL_DEAL_BASED = "DEAL_BASED";
+export const BUSINESS_MODEL_DEAL_BASED = "deal_based";
 
 export const SUPPORTED_USER_INDIVIDUAL = "individual";
 export const SUPPORTED_USER_BUSINESS = "business";
