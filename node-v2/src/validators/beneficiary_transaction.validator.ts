@@ -107,6 +107,18 @@ export const transactionStoreBodyValidator: ValidationChain[] = [
  * check_status|export — at least one public identifier required
  * (mirror of PayoutShowSchema.refine).
  */
+/** GET /beneficiary-transactions/export-multiple */
+export const transactionExportMultipleQueryValidator: ValidationChain[] = [
+    query("beneficiary_transaction_ids")
+        .custom((value) => {
+            if (Array.isArray(value)) {
+                return value.length > 0;
+            }
+            return typeof value === "string" && value.trim() !== "";
+        })
+        .withMessage(localizedError("1100", 1100)),
+];
+
 export const transactionShowQueryValidator: ValidationChain[] = [
     query("beneficiary_transaction_id")
         .optional()

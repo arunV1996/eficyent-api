@@ -6,6 +6,7 @@ import {
     checkTransactionStatus,
     direct,
     downloadList,
+    exportMultipleReceipts,
     exportReceipt,
     getFormFields,
     getProof,
@@ -130,6 +131,12 @@ router.get(
     beneficiaryTransactionApiRoutes.EXPORT.path,
     ...beneficiaryTransactionApiRoutes.EXPORT.middleware,
     exportReceipt,
+);
+
+router.get(
+    beneficiaryTransactionApiRoutes.EXPORT_MULTIPLE.path,
+    ...beneficiaryTransactionApiRoutes.EXPORT_MULTIPLE.middleware,
+    exportMultipleReceipts,
 );
 
 export default router;

@@ -1673,6 +1673,90 @@ export const downloadList = async (
  * resolves by any public identifier, the receipt renders through the
  * invoice.ejs template and prints to A4 via puppeteer.
  */
+/**
+ * Receipt locals for invoice/invoice.ejs — shared by the single
+ * /export and the /export-multiple endpoints so every receipt carries
+ * identical data regardless of which endpoint rendered it.
+ */
+const buildReceiptInvoiceDetails = async (
+    user: User,
+    transaction: BeneficiaryTransaction,
+): Promise<Record<string, unknown>> => {
+    const sender = transaction.senders ?? null;
+    const userInfo = await UserInformation.findOne({
+        where: { userId: user.id },
+    });
+
+    // Sender identity: the sender row when present, else the
+    // merchant/business name, else the user's own name.
+    let senderName = "";
+    if (sender) {
+        senderName =
+            `${sender.firstName ?? ""} ${sender.lastName ?? ""}`.trim();
+    } else {
+        let resolvedBusinessName = "";
+        if (user.merchantId) {
+            const merchant = await Merchant.findByPk(user.merchantId);
+            if (merchant?.name) {
+                resolvedBusinessName = merchant.name;
+            }
+        }
+        if (
+            !resolvedBusinessName &&
+            Number(user.userType) === USER_TYPE_BUSINESS
+        ) {
+            resolvedBusinessName = userInfo?.businessName ?? "";
+        }
+        senderName =
+            resolvedBusinessName ||
+            `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    }
+
+    const beneficiaryAccount = transaction.beneficiaryAccount;
+    const detail = beneficiaryAccount?.additionalDetails?.[0] ?? null;
+
+    // Remarks fall back to the human label of the beneficiary's
+    // purpose-of-transaction lookup.
+    let finalRemarks = transaction.remarks ?? "";
+    if (!finalRemarks && detail?.purposeOfTransaction) {
+        finalRemarks =
+            (await findValueByKey(detail.purposeOfTransaction)) ?? "";
+    }
+
+    const statusLabel = beneficiaryTransactionStatusLabel(
+        transaction.status,
+    );
+
+    return {
+        unique_id: transaction.uniqueId,
+        created_at: formatDateHuman(transaction.createdAt),
+        txn_ref_no: transaction.txnRefNo ?? "",
+        utr_no: transaction.externalReferenceId ?? "",
+        sender_name: senderName,
+        sender_address: sender?.address1 ?? userInfo?.address1 ?? "",
+        sender_city: sender?.city ?? userInfo?.city ?? "",
+        sender_state: sender?.state ?? userInfo?.state ?? "",
+        sender_country: sender?.country ?? userInfo?.country ?? "",
+        sender_postal_code:
+            sender?.postalCode ?? userInfo?.postalCode ?? "",
+        beneficiary_name:
+            beneficiaryAccount?.businessName ||
+            `${beneficiaryAccount?.firstName ?? ""} ${beneficiaryAccount?.lastName ?? ""}`.trim() ||
+            "",
+        account_number: beneficiaryAccount?.accountNumber ?? "",
+        bank_name: beneficiaryAccount?.bankName ?? "",
+        bank_code: beneficiaryAccount?.swiftCode ?? "",
+        routing_number: beneficiaryAccount?.routingNumber ?? "",
+        currency: transaction.receivingCurrency ?? "",
+        amount: transaction.recipientAmount
+            ? String(transaction.recipientAmount)
+            : "",
+        remarks: finalRemarks,
+        purpose: transaction.purposeOfPayment ?? "",
+        status: statusLabel,
+    };
+};
+
 export const exportReceipt = async (
     req: Request,
     res: Response,
@@ -1691,81 +1775,94 @@ export const exportReceipt = async (
             return res.sendError("Transaction not found.", 124, 400);
         }
 
-        const sender = transaction.senders ?? null;
-        const userInfo = await UserInformation.findOne({
-            where: { userId: req.user.id },
-        });
-
-        // Sender identity: the sender row when present, else the
-        // merchant/business name, else the user's own name.
-        let senderName = "";
-        if (sender) {
-            senderName =
-                `${sender.firstName ?? ""} ${sender.lastName ?? ""}`.trim();
-        } else {
-            let resolvedBusinessName = "";
-            if (req.user.merchantId) {
-                const merchant = await Merchant.findByPk(req.user.merchantId);
-                if (merchant?.name) {
-                    resolvedBusinessName = merchant.name;
-                }
-            }
-            if (
-                !resolvedBusinessName &&
-                Number(req.user.userType) === USER_TYPE_BUSINESS
-            ) {
-                resolvedBusinessName = userInfo?.businessName ?? "";
-            }
-            senderName =
-                resolvedBusinessName ||
-                `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim();
-        }
-
-        const beneficiaryAccount = transaction.beneficiaryAccount;
-        const detail = beneficiaryAccount?.additionalDetails?.[0] ?? null;
-
-        // Remarks fall back to the human label of the beneficiary's
-        // purpose-of-transaction lookup.
-        let finalRemarks = transaction.remarks ?? "";
-        if (!finalRemarks && detail?.purposeOfTransaction) {
-            finalRemarks =
-                (await findValueByKey(detail.purposeOfTransaction)) ?? "";
-        }
-
-        const statusLabel = beneficiaryTransactionStatusLabel(
-            transaction.status,
-        );
-
         const html = await renderViewTemplate("invoice/invoice.ejs", {
-            invoice_details: {
-                unique_id: transaction.uniqueId,
-                created_at: formatDateHuman(transaction.createdAt),
-                txn_ref_no: transaction.txnRefNo ?? "",
-                utr_no: transaction.externalReferenceId ?? "",
-                sender_name: senderName,
-                sender_address: sender?.address1 ?? userInfo?.address1 ?? "",
-                sender_city: sender?.city ?? userInfo?.city ?? "",
-                sender_state: sender?.state ?? userInfo?.state ?? "",
-                sender_country: sender?.country ?? userInfo?.country ?? "",
-                sender_postal_code:
-                    sender?.postalCode ?? userInfo?.postalCode ?? "",
-                beneficiary_name:
-                    beneficiaryAccount?.businessName ||
-                    `${beneficiaryAccount?.firstName ?? ""} ${beneficiaryAccount?.lastName ?? ""}`.trim() ||
-                    "",
-                account_number: beneficiaryAccount?.accountNumber ?? "",
-                bank_name: beneficiaryAccount?.bankName ?? "",
-                bank_code: beneficiaryAccount?.swiftCode ?? "",
-                routing_number: beneficiaryAccount?.routingNumber ?? "",
-                currency: transaction.receivingCurrency ?? "",
-                amount: transaction.recipientAmount
-                    ? String(transaction.recipientAmount)
-                    : "",
-                remarks: finalRemarks,
-                purpose: transaction.purposeOfPayment ?? "",
-                status: statusLabel,
-            },
+            invoice_details: await buildReceiptInvoiceDetails(
+                req.user,
+                transaction,
+            ),
         });
+        const buffer = await renderPdfFromHtml(html);
+
+        const key = await upload(
+            { buffer, contentType: "application/pdf", extension: "pdf" },
+            "exports/transaction-receipts",
+        );
+        const signedUrl = await temporaryUrl(key);
+        return res.sendResponse(
+            { url: signedUrl },
+            "Transaction receipt generated.",
+            200,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * GET /api/user/beneficiary-transactions/export-multiple
+ *
+ * Multi-receipt variant of /export: accepts
+ * beneficiary_transaction_ids (comma-separated string or repeated
+ * array parameter), renders one receipt page per transaction into a
+ * single PDF (page break between receipts), uploads it and responds
+ * with the signed temporary URL in the same envelope as /export.
+ */
+export const exportMultipleReceipts = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+
+        const rawIds = (req.query as Record<string, unknown>)
+            .beneficiary_transaction_ids;
+        const requestedIds = [
+            ...new Set(
+                (Array.isArray(rawIds)
+                    ? rawIds.map((value) => String(value))
+                    : String(rawIds ?? "").split(",")
+                )
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+            ),
+        ];
+        if (requestedIds.length === 0) {
+            return res.sendError(
+                "The beneficiary transaction ids field is required.",
+                422,
+                422,
+            );
+        }
+
+        const transactions: BeneficiaryTransaction[] = [];
+        for (const transactionId of requestedIds) {
+            const transaction = await findTransactionByAnyId(req.user.id, {
+                beneficiary_transaction_id: transactionId,
+            });
+            if (transaction) {
+                transactions.push(transaction);
+            }
+        }
+        if (transactions.length === 0) {
+            return res.sendError("Transaction not found.", 124, 400);
+        }
+
+        const receiptPages: string[] = [];
+        for (const transaction of transactions) {
+            receiptPages.push(
+                await renderViewTemplate("invoice/invoice.ejs", {
+                    invoice_details: await buildReceiptInvoiceDetails(
+                        req.user,
+                        transaction,
+                    ),
+                }),
+            );
+        }
+        const html = receiptPages.join(
+            '<div style="page-break-after: always;"></div>',
+        );
         const buffer = await renderPdfFromHtml(html);
 
         const key = await upload(
