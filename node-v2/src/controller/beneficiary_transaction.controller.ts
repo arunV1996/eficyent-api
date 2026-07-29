@@ -84,6 +84,7 @@ import {
     USER_TYPE_BUSINESS,
 } from "../utils/constants";
 import Decimal from "decimal.js";
+import JSZip from "jszip";
 
 const USER_DOCUMENT_FILE_PATH = "user_documents";
 
@@ -1804,9 +1805,10 @@ export const exportReceipt = async (
  *
  * Multi-receipt variant of /export: accepts a
  * beneficiary_transaction_ids body field (array or comma-separated
- * string), renders one receipt page per transaction into a single PDF
- * (page break between receipts), uploads it and responds with the
- * signed temporary URL in the same envelope as /export.
+ * string), renders one standalone PDF receipt per transaction, bundles
+ * them into a zip (entries named <beneficiary name>-<transaction id>.pdf),
+ * uploads the zip and responds with the signed temporary URL in the
+ * same envelope as /export.
  */
 export const exportMultipleReceipts = async (
     req: Request,
@@ -1850,24 +1852,35 @@ export const exportMultipleReceipts = async (
             return res.sendError("Transaction not found.", 124, 400);
         }
 
-        const receiptPages: string[] = [];
+        const zip = new JSZip();
         for (const transaction of transactions) {
-            receiptPages.push(
-                await renderViewTemplate("invoice/invoice.ejs", {
-                    invoice_details: await buildReceiptInvoiceDetails(
-                        req.user,
-                        transaction,
-                    ),
-                }),
+            const invoiceDetails = await buildReceiptInvoiceDetails(
+                req.user,
+                transaction,
+            );
+            const html = await renderViewTemplate("invoice/invoice.ejs", {
+                invoice_details: invoiceDetails,
+            });
+            const pdfBuffer = await renderPdfFromHtml(html);
+
+            // <beneficiary name>-<transaction id>.pdf, filesystem-safe.
+            const beneficiaryName = String(
+                invoiceDetails.beneficiary_name ?? "",
+            )
+                .replace(/[^A-Za-z0-9 _.-]/g, "")
+                .trim();
+            zip.file(
+                `${beneficiaryName || "receipt"}-${transaction.uniqueId}.pdf`,
+                pdfBuffer,
             );
         }
-        const html = receiptPages.join(
-            '<div style="page-break-after: always;"></div>',
-        );
-        const buffer = await renderPdfFromHtml(html);
+        const buffer = await zip.generateAsync({
+            type: "nodebuffer",
+            compression: "DEFLATE",
+        });
 
         const key = await upload(
-            { buffer, contentType: "application/pdf", extension: "pdf" },
+            { buffer, contentType: "application/zip", extension: "zip" },
             "exports/transaction-receipts",
         );
         const signedUrl = await temporaryUrl(key);
