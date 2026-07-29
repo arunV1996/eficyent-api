@@ -184,9 +184,15 @@ export const deleteAccount = async (
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
         }
+        const userWithPassword = await User.scope("withPassword").findByPk(
+            req.user.id,
+        );
+        if (!userWithPassword) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
         const passwordOk = await comparePassword(
             String(req.body.password),
-            req.user.password,
+            userWithPassword.password,
         );
         if (!passwordOk) {
             return res.sendError(res.__("125"), 125, 400);
@@ -338,9 +344,15 @@ export const tfaStatus = async (
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
         }
+        const userWithPassword = await User.scope("withPassword").findByPk(
+            req.user.id,
+        );
+        if (!userWithPassword) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
         const passwordOk = await comparePassword(
             String(req.body.password),
-            req.user.password,
+            userWithPassword.password,
         );
         if (!passwordOk) {
             return res.sendError(res.__("125"), 125, 400);
@@ -430,9 +442,15 @@ export const regenerateBackupCodes = async (
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
         }
+        const userWithPassword = await User.scope("withPassword").findByPk(
+            req.user.id,
+        );
+        if (!userWithPassword) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
         const passwordOk = await comparePassword(
             String(req.body.password),
-            req.user.password,
+            userWithPassword.password,
         );
         if (!passwordOk) {
             return res.sendError(res.__("125"), 125, 400);
