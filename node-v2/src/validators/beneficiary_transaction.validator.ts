@@ -107,9 +107,11 @@ export const transactionStoreBodyValidator: ValidationChain[] = [
  * check_status|export — at least one public identifier required
  * (mirror of PayoutShowSchema.refine).
  */
-/** GET /beneficiary-transactions/export-multiple */
-export const transactionExportMultipleQueryValidator: ValidationChain[] = [
-    query("beneficiary_transaction_ids")
+/** POST /beneficiary-transactions/export-multiple */
+export const EXPORT_MULTIPLE_ALLOWED_KEYS = ["beneficiary_transaction_ids"];
+
+export const transactionExportMultipleBodyValidator: ValidationChain[] = [
+    body("beneficiary_transaction_ids")
         .custom((value) => {
             if (Array.isArray(value)) {
                 return value.length > 0;

@@ -133,7 +133,7 @@ router.get(
     exportReceipt,
 );
 
-router.get(
+router.post(
     beneficiaryTransactionApiRoutes.EXPORT_MULTIPLE.path,
     ...beneficiaryTransactionApiRoutes.EXPORT_MULTIPLE.middleware,
     exportMultipleReceipts,

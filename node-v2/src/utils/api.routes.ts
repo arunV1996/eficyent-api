@@ -31,8 +31,9 @@ import {
     TRANSACTION_CANCEL_ALLOWED_KEYS,
     TRANSACTION_STORE_ALLOWED_KEYS,
     TRANSACTION_UPDATE_STATUS_ALLOWED_KEYS,
+    EXPORT_MULTIPLE_ALLOWED_KEYS,
     transactionCancelBodyValidator,
-    transactionExportMultipleQueryValidator,
+    transactionExportMultipleBodyValidator,
     transactionListQueryValidator,
     transactionShowQueryValidator,
     transactionStoreBodyValidator,
@@ -521,7 +522,8 @@ export const beneficiaryTransactionApiRoutes = {
         path: "/export-multiple",
         middleware: [
             ...transactionBaseMiddleware,
-            transactionExportMultipleQueryValidator,
+            strictBody(EXPORT_MULTIPLE_ALLOWED_KEYS),
+            transactionExportMultipleBodyValidator,
             checkValidationErrors,
         ],
     },
@@ -1498,6 +1500,15 @@ export const teamApiRoutes = {
         middleware: [
             ...teamBaseMiddleware,
             transactionShowQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    BENEFICIARY_TRANSACTIONS_EXPORT_MULTIPLE: {
+        path: "/beneficiary-transactions/export-multiple",
+        middleware: [
+            ...teamBaseMiddleware,
+            strictBody(EXPORT_MULTIPLE_ALLOWED_KEYS),
+            transactionExportMultipleBodyValidator,
             checkValidationErrors,
         ],
     },

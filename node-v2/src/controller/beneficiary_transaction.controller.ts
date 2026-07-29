@@ -1799,13 +1799,14 @@ export const exportReceipt = async (
 };
 
 /**
- * GET /api/user/beneficiary-transactions/export-multiple
+ * POST /api/user/beneficiary-transactions/export-multiple (mirror of
+ * the Laravel exportMultiple route; also mounted for team members).
  *
- * Multi-receipt variant of /export: accepts
- * beneficiary_transaction_ids (comma-separated string or repeated
- * array parameter), renders one receipt page per transaction into a
- * single PDF (page break between receipts), uploads it and responds
- * with the signed temporary URL in the same envelope as /export.
+ * Multi-receipt variant of /export: accepts a
+ * beneficiary_transaction_ids body field (array or comma-separated
+ * string), renders one receipt page per transaction into a single PDF
+ * (page break between receipts), uploads it and responds with the
+ * signed temporary URL in the same envelope as /export.
  */
 export const exportMultipleReceipts = async (
     req: Request,
@@ -1816,7 +1817,7 @@ export const exportMultipleReceipts = async (
             return res.sendError(res.__("102"), 102, 400);
         }
 
-        const rawIds = (req.query as Record<string, unknown>)
+        const rawIds = ((req.body ?? {}) as Record<string, unknown>)
             .beneficiary_transaction_ids;
         const requestedIds = [
             ...new Set(

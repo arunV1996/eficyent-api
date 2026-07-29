@@ -14,6 +14,7 @@ import {
     checkTransactionStatus,
     direct as transactionDirect,
     downloadList as transactionDownloadList,
+    exportMultipleReceipts as transactionExportMultiple,
     exportReceipt as transactionExportReceipt,
     getFormFields as transactionGetFormFields,
     getProof,
@@ -442,6 +443,11 @@ teamAuthedRouter.get(
     teamApiRoutes.BENEFICIARY_TRANSACTIONS_EXPORT.path,
     ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_EXPORT.middleware,
     transactionExportReceipt,
+);
+teamAuthedRouter.post(
+    teamApiRoutes.BENEFICIARY_TRANSACTIONS_EXPORT_MULTIPLE.path,
+    ...teamApiRoutes.BENEFICIARY_TRANSACTIONS_EXPORT_MULTIPLE.middleware,
+    transactionExportMultiple,
 );
 teamAuthedRouter.get(
     teamApiRoutes.BENEFICIARY_TRANSACTIONS_DOWNLOAD.path,
