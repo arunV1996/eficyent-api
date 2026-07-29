@@ -1,5 +1,6 @@
 import { Includeable, Op } from "sequelize";
 import sequelize from "../config/database";
+import { isComplianceEnabled } from "./payout_transaction.helper";
 import { Dispatch } from "../jobs";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
 import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
@@ -460,13 +461,23 @@ export const updateTransactionStatus = async (
                     where: { beneficiaryTransactionId: updated.id },
                     order: [["id", "DESC"]],
                 });
+
                 if (payoutJob) {
-                    await Dispatch.payout({
-                        beneficiaryTransactionId: String(updated.id),
-                        payoutJobUniqueId: payoutJob.uniqueId,
-                        userId: String(user.id),
-                        source: "approval",
-                    });
+                    const complianceEnabled = await isComplianceEnabled();
+                    if (complianceEnabled) {
+                        await Dispatch.compliance({
+                            action: "screen_transaction",
+                            transactionId: String(updated.id),
+                            userId: String(user.id),
+                        });
+                    } else {
+                        await Dispatch.payout({
+                            beneficiaryTransactionId: String(updated.id),
+                            payoutJobUniqueId: payoutJob.uniqueId,
+                            userId: String(user.id),
+                            source: "approval",
+                        });
+                    }
                 }
             }
             void notifyBeneficiaryTransaction(updated.id);
