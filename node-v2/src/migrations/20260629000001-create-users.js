@@ -27,9 +27,9 @@ module.exports = {
             picture: {
                 type: Sequelize.STRING(255),
                 allowNull: false,
-                // Mirror of Laravel's asset('placeholders/placeholder.png')
-                // default — environment-dependent by design.
-                defaultValue: `${process.env.APP_URL ?? ""}/placeholders/placeholder.png`,
+                // Relative path; the app origin (APP_URL) is
+                // prepended at runtime by the User model getter.
+                defaultValue: "/placeholders/placeholder.png",
             },
             mobile_country_code: {
                 type: Sequelize.STRING(255),

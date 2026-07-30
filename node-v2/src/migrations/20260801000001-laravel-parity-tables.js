@@ -617,8 +617,8 @@ module.exports = {
             });
         };
         await addForeignKeyIfMissing("beneficiary_accounts", "team_member_id", "team_members", "SET NULL");
-        await addForeignKeyIfMissing("beneficiary_transactions", "beneficiary_account_id", "beneficiary_accounts", "CASCADE");
-        await addForeignKeyIfMissing("beneficiary_transactions", "quote_id", "quotes", "CASCADE");
+        await addForeignKeyIfMissing("beneficiary_transactions", "beneficiary_account_id", "beneficiary_accounts", "RESTRICT");
+        await addForeignKeyIfMissing("beneficiary_transactions", "quote_id", "quotes", "RESTRICT");
         await addForeignKeyIfMissing("beneficiary_transactions", "sender_id", "senders", "CASCADE");
         await addForeignKeyIfMissing("beneficiary_transactions", "team_member_id", "team_members", "SET NULL");
         await addForeignKeyIfMissing("deposit_transactions", "admin_wallet_id", "admin_wallets", "RESTRICT");
@@ -632,11 +632,67 @@ module.exports = {
         await addForeignKeyIfMissing("users", "business_user_id", "users", "SET NULL");
         await addForeignKeyIfMissing("users", "merchant_id", "merchants", "CASCADE");
         await addForeignKeyIfMissing("wallet_transactions", "beneficiary_transaction_id", "beneficiary_transactions", "RESTRICT");
-        await addForeignKeyIfMissing("wallet_transactions", "quote_id", "quotes", "CASCADE");
-        await addForeignKeyIfMissing("wallet_transactions", "user_id", "users", "CASCADE");
+        await addForeignKeyIfMissing("wallet_transactions", "quote_id", "quotes", "RESTRICT");
+        await addForeignKeyIfMissing("wallet_transactions", "user_id", "users", "RESTRICT");
     },
 
     async down(queryInterface) {
+        // Drop the foreign keys added in up() (tolerate absence — on
+        // Laravel-provisioned databases up() never created them).
+        await queryInterface
+            .removeConstraint("beneficiary_accounts", "beneficiary_accounts_team_member_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("beneficiary_transactions", "beneficiary_transactions_beneficiary_account_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("beneficiary_transactions", "beneficiary_transactions_quote_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("beneficiary_transactions", "beneficiary_transactions_sender_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("beneficiary_transactions", "beneficiary_transactions_team_member_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("deposit_transactions", "deposit_transactions_admin_wallet_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("deposit_transactions", "deposit_transactions_team_member_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("external_service_calls", "external_service_calls_beneficiary_transaction_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("ledgers", "ledgers_refund_ledger_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("ledgers", "ledgers_virtual_account_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("quotes", "quotes_beneficiary_account_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("quotes", "quotes_virtual_account_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("senders", "senders_team_member_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("users", "users_business_user_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("users", "users_merchant_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("wallet_transactions", "wallet_transactions_beneficiary_transaction_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("wallet_transactions", "wallet_transactions_quote_id_foreign")
+            .catch(() => undefined);
+        await queryInterface
+            .removeConstraint("wallet_transactions", "wallet_transactions_user_id_foreign")
+            .catch(() => undefined);
         for (const table of ["accounts_viewers", "admins", "callback_logs", "deposit_transactions_accounts", "export_files", "failed_jobs", "job_batches", "jobs", "support_members", "treasury_members", "user_alert_configurations", "user_settings"].reverse()) {
             await queryInterface.dropTable(table, { cascade: true }).catch(() => undefined);
         }

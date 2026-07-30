@@ -46,10 +46,6 @@ module.exports = {
         });
 
         await queryInterface.addIndex("wallets", {
-            fields: ["user_id", "currency"],
-            name: "wallets_user_id_currency_index",
-        });
-        await queryInterface.addIndex("wallets", {
             unique: true,
             fields: ["user_id", "currency"],
             name: "wallets_user_id_currency_unique",

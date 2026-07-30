@@ -14,7 +14,7 @@ interface UserServiceAttributes {
     externalReferenceId: string | null;
     externalData: unknown | null;
     externalStatus: string | null;
-    status: number;
+    status: string;
     isActive: number;
     createdAt?: Date | null;
     updatedAt?: Date | null;
@@ -39,7 +39,7 @@ class UserService
     public externalReferenceId!: string | null;
     public externalData!: unknown | null;
     public externalStatus!: string | null;
-    public status!: number;
+    public status!: string;
     public isActive!: number;
 
     public readonly createdAt!: Date | null;
@@ -63,7 +63,11 @@ UserService.init(
         externalReferenceId: { type: DataTypes.STRING(255), allowNull: true },
         externalData: { type: DataTypes.JSON, allowNull: true },
         externalStatus: { type: DataTypes.STRING(255), allowNull: true },
-        status: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 1 },
+        status: {
+            type: DataTypes.STRING(255),
+            allowNull: false,
+            defaultValue: "0",
+        },
         isActive: {
             type: DataTypes.TINYINT,
             allowNull: false,

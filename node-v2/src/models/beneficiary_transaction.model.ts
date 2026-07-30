@@ -21,8 +21,8 @@ interface BeneficiaryTransactionAttributes {
     userId: number;
     teamMemberId: number | null;
     senderId: number | null;
-    beneficiaryAccountId: number | null;
-    quoteId: number | null;
+    beneficiaryAccountId: number;
+    quoteId: number;
     amount: string;
     totalAmount: string;
     commissionAmount: string;
@@ -69,8 +69,8 @@ class BeneficiaryTransaction
     public userId!: number;
     public teamMemberId!: number | null;
     public senderId!: number | null;
-    public beneficiaryAccountId!: number | null;
-    public quoteId!: number | null;
+    public beneficiaryAccountId!: number;
+    public quoteId!: number;
     public amount!: string;
     public totalAmount!: string;
     public commissionAmount!: string;
@@ -120,9 +120,9 @@ BeneficiaryTransaction.init(
         senderId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
         beneficiaryAccountId: {
             type: DataTypes.BIGINT.UNSIGNED,
-            allowNull: true,
+            allowNull: false,
         },
-        quoteId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+        quoteId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
         amount: { type: DataTypes.DECIMAL(20, 6), allowNull: false },
         totalAmount: { type: DataTypes.DECIMAL(20, 6), allowNull: false },
         commissionAmount: {

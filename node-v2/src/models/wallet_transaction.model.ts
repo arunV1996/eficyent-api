@@ -13,7 +13,7 @@ interface WalletTransactionAttributes {
     uniqueId: string;
     userId: number;
     walletId: number;
-    quoteId: number | null;
+    quoteId: number;
     beneficiaryTransactionId: number | null;
     amount: string;
     fees: string;
@@ -54,7 +54,7 @@ class WalletTransaction
     public uniqueId!: string;
     public userId!: number;
     public walletId!: number;
-    public quoteId!: number | null;
+    public quoteId!: number;
     public beneficiaryTransactionId!: number | null;
     public amount!: string;
     public fees!: string;
@@ -84,7 +84,7 @@ WalletTransaction.init(
         uniqueId: { type: DataTypes.STRING(255), allowNull: false, unique: true },
         userId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
         walletId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
-        quoteId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+        quoteId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
         beneficiaryTransactionId: {
             type: DataTypes.BIGINT.UNSIGNED,
             allowNull: true,

@@ -24,12 +24,15 @@ interface UserAttributes {
     lastName: string | null;
     email: string;
     password: string;
+    picture: string;
+    browserId: string | null;
+    rememberToken: string | null;
     mobileCountryCode: string | null;
     mobile: string | null;
     gender: string | null;
     dob: Date | null;
     userType: number;
-    userRole: number;
+    userRole: number | null;
     onboardingStep: number;
     idVerification: number;
     idVerifiedBy: string | null;
@@ -68,6 +71,9 @@ interface UserCreationAttributes
         | "firstName"
         | "middleName"
         | "lastName"
+        | "picture"
+        | "browserId"
+        | "rememberToken"
         | "mobileCountryCode"
         | "mobile"
         | "gender"
@@ -113,12 +119,15 @@ class User
     public lastName!: string | null;
     public email!: string;
     public password!: string;
+    public picture!: string;
+    public browserId!: string | null;
+    public rememberToken!: string | null;
     public mobileCountryCode!: string | null;
     public mobile!: string | null;
     public gender!: string | null;
     public dob!: Date | null;
     public userType!: number;
-    public userRole!: number;
+    public userRole!: number | null;
     public onboardingStep!: number;
     public idVerification!: number;
     public idVerifiedBy!: string | null;
@@ -158,7 +167,7 @@ User.init(
             primaryKey: true,
         },
         uniqueId: {
-            type: DataTypes.STRING(64),
+            type: DataTypes.STRING(255),
             allowNull: false,
             unique: true,
         },
@@ -199,12 +208,34 @@ User.init(
             type: DataTypes.STRING(255),
             allowNull: false,
         },
+        picture: {
+            type: DataTypes.STRING(255),
+            allowNull: false,
+            defaultValue: "/placeholders/placeholder.png",
+            // Stored as a relative path; the app origin is prepended
+            // at read time so the URL follows APP_URL per environment.
+            get(this: User): string {
+                const raw = this.getDataValue("picture");
+                if (!raw || /^https?:\/\//.test(raw)) {
+                    return raw;
+                }
+                return `${process.env.APP_URL ?? ""}${raw}`;
+            },
+        },
+        browserId: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+        },
+        rememberToken: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+        },
         mobileCountryCode: {
-            type: DataTypes.STRING(10),
+            type: DataTypes.STRING(255),
             allowNull: true,
         },
         mobile: {
-            type: DataTypes.STRING(30),
+            type: DataTypes.STRING(255),
             allowNull: true,
         },
         gender: {
@@ -216,14 +247,13 @@ User.init(
             allowNull: true,
         },
         userType: {
-            type: DataTypes.TINYINT.UNSIGNED,
+            type: DataTypes.TINYINT,
             allowNull: false,
-            defaultValue: 1,
+            defaultValue: 0,
         },
         userRole: {
-            type: DataTypes.TINYINT.UNSIGNED,
-            allowNull: false,
-            defaultValue: 1,
+            type: DataTypes.TINYINT,
+            allowNull: true,
         },
         onboardingStep: {
             type: DataTypes.TINYINT,
@@ -244,12 +274,12 @@ User.init(
             defaultValue: 0,
         },
         isTfaEnabled: {
-            type: DataTypes.BOOLEAN,
+            type: DataTypes.TINYINT,
             allowNull: false,
             defaultValue: false,
         },
         isTfaSetupCompleted: {
-            type: DataTypes.BOOLEAN,
+            type: DataTypes.TINYINT,
             allowNull: false,
             defaultValue: false,
         },
@@ -258,7 +288,7 @@ User.init(
             allowNull: true,
         },
         tourStatus: {
-            type: DataTypes.TINYINT.UNSIGNED,
+            type: DataTypes.TINYINT,
             allowNull: false,
             defaultValue: 0,
         },
