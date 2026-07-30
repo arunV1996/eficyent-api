@@ -89,24 +89,27 @@ module.exports = {
                 defaultValue: 0,
             },
             created_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
-                defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
             },
             updated_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
             deleted_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
         });
 
         await queryInterface.addIndex("beneficiary_accounts", {
-            fields: ["user_id"],
-            name: "beneficiary_accounts_user_id_foreign",
+            fields: ["user_id", "status"],
         });
+        // The composite above covers the user_id FK (as in Laravel);
+        // drop the auto-created single-column FK index if present.
+        await queryInterface
+            .removeIndex("beneficiary_accounts", "user_id")
+            .catch(() => undefined);
     },
 
     async down(queryInterface) {

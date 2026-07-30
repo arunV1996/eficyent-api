@@ -58,12 +58,11 @@ module.exports = {
             },
             client_reference_id: str,
             created_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
-                defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
             },
-            updated_at: { type: Sequelize.DATE, allowNull: true },
-            deleted_at: { type: Sequelize.DATE, allowNull: true },
+            updated_at: { type: "TIMESTAMP", allowNull: true },
+            deleted_at: { type: "TIMESTAMP", allowNull: true },
         });
 
         await queryInterface.addIndex("senders", {

@@ -32,20 +32,20 @@ module.exports = {
                 allowNull: true,
             },
             last_used_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
             expires_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
             created_at: {
-                type: Sequelize.DATE,
-                allowNull: false,
+                type: "TIMESTAMP",
+                allowNull: true,
             },
             updated_at: {
-                type: Sequelize.DATE,
-                allowNull: false,
+                type: "TIMESTAMP",
+                allowNull: true,
             },
         });
 

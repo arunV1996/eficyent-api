@@ -30,10 +30,10 @@ module.exports = {
                 allowNull: false,
                 defaultValue: 1,
             },
-            verified_at: { type: Sequelize.DATE, allowNull: true },
+            verified_at: { type: "TIMESTAMP", allowNull: true },
             remarks: { type: Sequelize.TEXT, allowNull: true },
-            created_at: { type: Sequelize.DATE, allowNull: true },
-            updated_at: { type: Sequelize.DATE, allowNull: true },
+            created_at: { type: "TIMESTAMP", allowNull: true },
+            updated_at: { type: "TIMESTAMP", allowNull: true },
         });
     },
 

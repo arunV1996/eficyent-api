@@ -11,7 +11,7 @@ module.exports = {
                 allowNull: false,
             },
             unique_id: {
-                type: Sequelize.STRING(64),
+                type: Sequelize.STRING(255),
                 allowNull: false,
                 unique: true,
             },
@@ -22,47 +22,71 @@ module.exports = {
             },
             password: {
                 type: Sequelize.STRING(255),
+                allowNull: true,
+            },
+            picture: {
+                type: Sequelize.STRING(255),
                 allowNull: false,
+                // Mirror of Laravel's asset('placeholders/placeholder.png')
+                // default — environment-dependent by design.
+                defaultValue: `${process.env.APP_URL ?? ""}/placeholders/placeholder.png`,
             },
             mobile_country_code: {
-                type: Sequelize.STRING(10),
+                type: Sequelize.STRING(255),
                 allowNull: true,
             },
             mobile: {
-                type: Sequelize.STRING(30),
+                type: Sequelize.STRING(255),
                 allowNull: true,
+                unique: true,
             },
             user_type: {
-                type: Sequelize.TINYINT.UNSIGNED,
+                type: Sequelize.TINYINT,
                 allowNull: false,
-                defaultValue: 1,
+                defaultValue: 0,
             },
             user_role: {
-                type: Sequelize.TINYINT.UNSIGNED,
+                type: Sequelize.TINYINT,
+                allowNull: true,
+            },
+            status: {
+                type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: 1,
             },
+            browser_id: {
+                type: Sequelize.STRING(255),
+                allowNull: true,
+            },
+            remember_token: {
+                type: Sequelize.STRING(100),
+                allowNull: true,
+            },
+            compliance_merchant_id: {
+                type: Sequelize.STRING(255),
+                allowNull: true,
+            },
             is_tfa_enabled: {
-                type: Sequelize.BOOLEAN,
+                type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: false,
             },
             is_tfa_setup_completed: {
-                type: Sequelize.BOOLEAN,
+                type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: false,
             },
             email_verified_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
             created_at: {
-                type: Sequelize.DATE,
-                allowNull: false,
+                type: "TIMESTAMP",
+                allowNull: true,
             },
             updated_at: {
-                type: Sequelize.DATE,
-                allowNull: false,
+                type: "TIMESTAMP",
+                allowNull: true,
             },
         });
     },

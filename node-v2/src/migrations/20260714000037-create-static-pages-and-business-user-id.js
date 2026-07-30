@@ -23,6 +23,7 @@ module.exports = {
                     "others",
                     "help",
                     "contact",
+                    "faq",
                 ),
                 allowNull: false,
                 defaultValue: "others",
@@ -37,8 +38,8 @@ module.exports = {
                 allowNull: false,
                 defaultValue: 1,
             },
-            created_at: { type: Sequelize.DATE, allowNull: true },
-            updated_at: { type: Sequelize.DATE, allowNull: true },
+            created_at: { type: "TIMESTAMP", allowNull: true },
+            updated_at: { type: "TIMESTAMP", allowNull: true },
         });
         await queryInterface.addIndex("static_pages", {
             fields: ["title"],

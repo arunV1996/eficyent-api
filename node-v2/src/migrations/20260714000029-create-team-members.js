@@ -39,7 +39,7 @@ module.exports = {
             password: { type: Sequelize.STRING(255), allowNull: false },
             email_code: str,
             email_code_expiry: str,
-            last_password_reset: { type: Sequelize.DATE, allowNull: true },
+            last_password_reset: { type: "TIMESTAMP", allowNull: true },
             api_key: longText,
             salt_key: longText,
             private_key: longText,
@@ -47,12 +47,12 @@ module.exports = {
             role: {
                 type: Sequelize.INTEGER,
                 allowNull: false,
-                defaultValue: 2,
+                defaultValue: 3,
             },
             permission: {
                 type: Sequelize.INTEGER,
                 allowNull: false,
-                defaultValue: 1,
+                defaultValue: 2,
             },
             timezone: {
                 type: Sequelize.STRING(30),
@@ -64,9 +64,9 @@ module.exports = {
                 allowNull: false,
                 defaultValue: 1,
             },
-            created_at: { type: Sequelize.DATE, allowNull: true },
-            updated_at: { type: Sequelize.DATE, allowNull: true },
-            deleted_at: { type: Sequelize.DATE, allowNull: true },
+            created_at: { type: "TIMESTAMP", allowNull: true },
+            updated_at: { type: "TIMESTAMP", allowNull: true },
+            deleted_at: { type: "TIMESTAMP", allowNull: true },
         });
     },
 

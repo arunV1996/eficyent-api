@@ -36,16 +36,19 @@ module.exports = {
                 defaultValue: 1,
             },
             created_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
-                defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
             },
             updated_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
         });
 
+        await queryInterface.addIndex("wallets", {
+            fields: ["user_id", "currency"],
+            name: "wallets_user_id_currency_index",
+        });
         await queryInterface.addIndex("wallets", {
             unique: true,
             fields: ["user_id", "currency"],

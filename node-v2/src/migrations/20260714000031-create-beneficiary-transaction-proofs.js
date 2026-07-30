@@ -29,10 +29,10 @@ module.exports = {
                 defaultValue: 1,
             },
             file_url: { type: Sequelize.TEXT, allowNull: true },
-            requested_at: { type: Sequelize.DATE, allowNull: true },
-            uploaded_at: { type: Sequelize.DATE, allowNull: true },
-            created_at: { type: Sequelize.DATE, allowNull: true },
-            updated_at: { type: Sequelize.DATE, allowNull: true },
+            requested_at: { type: "TIMESTAMP", allowNull: true },
+            uploaded_at: { type: "TIMESTAMP", allowNull: true },
+            created_at: { type: "TIMESTAMP", allowNull: true },
+            updated_at: { type: "TIMESTAMP", allowNull: true },
         });
     },
 

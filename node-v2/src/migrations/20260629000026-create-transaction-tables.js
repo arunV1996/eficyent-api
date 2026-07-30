@@ -23,11 +23,10 @@ module.exports = {
         };
         const timestamps = {
             created_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
-                defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
             },
-            updated_at: { type: Sequelize.DATE, allowNull: true },
+            updated_at: { type: "TIMESTAMP", allowNull: true },
         };
         const str = { type: Sequelize.STRING(255), allowNull: true };
         const bigintNullable = {
@@ -53,24 +52,32 @@ module.exports = {
             },
             team_member_id: bigintNullable,
             sender_id: bigintNullable,
-            beneficiary_account_id: bigintNullable,
-            quote_id: bigintNullable,
-            virtual_account_id: bigintNullable,
-            amount: { type: Sequelize.DECIMAL(20, 6), allowNull: false },
-            total_amount: { type: Sequelize.DECIMAL(20, 6), allowNull: false },
-            commission_amount: {
-                type: Sequelize.DECIMAL(20, 6),
+            beneficiary_account_id: {
+                type: Sequelize.BIGINT.UNSIGNED,
+                allowNull: false,
+            },
+            quote_id: {
+                type: Sequelize.BIGINT.UNSIGNED,
+                allowNull: false,
+            },
+            amount: money2(),
+            total_amount: money2(),
+            commission_amount: money2(),
+            recipient_amount: money2(),
+            receiving_currency: { type: Sequelize.STRING(5), allowNull: true },
+            rail: str,
+            external_type: {
+                type: Sequelize.STRING(255),
+                allowNull: false,
+                defaultValue: "ec",
+            },
+            external_status: str,
+            external_remarks: { type: Sequelize.TEXT, allowNull: true },
+            is_service_called: {
+                type: Sequelize.BOOLEAN,
                 allowNull: false,
                 defaultValue: 0,
             },
-            recipient_amount: {
-                type: Sequelize.DECIMAL(20, 6),
-                allowNull: true,
-            },
-            receiving_currency: { type: Sequelize.STRING(5), allowNull: true },
-            payment_rail: str,
-            rail: str,
-            external_type: str,
             service_mid: str,
             external_reference_id: str,
             external_data: { type: Sequelize.JSON, allowNull: true },
@@ -81,18 +88,24 @@ module.exports = {
             notes: { type: Sequelize.TEXT, allowNull: true },
             compliance_data: { type: Sequelize.JSON, allowNull: true },
             compliance_status: {
-                type: Sequelize.INTEGER,
+                type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: 0,
             },
             compliance_notes: str,
             remittance_data: { type: Sequelize.JSON, allowNull: true },
             status: {
-                type: Sequelize.INTEGER,
+                type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: 0,
             },
             ...timestamps,
+        });
+        await queryInterface.addIndex("beneficiary_transactions", {
+            fields: ["external_reference_id"],
+        });
+        await queryInterface.addIndex("beneficiary_transactions", {
+            fields: ["user_id", "status", "unique_id"],
         });
 
         await queryInterface.createTable(
@@ -113,7 +126,7 @@ module.exports = {
                 to_status: { type: Sequelize.STRING(255), allowNull: false },
                 changed_by: str,
                 changed_by_type: str,
-                changed_at: { type: Sequelize.DATE, allowNull: false },
+                changed_at: { type: "TIMESTAMP", allowNull: false },
                 meta: { type: Sequelize.JSON, allowNull: true },
                 ...timestamps,
             },
@@ -138,6 +151,9 @@ module.exports = {
             refund_ledger_id: bigintNullable,
             ...timestamps,
         });
+        await queryInterface.addIndex("ledgers", {
+            fields: ["user_id", "virtual_account_id"],
+        });
 
         await queryInterface.createTable("wallet_transactions", {
             id,
@@ -149,28 +165,27 @@ module.exports = {
                 references: { model: "wallets", key: "id" },
                 onDelete: "CASCADE",
             },
-            quote_id: bigintNullable,
+            quote_id: {
+                type: Sequelize.BIGINT.UNSIGNED,
+                allowNull: false,
+            },
             beneficiary_transaction_id: bigintNullable,
             amount: money2(),
             fees: money2(),
             total_amount: money2(),
             type: {
-                type: Sequelize.INTEGER,
+                type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: 1,
             },
             balance_before: money2(true),
             balance_after: money2(true),
             status: {
-                type: Sequelize.INTEGER,
+                type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: 0,
             },
             ...timestamps,
-        });
-        await queryInterface.addIndex("wallet_transactions", {
-            fields: ["user_id", "wallet_id"],
-            name: "wallet_transactions_user_id_wallet_id_index",
         });
         await queryInterface.addIndex("wallet_transactions", {
             fields: ["beneficiary_transaction_id"],
@@ -184,9 +199,9 @@ module.exports = {
             row_number: { type: Sequelize.INTEGER, allowNull: true },
             beneficiary_transaction_id: bigintNullable,
             user_id: { type: Sequelize.BIGINT.UNSIGNED, allowNull: false },
-            amount: { type: Sequelize.DECIMAL(18, 2), allowNull: true },
+            amount: { type: Sequelize.DECIMAL(18, 2), allowNull: false },
             status: {
-                type: Sequelize.INTEGER,
+                type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: 0,
             },
@@ -200,16 +215,7 @@ module.exports = {
             ...timestamps,
         });
         await queryInterface.addIndex("payout_jobs", {
-            fields: ["status"],
-            name: "payout_jobs_status_index",
-        });
-        await queryInterface.addIndex("payout_jobs", {
-            fields: ["user_id"],
-            name: "payout_jobs_user_id_index",
-        });
-        await queryInterface.addIndex("payout_jobs", {
-            fields: ["batch_id"],
-            name: "payout_jobs_batch_id_index",
+            fields: ["created_at"],
         });
 
         await queryInterface.createTable("deposit_transactions", {
@@ -247,7 +253,7 @@ module.exports = {
             remarks: { type: Sequelize.TEXT, allowNull: true },
             client_reference_id: str,
             status: {
-                type: Sequelize.INTEGER,
+                type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: 0,
             },
@@ -259,7 +265,6 @@ module.exports = {
             purpose_of_payment: str,
             source_of_funds: str,
             proof: str,
-            order_id: str,
             ...timestamps,
         });
     },

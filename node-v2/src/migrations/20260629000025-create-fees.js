@@ -30,14 +30,14 @@ module.exports = {
             fee_type: {
                 type: Sequelize.STRING(255),
                 allowNull: false,
-                defaultValue: "1",
+                defaultValue: "3",
             },
             mode: {
                 type: Sequelize.STRING(255),
                 allowNull: true,
             },
             fee_value: {
-                type: Sequelize.DECIMAL(27, 12),
+                type: Sequelize.DECIMAL(15, 6),
                 allowNull: false,
             },
             currency_1: {
@@ -54,12 +54,11 @@ module.exports = {
                 defaultValue: 1,
             },
             created_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
-                defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
             },
             updated_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
         });

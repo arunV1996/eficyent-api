@@ -34,6 +34,7 @@ module.exports = {
             account_number: {
                 type: Sequelize.STRING(255),
                 allowNull: true,
+                unique: true,
             },
             account_holder_name: {
                 type: Sequelize.STRING(255),
@@ -77,12 +78,11 @@ module.exports = {
                 defaultValue: 0,
             },
             created_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
-                defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
             },
             updated_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
         });

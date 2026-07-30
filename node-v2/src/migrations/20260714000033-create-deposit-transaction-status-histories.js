@@ -12,7 +12,11 @@ module.exports = {
                     primaryKey: true,
                     allowNull: false,
                 },
-                unique_id: { type: Sequelize.STRING(255), allowNull: false },
+                unique_id: {
+                    type: Sequelize.STRING(255),
+                    allowNull: false,
+                    unique: true,
+                },
                 deposit_transaction_id: {
                     type: Sequelize.BIGINT.UNSIGNED,
                     allowNull: false,
@@ -26,10 +30,10 @@ module.exports = {
                     type: Sequelize.STRING(255),
                     allowNull: true,
                 },
-                changed_at: { type: Sequelize.DATE, allowNull: false },
+                changed_at: { type: "TIMESTAMP", allowNull: false },
                 meta: { type: Sequelize.JSON, allowNull: true },
-                created_at: { type: Sequelize.DATE, allowNull: true },
-                updated_at: { type: Sequelize.DATE, allowNull: true },
+                created_at: { type: "TIMESTAMP", allowNull: true },
+                updated_at: { type: "TIMESTAMP", allowNull: true },
             },
         );
     },

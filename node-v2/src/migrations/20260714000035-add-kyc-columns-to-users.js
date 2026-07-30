@@ -12,7 +12,7 @@ module.exports = {
             allowNull: true,
         });
         await queryInterface.addColumn("users", "deleted_at", {
-            type: Sequelize.DATE,
+            type: "TIMESTAMP",
             allowNull: true,
         });
     },

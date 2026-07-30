@@ -4,7 +4,7 @@
 module.exports = {
     async up(queryInterface, Sequelize) {
         await queryInterface.addColumn("users", "tour_status", {
-            type: Sequelize.TINYINT.UNSIGNED,
+            type: Sequelize.TINYINT,
             allowNull: false,
             defaultValue: 0,
         });

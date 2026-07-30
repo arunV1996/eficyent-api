@@ -29,17 +29,17 @@ module.exports = {
             external_data: { type: Sequelize.JSON, allowNull: true },
             external_status: { type: Sequelize.STRING(255), allowNull: true },
             status: {
-                type: Sequelize.TINYINT,
+                type: Sequelize.STRING(255),
                 allowNull: false,
-                defaultValue: 1,
+                defaultValue: "0",
             },
             is_active: {
                 type: Sequelize.TINYINT,
                 allowNull: false,
                 defaultValue: 1,
             },
-            created_at: { type: Sequelize.DATE, allowNull: true },
-            updated_at: { type: Sequelize.DATE, allowNull: true },
+            created_at: { type: "TIMESTAMP", allowNull: true },
+            updated_at: { type: "TIMESTAMP", allowNull: true },
         });
     },
 

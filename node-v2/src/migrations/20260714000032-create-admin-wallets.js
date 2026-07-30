@@ -23,9 +23,9 @@ module.exports = {
                 allowNull: false,
                 defaultValue: 1,
             },
-            deleted_at: { type: Sequelize.DATE, allowNull: true },
-            created_at: { type: Sequelize.DATE, allowNull: true },
-            updated_at: { type: Sequelize.DATE, allowNull: true },
+            deleted_at: { type: "TIMESTAMP", allowNull: true },
+            created_at: { type: "TIMESTAMP", allowNull: true },
+            updated_at: { type: "TIMESTAMP", allowNull: true },
         });
     },
 

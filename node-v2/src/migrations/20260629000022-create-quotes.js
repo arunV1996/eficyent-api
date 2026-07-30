@@ -51,7 +51,7 @@ module.exports = {
                 allowNull: true,
             },
             commission_value: {
-                type: Sequelize.DECIMAL(8, 2),
+                type: Sequelize.DECIMAL(15, 4),
                 allowNull: false,
                 defaultValue: 0,
             },
@@ -127,16 +127,15 @@ module.exports = {
                 allowNull: true,
             },
             expires_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
             created_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
-                defaultValue: Sequelize.literal("CURRENT_TIMESTAMP"),
             },
             updated_at: {
-                type: Sequelize.DATE,
+                type: "TIMESTAMP",
                 allowNull: true,
             },
         });
