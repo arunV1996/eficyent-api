@@ -290,7 +290,14 @@ export const setupTfa = async (req: Request, res: Response): Promise<void> => {
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
         }
-        let user = req.user;
+        // req.user is default-scoped (tfaSecret/backupCodes stripped);
+        // the unscoped row is required or every call would mint a new
+        // secret over the existing one.
+        const fullUser = await User.unscoped().findByPk(req.user.id);
+        if (!fullUser) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        let user = fullUser;
         if (!user.tfaSecret) {
             const secret = generateTotpSecret();
             const codes = generateBackupCodes();
@@ -344,20 +351,20 @@ export const tfaStatus = async (
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
         }
-        const userWithPassword = await User.scope("withPassword").findByPk(
-            req.user.id,
-        );
-        if (!userWithPassword) {
+        // req.user is default-scoped (password/tfaSecret/backupCodes
+        // stripped) — verify against the unscoped row.
+        const fullUser = await User.unscoped().findByPk(req.user.id);
+        if (!fullUser) {
             return res.sendError(res.__("102"), 102, 400);
         }
         const passwordOk = await comparePassword(
             String(req.body.password),
-            userWithPassword.password,
+            fullUser.password,
         );
         if (!passwordOk) {
             return res.sendError(res.__("125"), 125, 400);
         }
-        if (!req.user.tfaSecret) {
+        if (!fullUser.tfaSecret) {
             return res.sendError(
                 "Two-factor authentication is not configured.",
                 138,
@@ -366,9 +373,9 @@ export const tfaStatus = async (
         }
 
         const verificationCode = String(req.body.verification_code);
-        let tfaOk = await verifyTotp(req.user.tfaSecret, verificationCode);
-        if (!tfaOk && req.user.backupCodes) {
-            let plaintextCodes = req.user.backupCodes;
+        let tfaOk = await verifyTotp(fullUser.tfaSecret, verificationCode);
+        if (!tfaOk && fullUser.backupCodes) {
+            let plaintextCodes = fullUser.backupCodes;
             if (!/^\d{6}(,\d{6})*$/.test(plaintextCodes)) {
                 try {
                     plaintextCodes = await decryptEnvelope(plaintextCodes);
@@ -396,7 +403,7 @@ export const tfaStatus = async (
             return res.sendError(res.__("139"), 139, 400);
         }
 
-        const isCurrentlyEnabled = Boolean(req.user.isTfaEnabled);
+        const isCurrentlyEnabled = Boolean(fullUser.isTfaEnabled);
         const becomingEnabled = !isCurrentlyEnabled;
 
         await User.update(
@@ -406,7 +413,9 @@ export const tfaStatus = async (
             },
             { where: { id: req.user.id } },
         );
-        const updated = await User.findByPk(req.user.id);
+        // Unscoped re-read: the enabling response returns backup codes,
+        // which the default scope would strip.
+        const updated = await User.unscoped().findByPk(req.user.id);
 
         const message = becomingEnabled
             ? "TFA has been enabled successfully."
@@ -442,20 +451,20 @@ export const regenerateBackupCodes = async (
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
         }
-        const userWithPassword = await User.scope("withPassword").findByPk(
-            req.user.id,
-        );
-        if (!userWithPassword) {
+        // req.user is default-scoped (password/tfaSecret/backupCodes
+        // stripped) — verify against the unscoped row.
+        const fullUser = await User.unscoped().findByPk(req.user.id);
+        if (!fullUser) {
             return res.sendError(res.__("102"), 102, 400);
         }
         const passwordOk = await comparePassword(
             String(req.body.password),
-            userWithPassword.password,
+            fullUser.password,
         );
         if (!passwordOk) {
             return res.sendError(res.__("125"), 125, 400);
         }
-        if (!req.user.isTfaSetupCompleted) {
+        if (!fullUser.isTfaSetupCompleted) {
             return res.sendError(
                 "Two-factor authentication is not configured.",
                 138,
