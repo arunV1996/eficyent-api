@@ -1,9 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { check, ValidationChain } from "express-validator";
+import { getPaymentRails } from "../helpers/lookup.helper";
 import {
-    PAYMENT_RAIL_ACH,
-    PAYMENT_RAIL_SWIFT,
-    PAYMENT_RAIL_WIRE,
     QUOTE_TYPE_FORWARD,
     QUOTE_TYPE_REVERSE,
     USER_TYPE_MAP,
@@ -60,22 +58,21 @@ export const quoteStoreValidator: ValidationChain[] = [
         .isIn([QUOTE_TYPE_FORWARD, QUOTE_TYPE_REVERSE])
         .withMessage(localizedError("1100", 1100)),
 
+    // Rails are corridor-specific now — lowercase here, validate
+    // against getPaymentRails(recipient_country) in the cross-field
+    // rules below.
     check("payment_rail")
         .optional()
         .customSanitizer((value) =>
             typeof value === "string" ? value.toLowerCase() : value,
-        )
-        .isIn([PAYMENT_RAIL_ACH, PAYMENT_RAIL_SWIFT, PAYMENT_RAIL_WIRE])
-        .withMessage(() => ({
-            msg: "Invalid payment rail.",
-            code: 422,
-        })),
+        ),
 ];
 
 /**
  * Cross-field rules from the legacy QuoteStoreSchema refinements:
  *   - exactly one of bank_account_id / wallet_id
- *   - payment_rail required for USD/USA corridors
+ *   - payment_rail required for USD/USA and BGD corridors
+ *   - payment_rail must belong to getPaymentRails(recipient_country)
  * Must run after checkValidationErrors.
  */
 export const quoteStoreCrossFieldRules = (
@@ -101,12 +98,42 @@ export const quoteStoreCrossFieldRules = (
     const receivingCurrency = String(
         payload.receiving_currency ?? "",
     ).toUpperCase();
+    const recipientCountry = payload.recipient_country
+        ? String(payload.recipient_country)
+        : "";
+    const paymentRail = payload.payment_rail
+        ? String(payload.payment_rail)
+        : "";
+
     if (
         receivingCurrency === "USD" &&
-        payload.recipient_country === "USA" &&
-        !payload.payment_rail
+        recipientCountry === "USA" &&
+        !paymentRail
     ) {
         return res.sendError("payment_rail required for USD/USA.", 422, 422);
+    }
+
+    if (recipientCountry === "BGD" && !paymentRail) {
+        return res.sendError("payment_rail required for BGD.", 422, 422);
+    }
+
+    // Dynamic rail membership: whatever corridor was requested, the
+    // rail must be one the country actually supports (countries with
+    // no rails accept any/no value).
+    if (paymentRail && recipientCountry) {
+        const allowed = getPaymentRails(recipientCountry).map((rail) =>
+            rail.value.toLowerCase(),
+        );
+        if (
+            allowed.length > 0 &&
+            !allowed.includes(paymentRail.toLowerCase())
+        ) {
+            return res.sendError(
+                `Invalid payment rail. Expected one of: ${allowed.join(", ")}`,
+                422,
+                422,
+            );
+        }
     }
 
     next();
