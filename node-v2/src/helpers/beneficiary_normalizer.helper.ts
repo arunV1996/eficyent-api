@@ -8,7 +8,11 @@ import {
     firstFieldError,
     validateAgainstFields,
 } from "./form_fields_validator.helper";
-import { formatPaymentType, receivingCountries } from "./lookup.helper";
+import {
+    formatPaymentType,
+    getPaymentRails,
+    receivingCountries,
+} from "./lookup.helper";
 import {
     C2B,
     USER_TYPE_BUSINESS,
@@ -99,6 +103,23 @@ export const validateAndNormalizeBeneficiary = async (
         type: recipientType,
         merchantId: user.merchantId,
     });
+    // USA/BGD corridors require a valid payment rail before any of the
+    // field-level checks run.
+    if (country === "USA" || country === "BGD") {
+        const paymentRail = payload.payment_rail;
+        if (
+            paymentRail === undefined ||
+            paymentRail === null ||
+            String(paymentRail).trim() === ""
+        ) {
+            throw new FormFieldsError("The payment rail field is required.");
+        }
+        const validRails = getPaymentRails(country).map((rail) => rail.value);
+        if (!validRails.includes(String(paymentRail))) {
+            throw new FormFieldsError("The selected payment rail is invalid.");
+        }
+    }
+
     const validationResult = validateAgainstFields(fields, payload);
     const validationError = firstFieldError(validationResult);
     if (validationError) {

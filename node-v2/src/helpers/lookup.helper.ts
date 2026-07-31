@@ -16,6 +16,10 @@ import {
     C2B,
     C2C,
     EXTERNAL_TYPE_DIGININE,
+    BDT_RAIL_BANK,
+    BDT_RAIL_BKASH,
+    BDT_RAIL_NAGAD,
+    BDT_RAIL_ROCKET,
     PAYMENT_RAILS,
     USER_TYPE_BUSINESS,
 } from "../utils/constants";
@@ -403,10 +407,30 @@ export const receivingCountries = async (
             currencies: currencyList,
             alpha_2_code: countryGroup.alpha_2_code,
             flag: getFlagUrl(countryGroup.alpha_2_code, baseUrl),
-            payment_rails:
-                countryGroup.country_code === "USA" ? PAYMENT_RAILS : [],
+            payment_rails: getPaymentRails(countryGroup.country_code),
         };
     });
+};
+
+/**
+ * Country-specific payout rails: BGD gets the Bangladesh rails, USA
+ * (or no country) the US rails, anything else has none.
+ */
+export const getPaymentRails = (
+    countryCode?: string,
+): { label: string; value: string }[] => {
+    if (countryCode === "BGD") {
+        return [
+            { label: "Bank", value: BDT_RAIL_BANK },
+            { label: "Bkash", value: BDT_RAIL_BKASH },
+            { label: "Nagad", value: BDT_RAIL_NAGAD },
+            { label: "Rocket", value: BDT_RAIL_ROCKET },
+        ];
+    }
+    if (countryCode !== undefined && countryCode !== "USA") {
+        return [];
+    }
+    return PAYMENT_RAILS;
 };
 
 /**

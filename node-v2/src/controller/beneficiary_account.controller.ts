@@ -79,6 +79,9 @@ export const getFormFields = async (
             currency: String(requestQuery.currency),
             type: recipientType,
             merchantId: req.user.merchantId,
+            payment_rail: requestQuery.payment_rail
+                ? String(requestQuery.payment_rail)
+                : null,
         });
 
         return res.sendResponse({ form_fields: fields }, "", 200);

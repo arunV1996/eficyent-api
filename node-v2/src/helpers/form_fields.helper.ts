@@ -30,9 +30,6 @@ import {
     ONBOARDING_STEP_TWO,
     PASSWORD_REGEX,
     BDT_RAIL_BANK,
-    BDT_RAIL_BKASH,
-    BDT_RAIL_NAGAD,
-    BDT_RAIL_ROCKET,
     USER_TYPE_BUSINESS,
     USER_TYPE_PERSONAL,
 } from "../utils/constants";
@@ -815,6 +812,7 @@ const bankFieldsByCountry = (
     country: string,
     currency: string,
     context: FormBuildContext,
+    paymentRail?: string | null,
 ): FieldDef[] => {
     const accountTypeField = make("account_type", "Account Type", {
         values: [
@@ -950,21 +948,24 @@ const bankFieldsByCountry = (
                     }),
                 ];
             } else {
+                // Rail-driven (the rails themselves come from the
+                // payment_rails lookup, not a hardcoded dropdown):
+                // bank transfers need the full bank fields, wallet
+                // rails (bkash/nagad/rocket) only a wallet number.
+                if (paymentRail === BDT_RAIL_BANK) {
+                    return [
+                        accountTypeField,
+                        make("account_number", "Account Number", {
+                            validation: VALIDATION_PRESETS.generic_account,
+                        }),
+                        make("code", "Routing Number", {
+                            validation: VALIDATION_PRESETS.routing,
+                        }),
+                    ];
+                }
                 return [
-                    accountTypeField,
-                    make("payment_rail", "Payment Rail", {
-                        values: [
-                            { label: "Bank", value: BDT_RAIL_BANK },
-                            { label: "Bkash", value: BDT_RAIL_BKASH },
-                            { label: "Nagad", value: BDT_RAIL_NAGAD },
-                            { label: "Rocket", value: BDT_RAIL_ROCKET },
-                        ],
-                    }),
                     make("account_number", "Account Number", {
                         validation: VALIDATION_PRESETS.generic_account,
-                    }),
-                    make("code", "Routing Number", {
-                        validation: VALIDATION_PRESETS.routing,
                     }),
                 ];
             }
@@ -1027,6 +1028,7 @@ export const beneficiaryFormFields = async (payload: {
     currency: string;
     type: number;
     merchantId?: number | null;
+    payment_rail?: string | null;
 }): Promise<FieldDef[]> => {
     if (payload.merchantId) {
         const payoutCountriesSetting = await MerchantSetting.findOne({
@@ -1111,6 +1113,7 @@ export const beneficiaryFormFields = async (payload: {
         supportedCountry.countryCode,
         supportedCountry.currency,
         context,
+        payload.payment_rail,
     );
 
     if (supportedCountry.currency === "USD") {

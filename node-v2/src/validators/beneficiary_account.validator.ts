@@ -9,6 +9,27 @@ import { localizedError } from "./validation_message.helper";
  * or the PERSONAL/BUSINESS labels).
  */
 export const beneficiaryFormFieldsQueryValidator: ValidationChain[] = [
+    // USA/BGD corridors must specify which payment rail the form is for.
+    query("payment_rail")
+        .custom((value, { req }) => {
+            const country = String(
+                (req.query as Record<string, unknown> | undefined)?.country ??
+                    "",
+            ).toUpperCase();
+            if (country === "USA" || country === "BGD") {
+                return (
+                    value !== undefined &&
+                    value !== null &&
+                    String(value).trim() !== ""
+                );
+            }
+            return true;
+        })
+        .withMessage(() => ({
+            msg: "The payment rail field is required.",
+            code: 422,
+        })),
+
     query("type")
         .notEmpty()
         .withMessage(localizedError("1100", 1100))

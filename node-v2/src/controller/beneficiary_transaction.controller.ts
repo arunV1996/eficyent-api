@@ -567,6 +567,9 @@ export const getFormFields = async (
             currency: String(query.currency),
             type: parties.beneficiary_type,
             merchantId: req.user.merchantId,
+            payment_rail: query.payment_rail
+                ? String(query.payment_rail)
+                : null,
         });
         const merchantRow = req.user.merchantId
             ? await Merchant.findByPk(req.user.merchantId)
@@ -636,6 +639,9 @@ export const instantGetFormFields = async (
             currency: String(query.currency),
             type: parties.beneficiary_type,
             merchantId: req.user.merchantId,
+            payment_rail: query.payment_rail
+                ? String(query.payment_rail)
+                : null,
         });
         const merchantRow = req.user.merchantId
             ? await Merchant.findByPk(req.user.merchantId)

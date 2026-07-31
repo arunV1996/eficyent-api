@@ -349,6 +349,27 @@ export const instantPayoutBodyValidator: ValidationChain[] = [
  * /instant/get-form-fields (mirror of GetFormFieldsSchema).
  */
 export const payoutFormFieldsQueryValidator: ValidationChain[] = [
+    // USA/BGD corridors must specify which payment rail the form is for.
+    query("payment_rail")
+        .custom((value, { req }) => {
+            const country = String(
+                (req.query as Record<string, unknown> | undefined)?.country ??
+                    "",
+            ).toUpperCase();
+            if (country === "USA" || country === "BGD") {
+                return (
+                    value !== undefined &&
+                    value !== null &&
+                    String(value).trim() !== ""
+                );
+            }
+            return true;
+        })
+        .withMessage(() => ({
+            msg: "The payment rail field is required.",
+            code: 422,
+        })),
+
     query("type").optional().isString().isLength({ max: 20 }),
 
     query("country")

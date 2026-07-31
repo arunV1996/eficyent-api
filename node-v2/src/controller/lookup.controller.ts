@@ -7,6 +7,7 @@ import {
     mobileCountryCodes as buildMobileCountryCodes,
     rates as buildRates,
     receivingCountries as buildReceivingCountries,
+    getPaymentRails,
     serviceBanks,
     states as buildStates,
 } from "../helpers/lookup.helper";
@@ -22,7 +23,6 @@ import {
     DEPOSIT_SOURCE_OF_FUNDS,
     EXTERNAL_TYPE_DIGININE,
     LOOKUP_TYPE_SOURCE_OF_FUNDS,
-    PAYMENT_RAILS,
     USER_TYPE_MAP,
 } from "../utils/constants";
 
@@ -88,8 +88,22 @@ export const states = async (req: Request, res: Response): Promise<void> => {
 /**
  * GET /api/user/lookups/payment_rails
  */
-export const paymentRails = (_req: Request, res: Response): void => {
-    return res.sendResponse({ payment_rails: PAYMENT_RAILS }, "", "");
+export const paymentRails = (req: Request, res: Response): void => {
+    try {
+        const country = req.query.country as string | undefined;
+        return res.sendResponse(
+            { payment_rails: getPaymentRails(country) },
+            "",
+            "",
+        );
+    } catch (error) {
+        const codedError = error as { message?: string; code?: number };
+        return res.sendError(
+            codedError.message ?? "Server error",
+            codedError.code || 500,
+            500,
+        );
+    }
 };
 
 /**
