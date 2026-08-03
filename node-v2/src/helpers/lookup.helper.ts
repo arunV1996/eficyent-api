@@ -487,38 +487,44 @@ export const rates = async (
             if (fromCurrency === supportedRow.currency) {
                 continue;
             }
-            const cachedRate = await FxRate.findOne({
-                where: {
-                    fromCurrency,
-                    toCurrency: supportedRow.currency,
-                },
-            });
-            if (!cachedRate) {
-                continue;
-            }
-
             // Per-caller settlement override: an admin-configured
             // FIXED rate for this pair (user -> merchant -> global)
-            // beats the cached global rate.
+            // beats the cached global rate — and keeps the currency in
+            // the list even when fx_rates has no cached entry.
             const fixedRate = await getFixedRate(
                 user.id,
                 user.merchantId ?? null,
                 fromCurrency,
                 supportedRow.currency,
             );
+
+            const cachedRate = await FxRate.findOne({
+                where: {
+                    fromCurrency,
+                    toCurrency: supportedRow.currency,
+                },
+            });
+            if (!cachedRate && fixedRate === null) {
+                continue;
+            }
+
             const effectiveRate =
-                fixedRate !== null ? fixedRate : Number(cachedRate.rate);
+                fixedRate !== null
+                    ? fixedRate
+                    : Number(cachedRate!.rate);
 
             const countryCodeRow = await MobileCountryCode.findOne({
                 where: { alpha3Code: supportedRow.countryCode },
                 attributes: ["alpha2Code"],
             });
             rateRows.push({
-                from_currency: cachedRate.fromCurrency,
+                from_currency: fromCurrency,
                 to_currency: supportedRow.currency,
                 fx_rate: effectiveRate.toFixed(4),
                 flag: getFlagUrl(countryCodeRow?.alpha2Code, baseUrl),
-                last_updated: relativeTime(cachedRate.updatedAt ?? new Date()),
+                last_updated: relativeTime(
+                    cachedRate?.updatedAt ?? new Date(),
+                ),
             });
         }
     }
