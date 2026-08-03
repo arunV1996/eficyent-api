@@ -1,7 +1,26 @@
 import ejs from "ejs";
 import fs from "fs";
 import path from "path";
-import puppeteer from "puppeteer";
+
+// Puppeteer ships as an ES module in newer releases, so a top-level
+// require/import crashes CommonJS builds with ERR_REQUIRE_ESM. It is
+// loaded lazily via a true dynamic import instead — new Function keeps
+// tsc (module: commonjs) from transpiling import() into require().
+const importPuppeteer = new Function(
+    'return import("puppeteer");',
+) as () => Promise<{ default?: unknown }>;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let cachedPuppeteer: any = null;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const loadPuppeteer = async (): Promise<any> => {
+    if (!cachedPuppeteer) {
+        const puppeteerModule = await importPuppeteer();
+        cachedPuppeteer = puppeteerModule.default || puppeteerModule;
+    }
+    return cachedPuppeteer;
+};
 
 /**
  * Shared PDF-report machinery for the deposits / ledgers / payout list
@@ -57,6 +76,7 @@ export const renderViewTemplate = async (
  * honored automatically by puppeteer when a system Chrome is preferred.
  */
 export const renderPdfFromHtml = async (html: string): Promise<Buffer> => {
+    const puppeteer = await loadPuppeteer();
     const browser = await puppeteer.launch({
         headless: true,
         args: ["--no-sandbox", "--disable-setuid-sandbox"],

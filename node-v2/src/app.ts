@@ -102,9 +102,12 @@ app.use(
                 upgradeInsecureRequests: [],
             },
         },
-        crossOriginEmbedderPolicy: true,
+        // Images (country flags, logos) are consumed by frontends on
+        // other origins — same-origin embedder/resource policies would
+        // block them.
+        crossOriginEmbedderPolicy: false,
         crossOriginOpenerPolicy: true,
-        crossOriginResourcePolicy: { policy: "same-origin" },
+        crossOriginResourcePolicy: { policy: "cross-origin" },
         dnsPrefetchControl: { allow: false },
         frameguard: { action: "deny" },
         hsts: {
@@ -203,6 +206,12 @@ const apiRateLimiter = rateLimit({
         data: null,
     },
 });
+
+// Static assets (country flags under /images/countries, logos under
+// /logo) — mounted before the API routes; both the dist-relative and
+// cwd-relative public folders are tried.
+app.use(express.static(path.join(__dirname, "..", "public")));
+app.use(express.static(path.join(process.cwd(), "public")));
 
 app.use("/api", apiRateLimiter);
 app.use(responseHelpers);
