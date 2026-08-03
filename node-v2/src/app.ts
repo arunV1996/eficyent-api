@@ -1,7 +1,6 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express, { NextFunction, Request, Response } from "express";
-import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import hpp from "hpp";
 import i18n from "i18n";
@@ -193,27 +192,12 @@ app.use(responseBodyCapture);
 app.use(terminalRequestLogger);
 app.use(fileRequestLogger);
 
-const apiRateLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 200,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: {
-        status: false,
-        code: 429,
-        message:
-            "Too many requests from this IP, please try again after 15 minutes.",
-        data: null,
-    },
-});
-
 // Static assets (country flags under /images/countries, logos under
 // /logo) — mounted before the API routes; both the dist-relative and
 // cwd-relative public folders are tried.
 app.use(express.static(path.join(__dirname, "..", "public")));
 app.use(express.static(path.join(process.cwd(), "public")));
 
-app.use("/api", apiRateLimiter);
 app.use(responseHelpers);
 app.use("/api", apiRoutes);
 
