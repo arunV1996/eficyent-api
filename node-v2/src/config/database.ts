@@ -19,10 +19,10 @@ const sequelize = new Sequelize(databaseName, databaseUser, databasePassword, {
     logging: false,
     timezone: "+00:00",
     pool: {
-        max: 10,
-        min: 0,
-        acquire: 30000,
-        idle: 10000,
+        max: parseInt(process.env.DB_POOL_MAX || "10", 10),
+        min: parseInt(process.env.DB_POOL_MIN || "0", 10),
+        acquire: parseInt(process.env.DB_POOL_ACQUIRE || "30000", 10),
+        idle: parseInt(process.env.DB_POOL_IDLE || "10000", 10),
     },
     define: {
         timestamps: true,
