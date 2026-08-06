@@ -28,6 +28,11 @@ import {
 import { findValueByKey } from "../helpers/lookup.helper";
 import { validateAndNormalizeSender } from "../helpers/sender_normalizer.helper";
 import { teamMemberContext } from "../helpers/team_context.helper";
+import { passesTransactionTfa } from "../helpers/tfa.helper";
+import {
+    findOrCreateBeneficiaryAccount,
+    findOrCreateSender,
+} from "../helpers/party_upsert.helper";
 import { Dispatch } from "../jobs";
 import { computeBankBalance, getWalletBalance } from "../helpers/balance.helper";
 import { reverseRefund } from "../helpers/refund.helper";
@@ -43,7 +48,6 @@ import * as processingUnitService from "../services/processing_unit.service";
 import { generateExcel } from "../services/excel_export.service";
 import { temporaryUrl, upload } from "../services/s3.service";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
-import BeneficiaryAdditionalDetail from "../models/beneficiary_additional_detail.model";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import BeneficiaryTransactionProof from "../models/beneficiary_transaction_proof.model";
 import Ledger from "../models/ledger.model";
@@ -177,6 +181,9 @@ export const store = async (req: Request, res: Response): Promise<void> => {
     try {
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
+        }
+        if (!(await passesTransactionTfa(req))) {
+            return res.sendError(res.__("139"), 139, 400);
         }
 
         const supportingDocument = await handleSupportingDocument(
@@ -520,33 +527,14 @@ const resolvePartyTypes = (
         { beneficiary_type: 1 | 2; remitter_type: 1 | 2 }
     > = {
         C2C: { beneficiary_type: 1, remitter_type: 1 },
-        C2B: { beneficiary_type: 1, remitter_type: 2 },
-        B2C: { beneficiary_type: 2, remitter_type: 1 },
+        // C2B (bill payment): individual remitter paying a business
+        // beneficiary; B2C (corporate disbursement): business remitter
+        // paying an individual beneficiary.
+        C2B: { beneficiary_type: 2, remitter_type: 1 },
+        B2C: { beneficiary_type: 1, remitter_type: 2 },
         B2B: { beneficiary_type: 2, remitter_type: 2 },
     };
     return { payment_type: paymentType, ...partyMap[paymentType] };
-};
-
-/**
- * Nulls out placeholder junk ("", "undefined", "null", "n/a") before a
- * value lands in a DB column — mirror of the legacy cleanDbField.
- */
-const cleanDbField = (value: unknown): string | null => {
-    if (value === null || value === undefined) {
-        return null;
-    }
-    const stringValue = String(value).trim();
-    const lowered = stringValue.toLowerCase();
-    if (
-        lowered === "" ||
-        lowered === "undefined" ||
-        lowered === "null" ||
-        lowered === "n/a" ||
-        lowered === "na"
-    ) {
-        return null;
-    }
-    return stringValue;
 };
 
 /**
@@ -674,6 +662,9 @@ export const direct = async (req: Request, res: Response): Promise<void> => {
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
         }
+        if (!(await passesTransactionTfa(req))) {
+            return res.sendError(res.__("139"), 139, 400);
+        }
 
         const beneficiary = await validateAndNormalizeBeneficiary(
             req.body.beneficiary as Record<string, unknown>,
@@ -697,153 +688,16 @@ export const direct = async (req: Request, res: Response): Promise<void> => {
         );
 
         // Beneficiary upsert: reuse an existing account matching
-        // (email, account number, currency); otherwise create the
-        // account + additional-detail pair.
-        const beneficiaryEmail = cleanDbField(
-            beneficiary.beneficiaryAccount.email,
+        // (account number, currency, email when supplied); otherwise
+        // create the account + additional-detail pair. Sender upsert:
+        // reuse by id_number, otherwise create. Both run through the
+        // lock-serialized shared helpers so concurrent submissions
+        // (and bulk rows) can never insert duplicates.
+        const beneficiaryAccount = await findOrCreateBeneficiaryAccount(
+            req.user,
+            beneficiary,
         );
-        const accountNumber = cleanDbField(
-            beneficiary.beneficiaryAccount.account_number,
-        );
-        const currency = String(beneficiary.beneficiaryAccount.currency ?? "");
-        let beneficiaryAccount = beneficiaryEmail
-            ? await BeneficiaryAccount.findOne({
-                  where: {
-                      userId: req.user.id,
-                      email: beneficiaryEmail,
-                      accountNumber,
-                      currency,
-                  },
-              })
-            : null;
-        if (!beneficiaryAccount) {
-            beneficiaryAccount = await BeneficiaryAccount.create({
-                uniqueId: generateUniqueId(24),
-                userId: req.user.id,
-                type:
-                    typeof beneficiary.beneficiaryAccount.type === "number"
-                        ? beneficiary.beneficiaryAccount.type
-                        : null,
-                country: String(
-                    beneficiary.beneficiaryAccount.country ?? "US",
-                ),
-                currency,
-                firstName: cleanDbField(
-                    beneficiary.beneficiaryAccount.first_name,
-                ),
-                middleName: cleanDbField(
-                    beneficiary.beneficiaryAccount.middle_name,
-                ),
-                lastName: cleanDbField(
-                    beneficiary.beneficiaryAccount.last_name,
-                ),
-                email: beneficiaryEmail,
-                mobileCountryCode: cleanDbField(
-                    beneficiary.beneficiaryAccount.mobile_country_code,
-                ),
-                mobile: cleanDbField(beneficiary.beneficiaryAccount.mobile),
-                accountNumber,
-                accountName: cleanDbField(
-                    beneficiary.beneficiaryAccount.account_name,
-                ),
-                bankName: cleanDbField(
-                    beneficiary.beneficiaryAccount.bank_name,
-                ),
-                paymentRail: cleanDbField(
-                    beneficiary.beneficiaryAccount.payment_rail,
-                ),
-                routingNumber: cleanDbField(
-                    beneficiary.beneficiaryAccount.routing_number,
-                ),
-                swiftCode: cleanDbField(
-                    beneficiary.beneficiaryAccount.swift_code,
-                ),
-                iban: cleanDbField(beneficiary.beneficiaryAccount.iban),
-                businessName: cleanDbField(
-                    beneficiary.beneficiaryAccount.business_name,
-                ),
-                businessCountry: cleanDbField(
-                    beneficiary.beneficiaryAccount.business_country,
-                ),
-                status: 1,
-            });
-
-            const additionalDetail =
-                beneficiary.beneficiaryAccountAdditionalDetail;
-            await BeneficiaryAdditionalDetail.create({
-                uniqueId: generateUniqueId(24),
-                beneficiaryAccountId: beneficiaryAccount.id,
-                addressType:
-                    cleanDbField(additionalDetail.address_type) ?? "PRESENT",
-                addressLine1: cleanDbField(additionalDetail.address_line1),
-                addressLine2: cleanDbField(additionalDetail.address_line2),
-                postalCode: cleanDbField(additionalDetail.postal_code),
-                city: cleanDbField(additionalDetail.city),
-                state: cleanDbField(additionalDetail.state),
-                country: cleanDbField(additionalDetail.country),
-                paymentType: cleanDbField(additionalDetail.payment_type),
-                bankAddressLine1: cleanDbField(
-                    additionalDetail.bank_address_line1,
-                ),
-                bankAddressLine2: cleanDbField(
-                    additionalDetail.bank_address_line2,
-                ),
-                bankPostalCode: cleanDbField(
-                    additionalDetail.bank_postal_code,
-                ),
-                bankCity: cleanDbField(additionalDetail.bank_city),
-                bankState: cleanDbField(additionalDetail.bank_state),
-                bankCountry: cleanDbField(additionalDetail.bank_country),
-                purposeOfTransaction: cleanDbField(
-                    additionalDetail.purpose_of_transaction,
-                ),
-                userSourceOfIncome: cleanDbField(
-                    additionalDetail.user_source_of_income,
-                ),
-            });
-        }
-
-        // Sender upsert: reuse by id_number, otherwise create.
-        const senderIdNumber = cleanDbField(sender.id_number);
-        let senderRow = senderIdNumber
-            ? await Sender.findOne({
-                  where: { userId: req.user.id, idNumber: senderIdNumber },
-              })
-            : null;
-        if (!senderRow) {
-            let dateOfBirth: Date | null = null;
-            if (sender.dob) {
-                const parsedDob = new Date(sender.dob as string);
-                if (!Number.isNaN(parsedDob.getTime())) {
-                    dateOfBirth = parsedDob;
-                }
-            }
-
-            senderRow = await Sender.create({
-                uniqueId: generateUniqueId(24),
-                userId: req.user.id,
-                firstName: cleanDbField(sender.first_name),
-                middleName: cleanDbField(sender.middle_name),
-                lastName: cleanDbField(sender.last_name),
-                email: cleanDbField(sender.email),
-                mobileCountryCode: cleanDbField(sender.mobile_country_code),
-                mobile: cleanDbField(sender.mobile),
-                dob: dateOfBirth,
-                country: cleanDbField(sender.country),
-                nationality: cleanDbField(sender.nationality),
-                address1: cleanDbField(sender.address_1 ?? sender.address),
-                address2: cleanDbField(sender.address_2),
-                city: cleanDbField(sender.city),
-                state: cleanDbField(sender.state),
-                postalCode: cleanDbField(sender.postal_code),
-                type: typeof sender.type === "number" ? sender.type : null,
-                idType: cleanDbField(sender.id_type),
-                idNumber: senderIdNumber,
-                sourceOfFunds: cleanDbField(sender.source_of_funds),
-                businessPersons: sender.business_persons ?? null,
-                status: 1,
-            });
-        }
+        const senderRow = await findOrCreateSender(req.user, sender);
 
         const createdTransaction = await createPayoutTransaction(
             {
@@ -1152,6 +1006,9 @@ export const bulkStore = async (
     try {
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
+        }
+        if (!(await passesTransactionTfa(req))) {
+            return res.sendError(res.__("139"), 139, 400);
         }
 
         const buffer = extractUploadedFileBuffer(req);

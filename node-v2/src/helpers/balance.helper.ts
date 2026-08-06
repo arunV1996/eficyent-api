@@ -60,6 +60,21 @@ export const computeBankBalance = async (
     virtualAccount: VirtualAccount,
     teamMember: { role: number; id: number } | null = null,
 ): Promise<Decimal> => {
+    return computeBankBalanceAsOf(user, virtualAccount, teamMember, null);
+};
+
+/**
+ * Same formula as computeBankBalance, but only counting transactions
+ * created strictly before `asOf` — the running balance at a point in
+ * time. Used by the statement export for period opening / closing
+ * balances (an all-time run with asOf=null is the live balance).
+ */
+export const computeBankBalanceAsOf = async (
+    user: User,
+    virtualAccount: VirtualAccount,
+    teamMember: { role: number; id: number } | null = null,
+    asOf: Date | null = null,
+): Promise<Decimal> => {
     let isPayinCollection = false;
     if (user.merchantId) {
         const merchant = await Merchant.findByPk(user.merchantId);
@@ -71,12 +86,15 @@ export const computeBankBalance = async (
     const isCorporateTeamMember =
         teamMember !== null && teamMember.role === TEAM_MEMBER_ROLE_CORPORATE;
 
+    const createdBefore = asOf ? { createdAt: { [Op.lt]: asOf } } : {};
+
     const depositWhere: Record<string, unknown> = {
         userId: user.id,
         virtualAccountId: virtualAccount.id,
         status: DEPOSIT_TRANSACTION_COMPLETED,
         ...(isPayinCollection && user.memo ? { memo: user.memo } : {}),
         ...(isCorporateTeamMember ? { teamMemberId: teamMember!.id } : {}),
+        ...createdBefore,
     };
 
     const [depositTotal, submittedQuotes] = await Promise.all([
@@ -105,6 +123,7 @@ export const computeBankBalance = async (
                 ...(isCorporateTeamMember
                     ? { teamMemberId: teamMember!.id }
                     : {}),
+                ...createdBefore,
             },
         );
 
@@ -115,6 +134,7 @@ export const computeBankBalance = async (
                     quoteId: { [Op.in]: quoteIds },
                     type: TRANSACTION_TYPE_CREDIT,
                     status: WALLET_TRANSACTION_COMPLETED,
+                    ...createdBefore,
                 },
                 attributes: ["quoteId"],
             });

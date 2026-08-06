@@ -250,18 +250,16 @@ export const processExcel = async <T>(
  * Mirror of BulkTemplateExport. Builds a workbook with the human header
  * (row 1), the hidden machine key (row 2) and empty data rows, plus a
  * veryHidden _lookups sheet backing a dropdown data-validation on each
- * option-bearing column. Only mandatory fields (plus quote.txn_ref_no)
- * are emitted.
+ * option-bearing column. All fields are emitted — optional and
+ * conditional columns (SWIFT code, routing number, intermediary bank
+ * details, ...) included, so rows can carry everything the single
+ * beneficiary form accepts.
  */
 export const generateBulkTemplate = async (
     fields: FlatField[],
     sheetTitle = "Payouts",
 ): Promise<Buffer> => {
-    const onlyMandatory = fields.filter(
-        (field) =>
-            field.is_mandatory ||
-            (field.section === "quote" && field.field_key === "txn_ref_no"),
-    );
+    const templateFields = fields;
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet(sheetTitle);
@@ -270,7 +268,7 @@ export const generateBulkTemplate = async (
 
     sheet.getRow(1).values = [
         null,
-        ...onlyMandatory.map(
+        ...templateFields.map(
             (field) =>
                 `${field.section.charAt(0).toUpperCase()}${field.section.slice(1)} ${field.field_label}`,
         ),
@@ -279,7 +277,7 @@ export const generateBulkTemplate = async (
 
     sheet.getRow(2).values = [
         null,
-        ...onlyMandatory.map(
+        ...templateFields.map(
             (field) => `${field.section}.${field.field_key}`,
         ),
     ];
@@ -287,7 +285,7 @@ export const generateBulkTemplate = async (
 
     // Dropdown data-validation from row 3 down to row 300.
     let lookupCol = 1;
-    onlyMandatory.forEach((field, index) => {
+    templateFields.forEach((field, index) => {
         if (!field.values_supported || field.values_supported.length === 0) {
             return;
         }

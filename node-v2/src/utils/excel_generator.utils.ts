@@ -1,9 +1,24 @@
 import ExcelJS from "exceljs";
 import {
-    beneficiaryTransactionStatusLabel,
-    depositTransactionStatusLabel,
-    walletTransactionStatusLabel,
-} from "./common.utils";
+    BENEFICIARY_TRANSACTION_APPROVED,
+    BENEFICIARY_TRANSACTION_CANCELLED,
+    BENEFICIARY_TRANSACTION_COMPLETED,
+    BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED,
+    BENEFICIARY_TRANSACTION_CORPORATE_INITIATED,
+    BENEFICIARY_TRANSACTION_EXPIRED,
+    BENEFICIARY_TRANSACTION_FAILED,
+    BENEFICIARY_TRANSACTION_INITIATED,
+    BENEFICIARY_TRANSACTION_REJECTED,
+    BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL,
+    DEPOSIT_TRANSACTION_COMPLETED,
+    DEPOSIT_TRANSACTION_FAILED,
+    DEPOSIT_TRANSACTION_PENDING,
+    DEPOSIT_TRANSACTION_REJECTED,
+    WALLET_TRANSACTION_CANCELLED,
+    WALLET_TRANSACTION_COMPLETED,
+    WALLET_TRANSACTION_FAILED,
+    WALLET_TRANSACTION_REJECTED,
+} from "./constants";
 import type { StatementData } from "../helpers/statement.helper";
 
 /**
@@ -11,6 +26,100 @@ import type { StatementData } from "../helpers/statement.helper";
  * statement workbook (Summary + Transactions). Formatting is kept
  * byte-identical so the exported files match the legacy service.
  */
+
+/**
+ * Statement-specific status labels: the report shows each terminal
+ * state exactly (REJECTED / CANCELLED / EXPIRED stay distinct instead
+ * of collapsing into FAILED, compliance rejection reads REJECTED), and
+ * every in-flight internal state reads PROCESSING.
+ */
+const statementPayoutStatusLabel = (value: number): string => {
+    switch (value) {
+        case BENEFICIARY_TRANSACTION_WAITING_FOR_APPROVAL:
+            return "WAITING_FOR_APPROVAL";
+        case BENEFICIARY_TRANSACTION_APPROVED:
+            return "APPROVED";
+        case BENEFICIARY_TRANSACTION_INITIATED:
+            return "INITIATED";
+        case BENEFICIARY_TRANSACTION_COMPLETED:
+            return "COMPLETED";
+        case BENEFICIARY_TRANSACTION_FAILED:
+            return "FAILED";
+        case BENEFICIARY_TRANSACTION_EXPIRED:
+            return "EXPIRED";
+        case BENEFICIARY_TRANSACTION_REJECTED:
+        case BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED:
+            return "REJECTED";
+        case BENEFICIARY_TRANSACTION_CANCELLED:
+            return "CANCELLED";
+        case BENEFICIARY_TRANSACTION_CORPORATE_INITIATED:
+            return "CORPORATE_INITIATED";
+        default:
+            return "PROCESSING";
+    }
+};
+
+const statementDepositStatusLabel = (value: number): string => {
+    switch (value) {
+        case DEPOSIT_TRANSACTION_PENDING:
+            return "PENDING";
+        case DEPOSIT_TRANSACTION_COMPLETED:
+            return "COMPLETED";
+        case DEPOSIT_TRANSACTION_FAILED:
+            return "FAILED";
+        case DEPOSIT_TRANSACTION_REJECTED:
+            return "REJECTED";
+        default:
+            return "PROCESSING";
+    }
+};
+
+const statementWalletStatusLabel = (value: number): string => {
+    switch (value) {
+        case WALLET_TRANSACTION_COMPLETED:
+            return "COMPLETED";
+        case WALLET_TRANSACTION_FAILED:
+            return "FAILED";
+        case WALLET_TRANSACTION_REJECTED:
+            return "REJECTED";
+        case WALLET_TRANSACTION_CANCELLED:
+            return "CANCELLED";
+        default:
+            return "PENDING";
+    }
+};
+
+/**
+ * "YYYY-MM-DD HH:mm:ss" in the statement owner's timezone (sv-SE
+ * locale yields exactly that shape) — the export previously printed
+ * raw UTC, which never matched the localized times shown in the UI.
+ */
+const formatStatementTimestamp = (
+    value: Date | string | null | undefined,
+    timezone: string,
+): string => {
+    if (!value) {
+        return "";
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return "";
+    }
+    try {
+        return parsed.toLocaleString("sv-SE", {
+            timeZone: timezone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+        });
+    } catch {
+        return parsed.toISOString().replace("T", " ").substring(0, 19);
+    }
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function generateStatementExcel(data: StatementData | any): Promise<Buffer> {
@@ -167,14 +276,16 @@ export async function generateStatementExcel(data: StatementData | any): Promise
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     });
 
+    const statementTimezone = data.metadata.timezone || "Asia/Kolkata";
+
     if (data.payins && data.payins.length > 0) {
         data.payins.forEach(({ transaction, ledger }: any) => {
             const row = txnSheet.addRow([
-                transaction.createdAt ? new Date(transaction.createdAt).toISOString().replace("T", " ").substring(0, 19) : "",
+                formatStatementTimestamp(transaction.createdAt, statementTimezone),
                 transaction.uniqueId,
                 transaction.type || "", // From HTML $payin->type ?? ''
                 transaction.depositCurrency || data.walletSummary.currency || "", // Closest match to From Wallet & Currency
-                depositTransactionStatusLabel(transaction.status),
+                statementDepositStatusLabel(transaction.status),
                 Number(transaction.amount || transaction.totalAmount || 0),
                 transaction.depositCurrency || data.walletSummary.currency || "",
                 Number(transaction.totalCommissionAmount || transaction.feeAmount || 0),
@@ -220,13 +331,13 @@ export async function generateStatementExcel(data: StatementData | any): Promise
     });
 
     if (data.payouts && data.payouts.length > 0) {
-        data.payouts.forEach(({ transaction, ledger }: any) => {
+        data.payouts.forEach(({ transaction, ledger, refunded }: any) => {
             const row = txnSheet.addRow([
-                transaction.createdAt ? new Date(transaction.createdAt).toISOString().replace("T", " ").substring(0, 19) : "",
+                formatStatementTimestamp(transaction.createdAt, statementTimezone),
                 transaction.uniqueId,
                 transaction.clientReferenceId || "",
                 "Beneficiary Payout",
-                beneficiaryTransactionStatusLabel(transaction.status),
+                statementPayoutStatusLabel(transaction.status),
                 transaction.externalReferenceId || transaction.txnRefNo || "",
                 Number(transaction.amount || 0),
                 data.walletSummary.currency, // As per template, it uses source currency
@@ -235,7 +346,7 @@ export async function generateStatementExcel(data: StatementData | any): Promise
                 Number(transaction.recipientAmount || 0),
                 transaction.receivingCurrency || "",
                 transaction.remarks || "",
-                ledger.refundLedgerId ? "Refunded" : "-"
+                refunded || ledger.refundLedgerId ? "Refunded" : "-"
             ]);
             applyBorders(row);
             row.getCell(4).alignment = { horizontal: "center" };
@@ -277,11 +388,11 @@ export async function generateStatementExcel(data: StatementData | any): Promise
     if (data.wallet_transactions && data.wallet_transactions.length > 0) {
         data.wallet_transactions.forEach(({ transaction, ledger }: any) => {
             const row = txnSheet.addRow([
-                transaction.createdAt ? new Date(transaction.createdAt).toISOString().replace("T", " ").substring(0, 19) : "",
+                formatStatementTimestamp(transaction.createdAt, statementTimezone),
                 transaction.uniqueId,
                 transaction.walletId ? String(transaction.walletId) : "",
                 transaction.type === 1 ? "credit" : "debit",
-                walletTransactionStatusLabel(transaction.status),
+                statementWalletStatusLabel(transaction.status),
                 Number(transaction.amount || 0),
                 Number(transaction.fees || 0),
                 Number(transaction.totalAmount || 0),

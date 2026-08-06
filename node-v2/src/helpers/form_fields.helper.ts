@@ -1117,11 +1117,24 @@ export const beneficiaryFormFields = async (payload: {
     );
 
     if (supportedCountry.currency === "USD") {
+        // Intermediary details become mandatory when a SWIFT code is
+        // supplied — but only for corridors where the code field is
+        // itself optional (USA). Where the corridor forces a SWIFT
+        // code (e.g. SGP+USD), "required with code" would degenerate
+        // into "always required", so the intermediary fields stay
+        // plainly optional there.
+        const codeField = [...baseFields, ...additionalFields].find(
+            (field) => field.field_key === "code",
+        );
+        const intermediaryRequiredIf =
+            codeField && !codeField.is_mandatory
+                ? { required_if: "code" }
+                : {};
         additionalFields.push(
             make("intermediary_bank_name", "Intermediary Bank Name", {
                 mandatory: false,
                 validation: VALIDATION_PRESETS.name,
-                required_if: "code",
+                ...intermediaryRequiredIf,
             }),
             make(
                 "intermediary_bank_swift_code",
@@ -1134,7 +1147,7 @@ export const beneficiaryFormFields = async (payload: {
             make("intermediary_bank_aba", "Intermediary Bank ABA", {
                 mandatory: false,
                 validation: VALIDATION_PRESETS.aba,
-                required_if: "code",
+                ...intermediaryRequiredIf,
             }),
             make("intermediary_bank_address", "Intermediary Bank Address", {
                 mandatory: false,
@@ -1194,12 +1207,24 @@ export const beneficiaryFormFields = async (payload: {
             payload.currency,
             serviceBankExternalType,
         );
-        additionalFields.push(
-            make("service_bank", "Service Bank", {
-                mandatory: serviceBankRequired,
-                values: banks,
-            }),
-        );
+        if (banks.length > 0) {
+            additionalFields.push(
+                make("service_bank", "Service Bank", {
+                    mandatory: serviceBankRequired,
+                    values: banks,
+                }),
+            );
+        } else {
+            // No bank directory for this corridor — a dropdown with
+            // zero options would render as (or force) free text and
+            // could never validate. Fall back to the same free-form
+            // bank name field the non-directory corridors use.
+            additionalFields.push(
+                make("bank_name", "Bank Name", {
+                    validation: VALIDATION_PRESETS.name,
+                }),
+            );
+        }
     } else {
         additionalFields.push(
             make("bank_name", "Bank Name", {

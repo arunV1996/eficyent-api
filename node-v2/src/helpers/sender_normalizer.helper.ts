@@ -1,5 +1,6 @@
 import Merchant from "../models/merchant.model";
 import User from "../models/user.model";
+import UserInformation from "../models/user_information.model";
 import { CodedError } from "./coded_error.helper";
 import { FormFieldsError, senderFields } from "./form_fields.helper";
 import {
@@ -87,6 +88,32 @@ export const validateAndNormalizeSender = async (
     }
     const validated = validationResult.validated as NormalizedSender;
     validated.type = senderType;
+
+    // When country / nationality are configured optional and the
+    // payload omits them (typical for bulk uploads), default them to
+    // the user's primary country instead of persisting NULL — the
+    // remitter details view would otherwise render "N/A".
+    const isBlank = (value: unknown): boolean =>
+        value === undefined ||
+        value === null ||
+        (typeof value === "string" && value.trim() === "");
+    if (isBlank(validated.country) || isBlank(validated.nationality)) {
+        const userInformation = await UserInformation.findOne({
+            where: { userId: user.id },
+        });
+        const primaryCountry =
+            userInformation?.country ||
+            userInformation?.countryOfIncorporation ||
+            null;
+        if (primaryCountry) {
+            if (isBlank(validated.country)) {
+                validated.country = primaryCountry;
+            }
+            if (isBlank(validated.nationality)) {
+                validated.nationality = primaryCountry;
+            }
+        }
+    }
 
     if (senderType === USER_TYPE_BUSINESS) {
         if (typeof validated.business_name === "string") {

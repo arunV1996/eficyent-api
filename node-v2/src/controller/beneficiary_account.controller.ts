@@ -23,6 +23,7 @@ import { validateAccount as processingUnitValidateAccount } from "../services/pr
 import { temporaryUrl, upload } from "../services/s3.service";
 import { extractUploadedFileBuffer } from "../helpers/uploaded_file.helper";
 import { teamMemberContext } from "../helpers/team_context.helper";
+import { passesTransactionTfa } from "../helpers/tfa.helper";
 import { generateUniqueId } from "../utils/common.utils";
 import {
     BENEFICIARY_ACCOUNT_ACTIVATED,
@@ -488,6 +489,9 @@ export const validateAccount = async (
     try {
         if (!req.user) {
             return res.sendError(res.__("102"), 102, 400);
+        }
+        if (!(await passesTransactionTfa(req))) {
+            return res.sendError(res.__("139"), 139, 400);
         }
 
         const accountNumber = String(req.body.account_number);

@@ -47,7 +47,7 @@ import {
 
 type QuoteMode = typeof QUOTE_MODE_RATE | typeof QUOTE_MODE_QUOTATION;
 
-interface QuotePayload {
+export interface QuotePayload {
     amount: number;
     recipient_type: string;
     recipient_country?: string;
@@ -58,14 +58,14 @@ interface QuotePayload {
     payment_rail?: string | null;
 }
 
-interface ResolvedSource {
+export interface ResolvedSource {
     kind: "virtual_account" | "wallet";
     id: number;
     currency: string;
     status: number;
 }
 
-const resolveSource = async (
+export const resolveSource = async (
     payload: QuotePayload,
     user: User,
 ): Promise<ResolvedSource> => {
@@ -104,7 +104,7 @@ const resolveSource = async (
     throw new CodedError("Bank account not found.", 120, 400);
 };
 
-const buildResponse = async (
+export const buildResponse = async (
     payload: QuotePayload,
     source: ResolvedSource,
     userId: number,
@@ -337,7 +337,7 @@ const buildResponse = async (
     };
 };
 
-const persistQuote = async (
+export const persistQuote = async (
     userId: number,
     response: Record<string, unknown>,
 ): Promise<Quote> => {

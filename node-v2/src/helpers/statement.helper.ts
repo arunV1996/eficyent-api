@@ -7,8 +7,16 @@ import User from "../models/user.model";
 import UserInformation from "../models/user_information.model";
 import VirtualAccount from "../models/virtual_account.model";
 import WalletTransaction from "../models/wallet_transaction.model";
+import { computeBankBalanceAsOf } from "./balance.helper";
 import { getVirtualAccountScope } from "./virtual_account.helper";
 import {
+    BENEFICIARY_TRANSACTION_CANCELLED,
+    BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED,
+    BENEFICIARY_TRANSACTION_EXPIRED,
+    BENEFICIARY_TRANSACTION_FAILED,
+    BENEFICIARY_TRANSACTION_REJECTED,
+    DEPOSIT_TRANSACTION_FAILED,
+    DEPOSIT_TRANSACTION_REJECTED,
     MORPH_BENEFICIARY_TRANSACTION,
     MORPH_DEPOSIT_TRANSACTION,
     MORPH_WALLET_TRANSACTION,
@@ -28,6 +36,8 @@ export interface StatementEntry {
     ledger: Ledger;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     transaction: any;
+    /** True when a later refund ledger points back at this entry. */
+    refunded: boolean;
 }
 
 export interface StatementData {
@@ -39,6 +49,7 @@ export interface StatementData {
         fromDate: string;
         toDate: string;
         generatedAt: string;
+        timezone: string;
     };
     walletSummary: {
         account_number: string;
@@ -137,22 +148,47 @@ export const fetchStatementData = async ({
         walletRows.map((walletRow) => [String(walletRow.id), walletRow]),
     );
 
-    const isRejectedOrRefunded = (
-        status: number,
-        isRefundLedger: boolean,
-    ): boolean => {
-        // 2 = Rejected, 3 = Refunded
-        return status === 2 || status === 3 || isRefundLedger;
-    };
+    // Refund ledger rows carry refund_ledger_id pointing back at the
+    // ORIGINAL debit ledger — collect those targets so original
+    // entries can be flagged as refunded (the original row itself
+    // never has refund_ledger_id set).
+    const refundLedgerRows = await Ledger.findAll({
+        where: { userId, refundLedgerId: { [Op.ne]: null } },
+        attributes: ["refundLedgerId"],
+    });
+    const refundedLedgerIds = new Set(
+        refundLedgerRows.map((row) => Number(row.refundLedgerId)),
+    );
+
+    // Terminal non-settled states per transaction type (the previous
+    // shared status===2||3 check used the DEPOSIT numbering for
+    // payouts too — 2/3 are INITIATED/PROCESSING there, so rejected
+    // payouts were summed and in-flight ones dropped).
+    const DEPOSIT_EXCLUDED_STATUSES = new Set<number>([
+        DEPOSIT_TRANSACTION_FAILED,
+        DEPOSIT_TRANSACTION_REJECTED,
+    ]);
+    const PAYOUT_EXCLUDED_STATUSES = new Set<number>([
+        BENEFICIARY_TRANSACTION_FAILED,
+        BENEFICIARY_TRANSACTION_EXPIRED,
+        BENEFICIARY_TRANSACTION_REJECTED,
+        BENEFICIARY_TRANSACTION_CANCELLED,
+        BENEFICIARY_TRANSACTION_COMPLIANCE_REJECTED,
+    ]);
 
     for (const ledger of ledgers) {
-        const isRefunded = Boolean(ledger.refundLedgerId);
+        const refunded =
+            refundedLedgerIds.has(Number(ledger.id)) ||
+            Boolean(ledger.refundLedgerId);
 
         if (ledger.transactionType === MORPH_DEPOSIT_TRANSACTION) {
             const transaction = depositMap.get(String(ledger.transactionId));
             if (transaction) {
-                payins.push({ ledger, transaction });
-                if (!isRejectedOrRefunded(transaction.status, isRefunded)) {
+                payins.push({ ledger, transaction, refunded });
+                if (
+                    !DEPOSIT_EXCLUDED_STATUSES.has(transaction.status) &&
+                    !refunded
+                ) {
                     totalPayin += Number(transaction.totalAmount ?? 0);
                 }
             }
@@ -163,8 +199,11 @@ export const fetchStatementData = async ({
                 String(ledger.transactionId),
             );
             if (transaction) {
-                payouts.push({ ledger, transaction });
-                if (!isRejectedOrRefunded(transaction.status, isRefunded)) {
+                payouts.push({ ledger, transaction, refunded });
+                if (
+                    !PAYOUT_EXCLUDED_STATUSES.has(transaction.status) &&
+                    !refunded
+                ) {
                     totalPayout += Number(transaction.totalAmount ?? 0);
                 }
             }
@@ -173,30 +212,9 @@ export const fetchStatementData = async ({
                 String(ledger.transactionId),
             );
             if (transaction) {
-                walletTransactions.push({ ledger, transaction });
+                walletTransactions.push({ ledger, transaction, refunded });
             }
         }
-    }
-
-    // Opening balance = the balance BEFORE the first transaction of the
-    // period; closing = after the last one.
-    const latestLedgerBeforePeriod = await Ledger.findOne({
-        where: {
-            userId,
-            virtualAccountId: virtualAccount.id,
-            createdAt: { [Op.lt]: new Date(`${fromDate}T00:00:00Z`) },
-        },
-        order: [["created_at", "DESC"]],
-    });
-
-    const openingBalance = latestLedgerBeforePeriod
-        ? Number(latestLedgerBeforePeriod.balance)
-        : 0;
-    let closingBalance = openingBalance;
-    if (ledgers.length > 0) {
-        closingBalance = Number(
-            ledgers[ledgers.length - 1]?.balance ?? openingBalance,
-        );
     }
 
     // Account owner naming: owned merchant first, then the assigned
@@ -204,6 +222,31 @@ export const fetchStatementData = async ({
     const accountUser = virtualAccount.userId
         ? await User.findByPk(virtualAccount.userId)
         : null;
+
+    // Opening balance = the running bank balance immediately before the
+    // period; closing = immediately after it. Reconstructed from the
+    // transaction tables with the same formula as the live balance
+    // (Helper::bankBalance) rather than trusting stored ledger
+    // snapshots, which could drift (and go negative) when refunds
+    // landed outside the account's ledger sequence.
+    const balanceUser =
+        userId === user.id ? user : ((await User.findByPk(userId)) ?? user);
+    const [openingBalanceDecimal, closingBalanceDecimal] = await Promise.all([
+        computeBankBalanceAsOf(
+            balanceUser,
+            virtualAccount,
+            null,
+            new Date(`${fromDate}T00:00:00Z`),
+        ),
+        computeBankBalanceAsOf(
+            balanceUser,
+            virtualAccount,
+            null,
+            new Date(new Date(`${toDate}T23:59:59Z`).getTime() + 1000),
+        ),
+    ]);
+    const openingBalance = openingBalanceDecimal.toNumber();
+    const closingBalance = closingBalanceDecimal.toNumber();
     const ownerMerchant = accountUser
         ? await Merchant.findOne({ where: { userId: accountUser.id } })
         : null;
@@ -272,6 +315,7 @@ export const fetchStatementData = async ({
             fromDate,
             toDate,
             generatedAt: `${formattedDate} ${formattedTime}`,
+            timezone: timeZone,
         },
         walletSummary,
         payins,
