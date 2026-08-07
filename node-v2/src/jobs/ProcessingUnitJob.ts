@@ -29,6 +29,7 @@ import {
     createDeposit,
     make as makePayout,
 } from "../services/processing_unit.service";
+import { generateOrderId } from "../utils/common.utils";
 import {
     BUSINESS_MODEL_DEAL_BASED,
     MORPH_VIRTUAL_ACCOUNT,
@@ -314,7 +315,13 @@ const handleBulkPayout = async (
             }
         }
 
-        // 6. Beneficiary transaction.
+        // 6. Beneficiary transaction. createPayoutTransaction runs the
+        // money-moving steps atomically (FOR UPDATE source lock ->
+        // balance gate -> transaction + status history -> quote
+        // SUBMITTED -> debit ledger -> wallet debit) and then either
+        // screens through Compliance (compliance_panel on) or queues
+        // the Processing Unit directly — the bulk row's job id and
+        // "bulk" source ride the dispatch.
         const transactionData = jobPayload.transaction ?? {};
         const transaction = await createPayoutTransaction(
             {
@@ -326,6 +333,9 @@ const handleBulkPayout = async (
                 client_reference_id: transactionData.txn_ref_no
                     ? String(transactionData.txn_ref_no)
                     : undefined,
+                order_id: generateOrderId(),
+                payout_job_unique_id: payoutJob.uniqueId,
+                dispatch_source: "bulk",
             },
             user,
             creatorContext,

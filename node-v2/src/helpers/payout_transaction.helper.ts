@@ -74,6 +74,14 @@ export interface PayoutCreatePayload {
     purpose_of_payment?: string;
     client_reference_id?: string;
     order_id?: string;
+    /**
+     * Bulk-import rows thread their originating PayoutJob unique id and
+     * a "bulk" dispatch source through to the Processing Unit queue so
+     * the worker-side trail stays tied to the imported row. Single
+     * payouts leave these unset (internal job handle + "approval").
+     */
+    payout_job_unique_id?: string;
+    dispatch_source?: "direct" | "instant" | "approval" | "bulk";
 }
 
 export interface CreatorContext {
@@ -465,9 +473,11 @@ export const createPayoutTransaction = async (
         } else {
             await Dispatch.payout({
                 beneficiaryTransactionId: String(created.transactionRow.id),
-                payoutJobUniqueId: created.payoutJob.uniqueId,
+                payoutJobUniqueId:
+                    payload.payout_job_unique_id ??
+                    created.payoutJob.uniqueId,
                 userId: String(user.id),
-                source: "approval",
+                source: payload.dispatch_source ?? "approval",
             });
         }
     }
