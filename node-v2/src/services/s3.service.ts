@@ -18,7 +18,9 @@ import { randomUUID } from "crypto";
  *   EXTERNAL_AWS_REGION | S3_REGION | AWS_REGION   region resolution order
  *   EXTERNAL_AWS_ACCESS_KEY_ID / EXTERNAL_AWS_SECRET_ACCESS_KEY
  *       optional — set when file storage lives in a different AWS
- *       account; otherwise the SDK default credential chain is used
+ *       account; falls back to AWS_ACCESS_KEY_ID /
+ *       AWS_SECRET_ACCESS_KEY, then to the SDK default credential
+ *       chain
  *   S3_USE_PATH_STYLE               "true" for path-style addressing
  *   AWS_TEMP_URL_EXPIRY_MIN         signed-URL lifetime, default 10
  */
@@ -46,22 +48,35 @@ const getClient = (): { client: S3Client; bucket: string } => {
         process.env.AWS_REGION ||
         "us-east-1";
 
-    const externalAccessKeyId = process.env.EXTERNAL_AWS_ACCESS_KEY_ID;
-    const externalSecretAccessKey = process.env.EXTERNAL_AWS_SECRET_ACCESS_KEY;
-    const useExternalCredentials =
-        !!externalAccessKeyId && !!externalSecretAccessKey;
+    // Credential resolution: the EXTERNAL_* pair wins (separate AWS
+    // account for file storage), then the standard AWS_* pair from
+    // .env, then the SDK default credential chain. Without the AWS_*
+    // fallback, deployments configured with standard credentials only
+    // hit unauthenticated upload errors (500s) on onboarding stepThree.
+    // Pairs are all-or-nothing: mixing an EXTERNAL_* key with a
+    // standard secret could never authenticate.
+    const externalPair =
+        process.env.EXTERNAL_AWS_ACCESS_KEY_ID &&
+        process.env.EXTERNAL_AWS_SECRET_ACCESS_KEY
+            ? {
+                  accessKeyId: process.env.EXTERNAL_AWS_ACCESS_KEY_ID,
+                  secretAccessKey:
+                      process.env.EXTERNAL_AWS_SECRET_ACCESS_KEY,
+              }
+            : null;
+    const standardPair =
+        process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+            ? {
+                  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+              }
+            : null;
+    const explicitCredentials = externalPair ?? standardPair;
 
     cachedClient = new S3Client({
         region,
         forcePathStyle: process.env.S3_USE_PATH_STYLE === "true",
-        ...(useExternalCredentials
-            ? {
-                  credentials: {
-                      accessKeyId: externalAccessKeyId,
-                      secretAccessKey: externalSecretAccessKey,
-                  },
-              }
-            : {}),
+        ...(explicitCredentials ? { credentials: explicitCredentials } : {}),
     });
     cachedBucket = bucket;
 
