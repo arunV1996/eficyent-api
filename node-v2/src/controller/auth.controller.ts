@@ -451,12 +451,64 @@ export const logout = async (
 };
 
 /**
+ * Ensures the merchant carries a decryptable credential set
+ * (generating a fresh one when missing or undecryptable) and returns
+ * it in the METHOD_GET_CREDENTIALS resource shape.
+ */
+const merchantCredentialsPayload = async (
+    merchantRow: Merchant,
+): Promise<Record<string, unknown>> => {
+    let merchant = merchantRow;
+    if (!merchant.apiKey || !merchant.saltKey || !merchant.privateKey) {
+        merchant = (await generateAndStoreCredentials(
+            merchant.id,
+            "merchant",
+        )) as Merchant;
+    }
+
+    let merchantPrivateKey: string;
+    try {
+        merchantPrivateKey = await decryptEnvelope(
+            merchant.privateKey as string,
+        );
+        if (merchant.saltKey) {
+            await decryptEnvelope(merchant.saltKey);
+        }
+    } catch {
+        merchant = (await generateAndStoreCredentials(
+            merchant.id,
+            "merchant",
+        )) as Merchant;
+        merchantPrivateKey = await decryptEnvelope(
+            merchant.privateKey as string,
+        );
+    }
+
+    return {
+        unique_id: merchant.uniqueId ?? null,
+        api_key: merchant.apiKey ?? null,
+        salt_key: merchant.saltKey
+            ? await decryptEnvelope(merchant.saltKey)
+            : null,
+        private_key: merchantPrivateKey,
+    };
+};
+
+/**
  * GET /api/user/get-credentials
  *
- * Returns the caller's api_key / salt_key / private_key (and the
- * merchant's, when the user belongs to one), generating or rotating
- * them as needed. The private key is what clients sign requests with;
- * the appSignature middleware verifies against the stored public key.
+ * Returns the caller's api_key / salt_key / private_key, rotating the
+ * RSA pair on every call. The private key is what clients sign
+ * requests with; the appSignature middleware verifies against the
+ * stored public key.
+ *
+ * Merchant resolution (mirror of the PHP get_credentials refactor):
+ * a caller under a NON-whitelabel parent merchant presenting the
+ * X-Merchant-Id header IS the merchant principal — its credentials
+ * come back as `user` and the user's own keys are left untouched.
+ * Otherwise the user's rotated credentials come back as `user`, with
+ * the parent merchant's attached as `merchant` when the parent is not
+ * a whitelabel.
  */
 export const getCredentials = async (
     req: Request,
@@ -464,12 +516,30 @@ export const getCredentials = async (
 ): Promise<void> => {
     try {
         if (!req.user) {
-            return res.sendError(res.__("401"), 401, 401);
+            return res.sendError(res.__("102"), 102, 400);
         }
 
         let user = await User.unscoped().findByPk(req.user.id);
         if (!user) {
             return res.sendError(res.__("102"), 102, 400);
+        }
+
+        // unscoped: the credential columns are hidden by the default
+        // scope, so loadParentMerchant() can't serve this path.
+        const merchantHeader = req.header("x-merchant-id");
+        const parentMerchant = user.merchantId
+            ? await Merchant.unscoped().findByPk(user.merchantId)
+            : null;
+
+        if (
+            parentMerchant &&
+            merchantHeader &&
+            parentMerchant.type !== MERCHANT_TYPE_WHITELABEL
+        ) {
+            return res.sendEmptyEnvelope(
+                { user: await merchantCredentialsPayload(parentMerchant) },
+                "",
+            );
         }
 
         if (!user.apiKey || !user.saltKey || !user.privateKey) {
@@ -506,49 +576,12 @@ export const getCredentials = async (
             },
         };
 
-        if (user.merchantId) {
-            let merchant = await Merchant.unscoped().findByPk(
-                user.merchantId,
-            );
-            if (merchant) {
-                if (
-                    !merchant.apiKey ||
-                    !merchant.saltKey ||
-                    !merchant.privateKey
-                ) {
-                    merchant = (await generateAndStoreCredentials(
-                        merchant.id,
-                        "merchant",
-                    )) as Merchant;
-                }
-
-                let merchantPrivateKey: string;
-                try {
-                    merchantPrivateKey = await decryptEnvelope(
-                        merchant.privateKey as string,
-                    );
-                    if (merchant.saltKey) {
-                        await decryptEnvelope(merchant.saltKey);
-                    }
-                } catch {
-                    merchant = (await generateAndStoreCredentials(
-                        merchant.id,
-                        "merchant",
-                    )) as Merchant;
-                    merchantPrivateKey = await decryptEnvelope(
-                        merchant.privateKey as string,
-                    );
-                }
-
-                dataPayload.merchant = {
-                    unique_id: merchant.uniqueId ?? null,
-                    api_key: merchant.apiKey ?? null,
-                    salt_key: merchant.saltKey
-                        ? await decryptEnvelope(merchant.saltKey)
-                        : null,
-                    private_key: merchantPrivateKey,
-                };
-            }
+        if (
+            parentMerchant &&
+            parentMerchant.type !== MERCHANT_TYPE_WHITELABEL
+        ) {
+            dataPayload.merchant =
+                await merchantCredentialsPayload(parentMerchant);
         }
 
         return res.sendEmptyEnvelope(dataPayload, "");
