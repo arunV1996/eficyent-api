@@ -300,18 +300,19 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             deviceToken: req.body.device_id ?? null,
         });
 
-        // X-Merchant-Id check (legacy LoginController.merchantHeader).
+        // X-Merchant-Id check against the user's own parent merchant
+        // (merchant_id) — a header naming any other merchant is
+        // unauthorized, closing the hole where a foreign merchant id
+        // passed validation because only header existence was checked.
         const merchantHeader = req.header("x-merchant-id");
-        if (user.merchantId && merchantHeader) {
-            const merchant = await Merchant.findOne({
-                where: { uniqueId: merchantHeader },
-            });
-            if (!merchant || merchant.uniqueId !== merchantHeader) {
+        const parentMerchant = await user.loadParentMerchant();
+        if (parentMerchant && merchantHeader) {
+            if (parentMerchant.uniqueId !== merchantHeader) {
                 return res.sendError(res.__("151"), 151, 401);
             }
             if (
-                merchant.type === MERCHANT_TYPE_PAYOUT ||
-                merchant.type === MERCHANT_TYPE_PAYINCOLLECTION
+                parentMerchant.type === MERCHANT_TYPE_PAYOUT ||
+                parentMerchant.type === MERCHANT_TYPE_PAYINCOLLECTION
             ) {
                 const ttlSeconds = 30 * 60;
                 const issued = await issueToken(

@@ -1,5 +1,7 @@
 import { DataTypes, Model, Optional } from "sequelize";
 import sequelize from "../config/database";
+import Merchant from "./merchant.model";
+import { MERCHANT_TYPE_WHITELABEL } from "../utils/constants";
 
 /**
  * Trimmed User model containing only the fields required by the auth
@@ -16,6 +18,7 @@ interface UserAttributes {
     id: number;
     uniqueId: string;
     merchantId: number | null;
+    subMerchantId: number | null;
     businessUserId: number | null;
     complianceMerchantId: string | null;
     title: string | null;
@@ -65,6 +68,7 @@ interface UserCreationAttributes
         UserAttributes,
         | "id"
         | "merchantId"
+        | "subMerchantId"
         | "businessUserId"
         | "complianceMerchantId"
         | "title"
@@ -111,6 +115,7 @@ class User
     public id!: number;
     public uniqueId!: string;
     public merchantId!: number | null;
+    public subMerchantId!: number | null;
     public businessUserId!: number | null;
     public complianceMerchantId!: string | null;
     public title!: string | null;
@@ -157,6 +162,53 @@ class User
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
+
+    /** Eagerly-loaded association targets (include: "parentMerchant"). */
+    public readonly parentMerchant?: Merchant | null;
+    public readonly subMerchant?: Merchant | null;
+
+    /**
+     * The merchant the user directly belongs to (merchant_id). Uses the
+     * eagerly-loaded association when present, loads it otherwise.
+     */
+    public async loadParentMerchant(): Promise<Merchant | null> {
+        if (this.parentMerchant !== undefined) {
+            return this.parentMerchant;
+        }
+        if (!this.merchantId) {
+            return null;
+        }
+        return Merchant.findByPk(this.merchantId);
+    }
+
+    /** The whitelabel sub merchant (sub_merchant_id), when assigned. */
+    public async loadSubMerchant(): Promise<Merchant | null> {
+        if (this.subMerchant !== undefined) {
+            return this.subMerchant;
+        }
+        if (!this.subMerchantId) {
+            return null;
+        }
+        return Merchant.findByPk(this.subMerchantId);
+    }
+
+    /**
+     * Effective merchant resolution (mirror of the Laravel getMerchant
+     * accessor): a WHITELABEL parent with a sub merchant assigned
+     * resolves to the sub merchant; everyone else resolves to the
+     * parent merchant. Route merchant access through this instead of
+     * reading merchant_id directly.
+     */
+    public async getMerchant(): Promise<Merchant | null> {
+        const parent = await this.loadParentMerchant();
+        if (parent && parent.type === MERCHANT_TYPE_WHITELABEL) {
+            const sub = await this.loadSubMerchant();
+            if (sub) {
+                return sub;
+            }
+        }
+        return parent;
+    }
 }
 
 User.init(
@@ -172,6 +224,10 @@ User.init(
             unique: true,
         },
         merchantId: {
+            type: DataTypes.BIGINT.UNSIGNED,
+            allowNull: true,
+        },
+        subMerchantId: {
             type: DataTypes.BIGINT.UNSIGNED,
             allowNull: true,
         },
@@ -338,5 +394,17 @@ User.init(
         },
     },
 );
+
+// Merchant resolution pair: the direct merchant (merchant_id) and the
+// whitelabel sub merchant (sub_merchant_id). Effective-merchant logic
+// lives in User.getMerchant().
+User.belongsTo(Merchant, {
+    foreignKey: "merchantId",
+    as: "parentMerchant",
+});
+User.belongsTo(Merchant, {
+    foreignKey: "subMerchantId",
+    as: "subMerchant",
+});
 
 export default User;

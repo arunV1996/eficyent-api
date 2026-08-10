@@ -48,6 +48,16 @@ export const validateMerchant = async (
         }
         req.merchant = merchant;
 
+        // The authenticated user's parent merchant (merchant_id) must
+        // be the merchant named in the header — a token from one
+        // merchant's user cannot act under another merchant's id.
+        if (req.user) {
+            const parentMerchant = await req.user.loadParentMerchant();
+            if (parentMerchant && parentMerchant.id !== merchant.id) {
+                return res.sendError(res.__("151"), 151, 401);
+            }
+        }
+
         if (
             merchant.type === MERCHANT_TYPE_PAYINCOLLECTION ||
             merchant.type === MERCHANT_TYPE_PAYOUTINTEGRATOR
