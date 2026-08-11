@@ -950,9 +950,27 @@ const bankFieldsByCountry = (
             } else {
                 // Rail-driven (the rails themselves come from the
                 // payment_rails lookup, not a hardcoded dropdown):
-                // bank transfers need the full bank fields, wallet
-                // rails (bkash/nagad/rocket) only a wallet number.
+                // bank transfers carry the full bank field set
+                // (dedicated routing_number + the service_bank
+                // dropdown, whose options are filled from the bank
+                // directory downstream), wallet rails
+                // (bkash/nagad/rocket) only a wallet number, and no
+                // rail yet keeps the legacy routing-code shape.
                 if (paymentRail === BDT_RAIL_BANK) {
+                    return [
+                        make("routing_number", "Routing Number", {
+                            validation: VALIDATION_PRESETS.routing,
+                        }),
+                        make("account_number", "Account Number", {
+                            validation: VALIDATION_PRESETS.generic_account,
+                        }),
+                        accountTypeField,
+                        make("service_bank", "Service Bank", {
+                            values: [],
+                        }),
+                    ];
+                }
+                if (paymentRail === null || paymentRail === undefined) {
                     return [
                         accountTypeField,
                         make("account_number", "Account Number", {
@@ -1212,14 +1230,33 @@ export const beneficiaryFormFields = async (payload: {
             payload.currency,
             serviceBankExternalType,
         );
+        // Rail-driven corridors (BGD bank rail) already carry an
+        // explicit service_bank placeholder — fill it in place rather
+        // than appending a duplicate.
+        const placeholderIndex = additionalFields.findIndex(
+            (field) => field.field_key === "service_bank",
+        );
         if (banks.length > 0) {
-            additionalFields.push(
-                make("service_bank", "Service Bank", {
-                    mandatory: serviceBankRequired,
-                    values: banks,
-                }),
-            );
+            if (placeholderIndex >= 0) {
+                additionalFields[placeholderIndex] = {
+                    ...additionalFields[placeholderIndex],
+                    is_mandatory: serviceBankRequired,
+                    values_supported: banks,
+                };
+            } else {
+                additionalFields.push(
+                    make("service_bank", "Service Bank", {
+                        mandatory: serviceBankRequired,
+                        values: banks,
+                    }),
+                );
+            }
         } else {
+            if (placeholderIndex >= 0) {
+                // Empty directory — drop the unusable dropdown before
+                // falling back to the free-form bank name.
+                additionalFields.splice(placeholderIndex, 1);
+            }
             // No bank directory for this corridor — a dropdown with
             // zero options would render as (or force) free text and
             // could never validate. Fall back to the same free-form
