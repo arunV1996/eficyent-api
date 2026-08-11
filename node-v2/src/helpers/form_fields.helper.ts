@@ -975,7 +975,11 @@ const bankFieldsByCountry = (
                 make("account_number", "Account Number", {
                     validation: { regex: "^\\d{6,18}$" },
                 }),
+                // Optional: the mandatory service_bank dropdown is the
+                // bank identifier for PHL — the SWIFT/BRSTN code is a
+                // supplementary detail.
                 make("code", isForeignCurrency ? "SWIFT/BIC" : "BRSTN", {
+                    mandatory: false,
                     validation: isForeignCurrency
                         ? VALIDATION_PRESETS.swift
                         : { regex: "^[a-zA-Z0-9]{8,12}$" },
