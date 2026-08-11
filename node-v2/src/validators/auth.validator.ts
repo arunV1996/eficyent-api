@@ -1,5 +1,4 @@
 import { body, ValidationChain } from "express-validator";
-import { USER_TYPE_BUSINESS, USER_TYPE_PENDING } from "../utils/constants";
 import { localizedError } from "./validation_message.helper";
 
 
@@ -95,24 +94,26 @@ export const registerValidator: ValidationChain[] = [
 
     body("user_type")
         .optional()
-        .customSanitizer((value) => {
-            // "BUSINESS" (quoted or not) -> numeric constant; numerics
-            // pass through (mirror of the legacy Zod preprocess).
-            if (typeof value === "string") {
-                const normalized = value
-                    .trim()
-                    .replace(/^["']|["']$/g, "")
-                    .toUpperCase();
-                if (normalized === "BUSINESS") {
-                    return USER_TYPE_BUSINESS;
-                }
+        .custom((value) => {
+            // String enum only — numeric inputs (0/1/2) are invalid.
+            // The controller maps BUSINESS to the numeric constant and
+            // rejects PERSONAL with its dedicated 205 envelope.
+            if (typeof value !== "string") {
+                return false;
             }
-            return Number(value);
+            const normalized = value
+                .trim()
+                .replace(/^["']|["']$/g, "")
+                .toUpperCase();
+            return normalized === "BUSINESS" || normalized === "PERSONAL";
         })
-        .custom((value) =>
-            value === USER_TYPE_PENDING || value === USER_TYPE_BUSINESS,
-        )
-        .withMessage(() => ({ msg: "Invalid user_type.", code: 422 })),
+        .withMessage(() => ({ msg: "Invalid user_type.", code: 422 }))
+        .customSanitizer((value) =>
+            String(value)
+                .trim()
+                .replace(/^["']|["']$/g, "")
+                .toUpperCase(),
+        ),
 
     body("timezone").optional().isString().isLength({ max: 30 }),
 

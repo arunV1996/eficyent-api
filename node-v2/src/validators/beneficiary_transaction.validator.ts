@@ -1,5 +1,8 @@
 import { body, param, query, ValidationChain } from "express-validator";
-import { BENEFICIARY_TRANSACTION_APPROVAL_MAP } from "../utils/constants";
+import {
+    BENEFICIARY_TRANSACTION_APPROVAL_MAP,
+    TRANSACTION_TYPE_MAP,
+} from "../utils/constants";
 import { localizedError } from "./validation_message.helper";
 
 /**
@@ -189,7 +192,13 @@ export const transactionListQueryValidator: ValidationChain[] = [
 
     query("take").optional().isInt({ min: 1 }).toInt(),
 
-    query("type").optional().isInt({ min: 1, max: 2 }).toInt(),
+    // String enum only (raw 1/2 are rejected); mapped to the DB
+    // integers (DEBIT -> 1, CREDIT -> 2) for the controller.
+    query("type")
+        .optional()
+        .isIn(Object.keys(TRANSACTION_TYPE_MAP))
+        .withMessage(localizedError("1100", 1100))
+        .customSanitizer((value) => TRANSACTION_TYPE_MAP[String(value)]),
 ];
 
 /**

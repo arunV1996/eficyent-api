@@ -2,6 +2,8 @@ import { body, query, ValidationChain } from "express-validator";
 import {
     EXTERNAL_TYPE_CALIZA,
     EXTERNAL_TYPE_FVBANK,
+    EXTERNAL_TYPE_MASSIVE,
+    EXTERNAL_TYPE_PROCESSING_UNIT,
 } from "../utils/constants";
 import { localizedError } from "./validation_message.helper";
 
@@ -67,10 +69,17 @@ export const virtualAccountIdQueryValidator: ValidationChain[] = [
 export const ACTIVATE_ALLOWED_KEYS = ["type"];
 
 export const activateBodyValidator: ValidationChain[] = [
+    // Provider codes are the string identifiers only — raw integers
+    // are rejected by the enum check.
     body("type")
         .notEmpty()
         .withMessage(localizedError("1100", 1100))
         .bail()
-        .isIn([EXTERNAL_TYPE_CALIZA, EXTERNAL_TYPE_FVBANK])
+        .isIn([
+            EXTERNAL_TYPE_CALIZA,
+            EXTERNAL_TYPE_FVBANK,
+            EXTERNAL_TYPE_MASSIVE,
+            EXTERNAL_TYPE_PROCESSING_UNIT,
+        ])
         .withMessage(localizedError("1100", 1100)),
 ];

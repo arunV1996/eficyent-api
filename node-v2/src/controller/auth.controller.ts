@@ -113,10 +113,20 @@ export const register = async (
         const emailAddress = String(req.body.email).toLowerCase().trim();
         const plainPassword = String(req.body.password);
         const mobile = req.body.mobile ? String(req.body.mobile) : null;
-        const requestedUserType =
-            req.body.user_type !== undefined
-                ? Number(req.body.user_type)
-                : USER_TYPE_PENDING;
+
+        // The validator admits only the BUSINESS / PERSONAL string
+        // enum; PERSONAL registrations are not supported.
+        let requestedUserType = USER_TYPE_PENDING;
+        if (req.body.user_type !== undefined) {
+            if (req.body.user_type === "PERSONAL") {
+                return res.sendError(
+                    "Selected user type is not supported.",
+                    205,
+                    422,
+                );
+            }
+            requestedUserType = USER_TYPE_BUSINESS;
+        }
         const merchantHeader = req.header("x-merchant-id");
 
         const passwordHash = await hashPassword(plainPassword);

@@ -1,4 +1,5 @@
 import { body, query, ValidationChain } from "express-validator";
+import { TRANSACTION_TYPE_MAP } from "../utils/constants";
 import { localizedError } from "./validation_message.helper";
 
 /**
@@ -108,7 +109,13 @@ export const walletTransactionsQueryValidator: ValidationChain[] = [
         .isLength({ min: 1, max: 64 })
         .withMessage(localizedError("1100", 1100)),
 
-    query("transaction_type").optional().isInt({ min: 1, max: 2 }).toInt(),
+    // String enum only (raw 1/2 are rejected); mapped to the DB
+    // integers (DEBIT -> 1, CREDIT -> 2) for the controller.
+    query("transaction_type")
+        .optional()
+        .isIn(Object.keys(TRANSACTION_TYPE_MAP))
+        .withMessage(localizedError("1100", 1100))
+        .customSanitizer((value) => TRANSACTION_TYPE_MAP[String(value)]),
 
     query("status").optional().isString().isLength({ max: 64 }),
 
