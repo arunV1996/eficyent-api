@@ -1200,6 +1200,7 @@ export const beneficiaryFormFields = async (payload: {
             "THA",
             "CHN",
             "SGP",
+            "BGD",
         ].includes(supportedCountry.countryCode);
         const serviceBankExternalType = ["CNY", "THB", "SGD"].includes(
             payload.currency,
