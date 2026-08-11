@@ -44,11 +44,66 @@ const HEADER_ALIASES: Record<string, string> = {
     beneficiary_ifsc_code: "beneficiary_code",
     account_type: "beneficiary_account_type",
     beneficiary_purpose_of_transactions: "beneficiary_purpose_of_transaction",
+
+    // Legacy/associative sheet headers (mirror of the Laravel
+    // ExcelImportService::headerAliases refactor).
+    receiptno: "quote_txn_ref_no",
+    famount: "quote_amount",
+    senderfullname: "remitter_first_name",
+    sendercountry: "remitter_nationality",
+    senderaddress: "remitter_address_1",
+    sendercity: "remitter_city",
+    senderpostalcode: "remitter_postal_code",
+    senderstate: "remitter_state",
+    senderidentitytype: "remitter_id_type",
+    senderidentitynumber: "remitter_id_number",
+    senderphoneno: "remitter_mobile",
+    senderemail: "remitter_email",
+    senderbirthdate: "remitter_dob",
+    senderfundresource: "remitter_source_of_funds",
+    accountno: "beneficiary_account_number",
+    beneficiaryname: "beneficiary_first_name",
+    beneaddress: "beneficiary_receiver_address_line_1",
+    beneprovince: "beneficiary_address_city",
+    benecity: "beneficiary_city",
+    benecountry: "beneficiary_address_country",
+    purpose: "beneficiary_purpose_of_transaction",
+    ifsc: "beneficiary_code",
+    code: "beneficiary_code",
+    beneficiary_brstn: "beneficiary_code",
+    beneficiary_swift_code: "beneficiary_code",
+    beneficiary_bank_code: "beneficiary_code",
+    service_bank: "beneficiary_service_bank",
+    bankname: "beneficiary_service_bank",
+};
+
+/** trim + lowercase + spaces->underscores, WITHOUT alias translation. */
+const normaliseHeaderRaw = (value: string): string => {
+    return value.trim().toLowerCase().replace(/\s+/g, "_");
 };
 
 const normaliseHeader = (value: string): string => {
-    const normalized = value.trim().toLowerCase().replace(/\s+/g, "_");
+    const normalized = normaliseHeaderRaw(value);
     return HEADER_ALIASES[normalized] ?? normalized;
+};
+
+/**
+ * Mirror of Helper::splitFullName — first token becomes first_name,
+ * the remainder last_name; a single-token name reuses it as last_name.
+ */
+export const splitFullName = (
+    fullName: string,
+): { first_name: string; last_name: string; full_name: string } => {
+    const trimmedName = String(fullName).trim().replace(/\s+/g, " ");
+    const nameParts = trimmedName.split(" ");
+    const firstName = nameParts[0] ?? "";
+    const lastName =
+        nameParts.length > 1 ? nameParts.slice(1).join(" ") : firstName;
+    return {
+        first_name: firstName,
+        last_name: lastName,
+        full_name: trimmedName,
+    };
 };
 
 const buildDropdownMap = (
@@ -70,6 +125,21 @@ const buildDropdownMap = (
 };
 
 type ImportSection = "quote" | "beneficiary" | "remitter";
+
+/** Excel cell -> trimmed string (dates flatten to YYYY-MM-DD). */
+const cellValueToString = (raw: unknown): string => {
+    if (raw instanceof Date) {
+        const year = raw.getFullYear();
+        const month = String(raw.getMonth() + 1).padStart(2, "0");
+        const day = String(raw.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+    }
+    return String(
+        typeof raw === "object" && raw !== null && "text" in raw
+            ? (raw as { text: string }).text
+            : raw,
+    ).trim();
+};
 
 export interface ImportRowPayload {
     quote: Record<string, string>;
@@ -100,6 +170,10 @@ export const processExcel = async <T>(
     const headerRow = sheet.getRow(1);
     const machineRow = sheet.getRow(2);
     const fieldMap: Record<number, string> = {};
+    // Columns carrying a combined full name (legacy "SenderFullName" /
+    // "BeneficiaryName" sheets) — handled by splitFullName instead of
+    // the plain field mapping.
+    const fullNameColumns: Record<number, "sender" | "beneficiary"> = {};
 
     // Prefer the hidden machine row when it carries dotted section paths
     // (most reliable); otherwise fall back to matching the human header.
@@ -126,6 +200,17 @@ export const processExcel = async <T>(
         for (let col = 1; col < headerCells.length; col += 1) {
             const headerValue = headerCells[col];
             if (typeof headerValue !== "string") {
+                continue;
+            }
+            // Combined-name headers split into first/last (and account
+            // name) — matched on the raw header, before aliasing.
+            const rawHeader = normaliseHeaderRaw(headerValue);
+            if (rawHeader === "senderfullname") {
+                fullNameColumns[col] = "sender";
+                continue;
+            }
+            if (rawHeader === "beneficiaryname") {
+                fullNameColumns[col] = "beneficiary";
                 continue;
             }
             const normalizedHeader = normaliseHeader(headerValue);
@@ -182,19 +267,7 @@ export const processExcel = async <T>(
                 ImportSection,
                 string,
             ];
-            let value = "";
-            if (raw instanceof Date) {
-                const year = raw.getFullYear();
-                const month = String(raw.getMonth() + 1).padStart(2, "0");
-                const day = String(raw.getDate()).padStart(2, "0");
-                value = `${year}-${month}-${day}`;
-            } else {
-                value = String(
-                    typeof raw === "object" && raw !== null && "text" in raw
-                        ? (raw as { text: string }).text
-                        : raw,
-                ).trim();
-            }
+            let value = cellValueToString(raw);
 
             const sectionMap = dropdownMap[section]?.[key];
             if (sectionMap) {
@@ -224,6 +297,37 @@ export const processExcel = async <T>(
         if (rowError) {
             errors.push({ row: rowIndex, errors: [rowError] });
             continue;
+        }
+
+        // Combined full-name columns: split into first/last (mirror of
+        // Helper::splitFullName). Explicitly-mapped individual name
+        // columns always win over the split.
+        for (const [colString, target] of Object.entries(fullNameColumns)) {
+            const raw = cells[Number(colString)];
+            if (raw === null || raw === undefined || raw === "") {
+                continue;
+            }
+            const nameParts = splitFullName(cellValueToString(raw));
+            if (nameParts.full_name === "") {
+                continue;
+            }
+            if (target === "sender") {
+                if (!payload.remitter.first_name) {
+                    payload.remitter.first_name = nameParts.first_name;
+                }
+                if (!payload.remitter.last_name) {
+                    payload.remitter.last_name = nameParts.last_name;
+                }
+            } else if (
+                !payload.beneficiary.first_name &&
+                !payload.beneficiary.last_name
+            ) {
+                if (!payload.beneficiary.account_name) {
+                    payload.beneficiary.account_name = nameParts.full_name;
+                }
+                payload.beneficiary.first_name = nameParts.first_name;
+                payload.beneficiary.last_name = nameParts.last_name;
+            }
         }
 
         try {
