@@ -10,6 +10,7 @@
     "116": "Virtual account not found.",
     "117": "Failed to create beneficiary account.",
     "118": "Beneficiary account not found.",
+    "119": "Balances fetched successfully.",
     "120": "Bank account not found.",
     "125": "Invalid email or password.",
     "126": "New password cannot be the same as old password.",
