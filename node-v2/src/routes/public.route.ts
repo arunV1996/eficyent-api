@@ -5,6 +5,7 @@ import {
     retryJob,
 } from "../controller/beneficiary_transaction.controller";
 import { retryDeposit } from "../controller/deposit.controller";
+import { merchantBalances } from "../controller/user.controller";
 import { publicApiRoutes } from "../utils/api.routes";
 
 /**
@@ -25,6 +26,12 @@ userPublicRouter.get(
     publicApiRoutes.CHECK_EXTERNAL_SERVICE_STATUS.path,
     ...publicApiRoutes.CHECK_EXTERNAL_SERVICE_STATUS.middleware,
     checkExternalServiceStatus,
+);
+
+userPublicRouter.get(
+    publicApiRoutes.MERCHANT_BALANCES.path,
+    ...publicApiRoutes.MERCHANT_BALANCES.middleware,
+    merchantBalances,
 );
 
 export const publicRouter = Router();

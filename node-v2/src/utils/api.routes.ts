@@ -17,6 +17,7 @@ import { fvbankWebhookSignature } from "../middleware/fvbank_webhook_signature";
 import { idempotency } from "../middleware/idempotency";
 import { strictBody } from "../middleware/strictBody";
 import { validateMerchant } from "../middleware/validateMerchant";
+import { validateProcessingApiKey } from "../middleware/validateProcessingApiKey";
 import {
     DIRECT_ALLOWED_KEYS,
     INSTANT_ALLOWED_KEYS,
@@ -919,6 +920,13 @@ export const publicApiRoutes = {
     RETRY_EXTERNAL_SERVICE: {
         path: "/retry_external_service/:trxn",
         middleware: [retryTrxnParamValidator, checkValidationErrors],
+    },
+    // Internal reporting feed — gated by the Processing API key, not
+    // user auth (mirror of the Laravel ValidateProcessingApiKey
+    // middleware group).
+    MERCHANT_BALANCES: {
+        path: "/merchant_balances",
+        middleware: [validateProcessingApiKey],
     },
 };
 
