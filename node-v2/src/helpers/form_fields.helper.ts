@@ -1477,7 +1477,10 @@ export const senderFields = async (
     const context = await buildContext();
 
     const common: FieldDef[] = [
-        make("email", "Email", { validation: VALIDATION_PRESETS.email }),
+        make("email", "Email", {
+            mandatory: false,
+            validation: VALIDATION_PRESETS.email,
+        }),
         make("mobile_country_code", "Mobile Country Code", {
             values: context.mobile_country_codes,
         }),

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>A-Express Receipt</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
+        .header { text-align: center; border-bottom: 2px solid #004085; padding-bottom: 10px; margin-bottom: 20px; }
+        .section { margin-bottom: 15px; }
+        .section-title { font-weight: bold; background-color: #f2f2f2; padding: 5px; margin-bottom: 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 6px; font-size: 13px; }
+        td.label { font-weight: bold; width: 40%; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>A-EXPRESS TRANSACTION RECEIPT</h2>
+        <p>Reference No: <%= receipt_details.txn_ref_no || '--' %></p>
+    </div>
+    <div class="section">
+        <div class="section-title">TRANSACTION DETAILS</div>
+        <table>
+            <tr><td class="label">Date & Time:</td><td><%= receipt_details.created_at || '--' %></td></tr>
+            <tr><td class="label">UTR / Bank Ref:</td><td><%= receipt_details.utr_no || '--' %></td></tr>
+            <tr><td class="label">Sending Amount:</td><td><%= receipt_details.sending_currency || '' %> <%= receipt_details.sending_amount || '--' %></td></tr>
+            <tr><td class="label">Receiving Amount:</td><td><%= receipt_details.receiving_currency || '' %> <%= receipt_details.receiving_amount || '--' %></td></tr>
+            <tr><td class="label">Status:</td><td><%= receipt_details.status || '--' %></td></tr>
+        </table>
+    </div>
+    <div class="section">
+        <div class="section-title">REMITTER DETAILS</div>
+        <table>
+            <tr><td class="label">Name:</td><td><%= receipt_details.sender_name || '--' %></td></tr>
+            <tr><td class="label">Country:</td><td><%= receipt_details.sender_country || '--' %></td></tr>
+        </table>
+    </div>
+    <div class="section">
+        <div class="section-title">BENEFICIARY DETAILS</div>
+        <table>
+            <tr><td class="label">Name:</td><td><%= receipt_details.beneficiary_name || '--' %></td></tr>
+            <tr><td class="label">Bank Name:</td><td><%= receipt_details.bank_name || '--' %></td></tr>
+            <tr><td class="label">Account Number:</td><td><%= receipt_details.account_number || '--' %></td></tr>
+            <tr><td class="label">Bank Code / SWIFT:</td><td><%= receipt_details.bank_code || '--' %></td></tr>
+        </table>
+    </div>
+</body>
+</html>
