@@ -76,6 +76,7 @@ import {
     BENEFICIARY_TRANSACTION_APPROVAL_MAP,
     BENEFICIARY_TRANSACTION_COMPLIANCE_INITIATION_FAILED,
     BENEFICIARY_TRANSACTION_PROCESSING_UNIT_INITIATION_FAILED,
+    EXTERNAL_TYPE_AEX,
     MORPH_BENEFICIARY_TRANSACTION,
     MORPH_VIRTUAL_ACCOUNT,
     MORPH_WALLET,
@@ -1639,11 +1640,19 @@ export const exportReceipt = async (
             return res.sendError("Transaction not found.", 124, 400);
         }
 
-        const html = await renderViewTemplate("invoice/invoice.ejs", {
-            invoice_details: await buildReceiptInvoiceDetails(
-                req.user,
-                transaction,
-            ),
+        // A-Express transactions use their dedicated receipt layout;
+        // both locals are provided so either template resolves.
+        const templateName =
+            transaction.externalType === EXTERNAL_TYPE_AEX
+                ? "pdf/aexpress_receipt.ejs"
+                : "invoice/invoice.ejs";
+        const receiptDetails = await buildReceiptInvoiceDetails(
+            req.user,
+            transaction,
+        );
+        const html = await renderViewTemplate(templateName, {
+            invoice_details: receiptDetails,
+            receipt_details: receiptDetails,
         });
         const buffer = await renderPdfFromHtml(html);
 
@@ -1721,8 +1730,13 @@ export const exportMultipleReceipts = async (
                 req.user,
                 transaction,
             );
-            const html = await renderViewTemplate("invoice/invoice.ejs", {
+            const templateName =
+                transaction.externalType === EXTERNAL_TYPE_AEX
+                    ? "pdf/aexpress_receipt.ejs"
+                    : "invoice/invoice.ejs";
+            const html = await renderViewTemplate(templateName, {
                 invoice_details: invoiceDetails,
+                receipt_details: invoiceDetails,
             });
             const pdfBuffer = await renderPdfFromHtml(html);
 
