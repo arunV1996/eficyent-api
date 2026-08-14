@@ -252,6 +252,42 @@ export const findValueByKey = async (
     return lookupRow ? lookupRow.value : String(key);
 };
 
+/**
+ * Maps raw source of funds input / key to the standardized string for
+ * PU integration.
+ */
+export const mapSourceOfFundsForPU = async (
+    rawSource?: string | null,
+): Promise<string> => {
+    if (!rawSource) return "Other";
+    const mapped = await findValueByKey(rawSource, "source_of_funds");
+    return mapped || rawSource || "Other";
+};
+
+/**
+ * Maps raw ID type input / key to the standardized string for PU
+ * integration.
+ */
+export const mapIdTypeForPU = async (
+    rawIdType?: string | null,
+): Promise<string> => {
+    if (!rawIdType) return "Other";
+    const mapped = await findValueByKey(rawIdType, "id_types");
+    return mapped || rawIdType || "Other";
+};
+
+/**
+ * Maps raw purpose of transaction input / key to the standardized
+ * string for PU integration.
+ */
+export const mapPurposeOfTransactionForPU = async (
+    rawPurpose?: string | null,
+): Promise<string> => {
+    if (!rawPurpose) return "Family Support";
+    const mapped = await findValueByKey(rawPurpose, "purpose_of_transactions");
+    return mapped || rawPurpose || "Family Support";
+};
+
 interface SupportedCountryRow {
     countryName: string;
     countryCode: string;

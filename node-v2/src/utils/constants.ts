@@ -126,6 +126,7 @@ export const EXTERNAL_TYPE_BUBANK = "EBUB";
 export const EXTERNAL_TYPE_CARDORA = "ECD";
 export const EXTERNAL_TYPE_COINPH = "ecp";
 export const EXTERNAL_TYPE_PROCESSING_UNIT = "pu";
+export const EXTERNAL_TYPE_AEX = "aex";
 export const EXTERNAL_TYPE_VIYONA_PAY = "ep";
 export const EXTERNAL_TYPE_COMPLIANCE = "cp";
 

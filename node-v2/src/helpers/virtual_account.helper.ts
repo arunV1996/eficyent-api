@@ -1,4 +1,4 @@
-import { WhereOptions } from "sequelize";
+import { Op, WhereOptions } from "sequelize";
 import Merchant from "../models/merchant.model";
 import MerchantSetting from "../models/merchant_setting.model";
 import User from "../models/user.model";
@@ -37,9 +37,16 @@ export const getVirtualAccountScope = async (
         });
 
         if (bankAccountSetting?.value) {
-            const bankAccountId = Number(bankAccountSetting.value);
-            if (Number.isFinite(bankAccountId) && bankAccountId > 0) {
-                return { id: bankAccountId };
+            // The setting may carry one id or a comma-separated list.
+            const rawValues = String(bankAccountSetting.value).split(",");
+            const ids = rawValues
+                .map((v) => Number(v.trim()))
+                .filter((v) => Number.isFinite(v) && v > 0);
+
+            if (ids.length === 1) {
+                return { id: ids[0] };
+            } else if (ids.length > 1) {
+                return { id: { [Op.in]: ids } };
             }
         }
 
