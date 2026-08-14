@@ -1,7 +1,10 @@
 import { Request, Response } from "express";
 import { Op } from "sequelize";
 import { availableBanks } from "../helpers/available_banks.helper";
-import { computeBankBalance } from "../helpers/balance.helper";
+import {
+    computeBankBalance,
+    getWalletBalance,
+} from "../helpers/balance.helper";
 import { CodedError } from "../helpers/coded_error.helper";
 import { settingGet } from "../helpers/setting.helper";
 import {
@@ -9,14 +12,18 @@ import {
     TeamRequestContext,
 } from "../helpers/team_context.helper";
 import { getVirtualAccountScope } from "../helpers/virtual_account.helper";
+import SupportedCountry from "../models/supported_country.model";
 import User from "../models/user.model";
 import UserService from "../models/user_service.model";
 import VirtualAccount from "../models/virtual_account.model";
+import Wallet from "../models/wallet.model";
 import { virtualAccountToJSON } from "../resources/virtual_account.resource";
-import { onboardingStatusLabel } from "../utils/common.utils";
+import { walletToJSON } from "../resources/wallet.resource";
+import { getFlagUrl, onboardingStatusLabel } from "../utils/common.utils";
 import {
     MERCHANT_TYPE_PAYOUT,
     TAKE_COUNT,
+    WALLET_STATUS_ACTIVE,
     TEAM_MEMBER_ROLE_CORPORATE,
     VIRTUAL_ACCOUNT_STATUS_CREATED,
     VIRTUAL_ACCOUNT_STATUS_MAP,
@@ -191,6 +198,40 @@ export const index = async (req: Request, res: Response): Promise<void> => {
         }
 
         const appUrl = await resolveAppUrl();
+
+        // Active wallets ride along with the accounts list: balance
+        // from the wallet ledger, currency flag from the supported
+        // countries table, sorted richest-first.
+        const walletRows = await Wallet.findAll({
+            where: { userId: req.user.id, status: WALLET_STATUS_ACTIVE },
+        });
+        const walletsWithBalance = await Promise.all(
+            walletRows.map(async (wallet) => {
+                const balance = await getWalletBalance(req.user!, wallet);
+                const country = await SupportedCountry.findOne({
+                    where: { currency: wallet.currency },
+                    attributes: ["countryCode"],
+                });
+                const flag = country
+                    ? getFlagUrl(country.countryCode, appUrl)
+                    : null;
+                return { wallet, balance, flag };
+            }),
+        );
+        const wallets = walletsWithBalance
+            .sort((left, right) =>
+                right.balance.minus(left.balance).toNumber(),
+            )
+            .map((entry) => {
+                const shaped = entry.wallet as Wallet & {
+                    balance?: string;
+                    flag?: string | null;
+                };
+                shaped.balance = entry.balance.toString();
+                shaped.flag = entry.flag;
+                return walletToJSON(shaped, req.user!.timezone);
+            });
+
         return res.sendResponse(
             {
                 total: groupedTotal,
@@ -202,6 +243,7 @@ export const index = async (req: Request, res: Response): Promise<void> => {
                         req.user!.timezone,
                     ),
                 ),
+                wallets,
             },
             "",
             200,
