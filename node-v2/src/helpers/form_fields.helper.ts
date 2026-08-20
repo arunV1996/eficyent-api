@@ -174,7 +174,7 @@ export const VALIDATION_PRESETS = {
     id_number: {
         min_length: 6,
         max_length: 20,
-        regex: "/^[A-Za-z0-9-]{6,20}$/",
+        regex: "/^[A-Za-z0-9]{6,20}$/",
     },
     postal_code: {
         min_length: 4,
