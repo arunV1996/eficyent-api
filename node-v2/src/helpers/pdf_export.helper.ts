@@ -33,11 +33,13 @@ const loadPuppeteer = async (): Promise<any> => {
  * fallbacks the legacy controllers walked (src tree, dist tree, cwd),
  * and finally falling back to the APP_URL-hosted asset.
  */
-export const loadLogoDataUrl = (): string => {
+export const loadLogoDataUrl = (
+    fileName = "eficyent-logo-dark.png",
+): string => {
     const logoPaths = [
-        path.join(__dirname, "..", "..", "public", "logo", "eficyent-logo-dark.png"),
-        path.join(process.cwd(), "public", "logo", "eficyent-logo-dark.png"),
-        path.join(process.cwd(), "dist", "public", "logo", "eficyent-logo-dark.png"),
+        path.join(__dirname, "..", "..", "public", "logo", fileName),
+        path.join(process.cwd(), "public", "logo", fileName),
+        path.join(process.cwd(), "dist", "public", "logo", fileName),
     ];
     for (const logoPath of logoPaths) {
         if (fs.existsSync(logoPath)) {
@@ -49,7 +51,7 @@ export const loadLogoDataUrl = (): string => {
             }
         }
     }
-    return `${process.env.APP_URL || `http://localhost:${process.env.PORT || 8080}`}/logo/eficyent-logo-dark.png`;
+    return `${process.env.APP_URL || `http://localhost:${process.env.PORT || 8080}`}/logo/${fileName}`;
 };
 
 /**
@@ -75,7 +77,20 @@ export const renderViewTemplate = async (
  * and margins to the legacy controllers. PUPPETEER_EXECUTABLE_PATH is
  * honored automatically by puppeteer when a system Chrome is preferred.
  */
-export const renderPdfFromHtml = async (html: string): Promise<Buffer> => {
+export interface PdfRenderOptions {
+    /** Page margins; defaults to the legacy 30px on all sides. */
+    margin?: {
+        top: string;
+        right: string;
+        bottom: string;
+        left: string;
+    };
+}
+
+export const renderPdfFromHtml = async (
+    html: string,
+    options: PdfRenderOptions = {},
+): Promise<Buffer> => {
     const puppeteer = await loadPuppeteer();
     const browser = await puppeteer.launch({
         headless: true,
@@ -83,11 +98,14 @@ export const renderPdfFromHtml = async (html: string): Promise<Buffer> => {
     });
     try {
         const page = await browser.newPage();
-        await page.setContent(html);
+        // networkidle0 lets hosted assets (logo fallback URLs) finish
+        // loading; templates with only inline/data: assets settle
+        // immediately.
+        await page.setContent(html, { waitUntil: "networkidle0" });
         const pdfBytes = await page.pdf({
             format: "A4",
             printBackground: true,
-            margin: {
+            margin: options.margin ?? {
                 top: "30px",
                 right: "30px",
                 bottom: "30px",

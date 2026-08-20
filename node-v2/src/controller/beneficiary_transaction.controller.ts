@@ -1592,11 +1592,77 @@ const buildReceiptInvoiceDetails = async (
         transaction.status,
     );
 
+    // Quote-side figures (send amount / fx / total) and the sending
+    // currency resolved from the quote's funding source — used by the
+    // A-Express receipt layout.
+    const quote = transaction.quotes ?? null;
+    let sendingCurrency = "";
+    if (quote?.sourceId) {
+        if (quote.sourceType === MORPH_VIRTUAL_ACCOUNT) {
+            const sourceAccount = await VirtualAccount.findByPk(
+                quote.sourceId,
+            );
+            sendingCurrency = sourceAccount?.currency ?? "";
+        } else if (quote.sourceType === MORPH_WALLET) {
+            const sourceWallet = await Wallet.findByPk(quote.sourceId);
+            sendingCurrency = sourceWallet?.currency ?? "";
+        }
+    }
+
+    // Source of funds: the sender's declared source first, else the
+    // beneficiary detail's source-of-income lookup label.
+    let sourceOfFunds = sender?.sourceOfFunds ?? "";
+    if (!sourceOfFunds && detail?.userSourceOfIncome) {
+        sourceOfFunds =
+            (await findValueByKey(detail.userSourceOfIncome)) ?? "";
+    }
+
+    const joinMobile = (
+        countryCode?: string | null,
+        mobile?: string | null,
+    ): string => {
+        if (!mobile) {
+            return "";
+        }
+        return countryCode ? `+${countryCode} ${mobile}` : mobile;
+    };
+
+    const beneficiaryAddress = [
+        detail?.addressLine1,
+        detail?.city,
+        detail?.country,
+    ]
+        .filter(Boolean)
+        .join(", ");
+
     return {
         unique_id: transaction.uniqueId,
         created_at: formatDateHuman(transaction.createdAt),
         txn_ref_no: transaction.txnRefNo ?? "",
         utr_no: transaction.externalReferenceId ?? "",
+        client_reference_id: transaction.clientReferenceId ?? null,
+        sending_currency: sendingCurrency,
+        sending_amount: quote?.amount ? String(quote.amount) : "",
+        total_sending_amount: quote?.totalSendingAmount
+            ? String(quote.totalSendingAmount)
+            : "",
+        fx_rate: quote?.fxRate ? String(quote.fxRate) : "",
+        commission_amount: transaction.commissionAmount
+            ? String(transaction.commissionAmount)
+            : "",
+        source_of_funds: sourceOfFunds,
+        sender_ic: sender?.idNumber ?? "",
+        sender_mobile: joinMobile(
+            sender?.mobileCountryCode ?? user.mobileCountryCode,
+            sender?.mobile ?? user.mobile,
+        ),
+        beneficiary_account_no: beneficiaryAccount?.accountNumber ?? "",
+        beneficiary_bank_name: beneficiaryAccount?.bankName ?? "",
+        beneficiary_mobile: joinMobile(
+            beneficiaryAccount?.mobileCountryCode,
+            beneficiaryAccount?.mobile,
+        ),
+        beneficiary_address: beneficiaryAddress,
         sender_name: senderName,
         sender_address: sender?.address1 ?? userInfo?.address1 ?? "",
         sender_city: sender?.city ?? userInfo?.city ?? "",
@@ -1640,12 +1706,13 @@ export const exportReceipt = async (
             return res.sendError("Transaction not found.", 124, 400);
         }
 
-        // A-Express transactions use their dedicated receipt layout;
+        // A-Express transactions use their dedicated receipt layout
+        // (zero-margin A4 — the template's tables carry all spacing);
         // both locals are provided so either template resolves.
-        const templateName =
-            transaction.externalType === EXTERNAL_TYPE_AEX
-                ? "pdf/aexpress_receipt.ejs"
-                : "invoice/invoice.ejs";
+        const isAexReceipt = transaction.externalType === EXTERNAL_TYPE_AEX;
+        const templateName = isAexReceipt
+            ? "pdf/aexpress_receipt.ejs"
+            : "invoice/invoice.ejs";
         const receiptDetails = await buildReceiptInvoiceDetails(
             req.user,
             transaction,
@@ -1653,8 +1720,23 @@ export const exportReceipt = async (
         const html = await renderViewTemplate(templateName, {
             invoice_details: receiptDetails,
             receipt_details: receiptDetails,
+            logo_data_url: loadLogoDataUrl(
+                isAexReceipt ? "aexpress-logo.png" : undefined,
+            ),
         });
-        const buffer = await renderPdfFromHtml(html);
+        const buffer = await renderPdfFromHtml(
+            html,
+            isAexReceipt
+                ? {
+                      margin: {
+                          top: "0px",
+                          right: "0px",
+                          bottom: "0px",
+                          left: "0px",
+                      },
+                  }
+                : {},
+        );
 
         const key = await upload(
             { buffer, contentType: "application/pdf", extension: "pdf" },
@@ -1730,15 +1812,31 @@ export const exportMultipleReceipts = async (
                 req.user,
                 transaction,
             );
-            const templateName =
-                transaction.externalType === EXTERNAL_TYPE_AEX
-                    ? "pdf/aexpress_receipt.ejs"
-                    : "invoice/invoice.ejs";
+            const isAexReceipt =
+                transaction.externalType === EXTERNAL_TYPE_AEX;
+            const templateName = isAexReceipt
+                ? "pdf/aexpress_receipt.ejs"
+                : "invoice/invoice.ejs";
             const html = await renderViewTemplate(templateName, {
                 invoice_details: invoiceDetails,
                 receipt_details: invoiceDetails,
+                logo_data_url: loadLogoDataUrl(
+                    isAexReceipt ? "aexpress-logo.png" : undefined,
+                ),
             });
-            const pdfBuffer = await renderPdfFromHtml(html);
+            const pdfBuffer = await renderPdfFromHtml(
+                html,
+                isAexReceipt
+                    ? {
+                          margin: {
+                              top: "0px",
+                              right: "0px",
+                              bottom: "0px",
+                              left: "0px",
+                          },
+                      }
+                    : {},
+            );
 
             // <beneficiary name>-<transaction id>.pdf, filesystem-safe.
             const beneficiaryName = String(

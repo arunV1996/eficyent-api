@@ -1,48 +1,203 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>A-Express Receipt</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
-        .header { text-align: center; border-bottom: 2px solid #004085; padding-bottom: 10px; margin-bottom: 20px; }
-        .section { margin-bottom: 15px; }
-        .section-title { font-weight: bold; background-color: #f2f2f2; padding: 5px; margin-bottom: 8px; }
-        table { width: 100%; border-collapse: collapse; }
-        td { padding: 6px; font-size: 13px; }
-        td.label { font-weight: bold; width: 40%; }
-    </style>
+<title>Payment Invoice</title>
+<!-- PDF-ONLY: table layout + inline CSS + embedded logo. No external CSS or media queries. -->
 </head>
-<body>
-    <div class="header">
-        <h2>A-EXPRESS TRANSACTION RECEIPT</h2>
-        <p>Reference No: <%= receipt_details.txn_ref_no || '--' %></p>
-    </div>
-    <div class="section">
-        <div class="section-title">TRANSACTION DETAILS</div>
-        <table>
-            <tr><td class="label">Date & Time:</td><td><%= receipt_details.created_at || '--' %></td></tr>
-            <tr><td class="label">UTR / Bank Ref:</td><td><%= receipt_details.utr_no || '--' %></td></tr>
-            <tr><td class="label">Sending Amount:</td><td><%= receipt_details.sending_currency || '' %> <%= receipt_details.sending_amount || '--' %></td></tr>
-            <tr><td class="label">Receiving Amount:</td><td><%= receipt_details.receiving_currency || '' %> <%= receipt_details.receiving_amount || '--' %></td></tr>
-            <tr><td class="label">Status:</td><td><%= receipt_details.status || '--' %></td></tr>
-        </table>
-    </div>
-    <div class="section">
-        <div class="section-title">REMITTER DETAILS</div>
-        <table>
-            <tr><td class="label">Name:</td><td><%= receipt_details.sender_name || '--' %></td></tr>
-            <tr><td class="label">Country:</td><td><%= receipt_details.sender_country || '--' %></td></tr>
-        </table>
-    </div>
-    <div class="section">
-        <div class="section-title">BENEFICIARY DETAILS</div>
-        <table>
-            <tr><td class="label">Name:</td><td><%= receipt_details.beneficiary_name || '--' %></td></tr>
-            <tr><td class="label">Bank Name:</td><td><%= receipt_details.bank_name || '--' %></td></tr>
-            <tr><td class="label">Account Number:</td><td><%= receipt_details.account_number || '--' %></td></tr>
-            <tr><td class="label">Bank Code / SWIFT:</td><td><%= receipt_details.bank_code || '--' %></td></tr>
-        </table>
-    </div>
+
+<body style="margin:0;padding:0;background:#edeef0;color:#25292e;font-family:Arial,Helvetica,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:0;padding:0;background:#edeef0;border-collapse:collapse;table-layout:fixed;">
+  <tr>
+    <td align="left" style="padding:20px 12px;background:#edeef0;vertical-align:top;">
+
+      <table width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;background:#ffffff;border-collapse:collapse;table-layout:fixed;">
+        <tr>
+          <td style="padding:26px 28px 24px;background:#ffffff;">
+
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td width="55%" valign="top" style="width:55%;padding:0 18px 0 0;vertical-align:top;">
+                  <img src="<%= typeof logo_data_url !== 'undefined' ? logo_data_url : '' %>" width="190" alt="A-Express Remit" style="display:block;width:190px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:8px;line-height:8px;font-size:8px;">&nbsp;</td></tr></table>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:10.5px;line-height:16px;color:#7f8791;">
+                    304 Orchard Road #02-28, Lucky Plaza, Singapore 238863<br>
+                    Tel: +65 6235 9849 &nbsp;|&nbsp; remit@aexpressremit.com<br>
+                  </td></tr></table>
+                </td>
+
+                <td width="45%" valign="top" align="right" style="width:45%;padding:0;text-align:right;vertical-align:top;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:13px;line-height:17px;font-weight:500;letter-spacing:.2px;color:#1b5bdf;">PAYMENT INVOICE</td></tr></table>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:7px;line-height:7px;font-size:7px;">&nbsp;</td></tr></table>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:10.5px;line-height:17px;color:#7f8791;">
+                    Date &amp; Time: <span style="color:#34383d;"><%= invoice_details.created_at || '--' %></span><br>
+                    Transaction No: <span style="font-family:Arial,Helvetica,sans-serif;color:#34383d;"><%= invoice_details.txn_ref_no || '--' %></span><br>
+                    <% if (invoice_details && invoice_details.client_reference_id) { %>
+                    Receipt No: <span style="color:#34383d;"><%= invoice_details.client_reference_id || '--' %></span>
+                    <% } %>
+                  </td></tr></table>
+                </td>
+              </tr>
+            </table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:19px;line-height:19px;font-size:19px;">&nbsp;</td></tr></table>
+
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td height="2" style="height:2px;line-height:2px;font-size:2px;background:#1b5bdf;">&nbsp;</td>
+              </tr>
+            </table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:19px;line-height:19px;font-size:19px;">&nbsp;</td></tr></table>
+
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td width="38%" valign="top" style="width:38%;padding:0 10px 0 0;vertical-align:top;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:10px;line-height:14px;color:#7f8791;letter-spacing:.3px;">Receive Amount</td></tr></table>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:22px;line-height:29px;font-weight:bold;color:#25292e;white-space:nowrap;"><%= invoice_details.currency || '--' %> <%= invoice_details.amount || '--' %></td></tr></table>
+                </td>
+                <td width="37%" valign="top" style="width:37%;padding:0 10px 0 0;vertical-align:top;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:10px;line-height:14px;color:#7f8791;letter-spacing:.3px;">Total to Pay</td></tr></table>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:22px;line-height:29px;font-weight:bold;color:#25292e;white-space:nowrap;"><%= invoice_details.sending_currency || '--' %> <%= invoice_details.total_sending_amount || '--' %></td></tr></table>
+                </td>
+                <td width="25%" valign="middle" align="right" class="summary-col summary-status" style="width:25%;padding:0;text-align:right;vertical-align:middle;">
+                  <table cellpadding="0" cellspacing="0" border="0" align="right" style="border-collapse:collapse;">
+                    <tr>
+                      <td style="padding:8px 12px;background:#e6f4ea;border-radius:4px;color:#1f6b3b;font-size:9px;line-height:13px;font-weight:500;white-space:nowrap;">
+                        <%= invoice_details.status || '--' %>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:19px;line-height:19px;font-size:19px;">&nbsp;</td></tr></table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:10.5px;line-height:15px;font-weight:500;letter-spacing:1px;color:#4e6d8c;">TRANSACTION DETAILS</td></tr></table>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:8px;line-height:8px;font-size:8px;">&nbsp;</td></tr></table>
+
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td colspan="2" style="border-top:1px solid #dfe2e5;height:1px;line-height:1px;font-size:1px;">&nbsp;</td>
+              </tr>
+
+              <tr>
+                <td style="padding:11px 8px 0 0;font-size:11.5px;line-height:18px;color:#818892;">Payment Reference No</td>
+                <td align="right" style="padding:11px 0 0 8px;font-size:10px;line-height:17px;color:#34383d;font-family:monospace;text-align:right;"><%= invoice_details.txn_ref_no || '--' %></td>
+              </tr>
+              <% if (invoice_details && invoice_details.client_reference_id) { %>
+              <tr>
+                <td style="padding:4px 8px 0 0;font-size:11.5px;line-height:18px;color:#818892;">Your Reference No</td>
+                <td align="right" style="padding:4px 0 0 8px;font-size:10px;line-height:17px;color:#34383d;text-align:right;"><%= invoice_details.client_reference_id || '--' %></td>
+              </tr>
+              <% } %>
+              <tr>
+                <td style="padding:4px 8px 0 0;font-size:11.5px;line-height:18px;color:#818892;">Send Amount</td>
+                <td align="right" style="padding:4px 0 0 8px;font-size:11.5px;line-height:18px;font-weight:500;color:#34383d;text-align:right;"><%= invoice_details.sending_currency || '--' %> <%= invoice_details.sending_amount || '--' %></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 8px 0 0;font-size:11.5px;line-height:18px;color:#818892;">Exchange Rate</td>
+                <td align="right" style="padding:4px 0 0 8px;font-size:11.5px;line-height:18px;font-weight:500;color:#34383d;text-align:right;"><%= invoice_details.fx_rate || '--' %></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 8px 0 0;font-size:11.5px;line-height:18px;color:#818892;">Service Fee</td>
+                <td align="right" style="padding:4px 0 0 8px;font-size:11.5px;line-height:18px;font-weight:500;color:#34383d;text-align:right;"><%= invoice_details.commission_amount || '--' %></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 8px 0 0;font-size:11.5px;line-height:18px;color:#818892;">Amount to be Remitted</td>
+                <td align="right" style="padding:4px 0 0 8px;font-size:11.5px;line-height:18px;font-weight:500;color:#34383d;text-align:right;"><%= invoice_details.currency || '--' %> <%= invoice_details.amount || '--' %></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 8px 0 0;font-size:11.5px;line-height:18px;color:#818892;">Payment Mode</td>
+                <td align="right" style="padding:4px 0 0 8px;font-size:11.5px;line-height:18px;font-weight:500;color:#34383d;text-align:right;">Credit to Bank Account</td>
+              </tr>
+              <tr>
+                <td style="padding:4px 8px 0 0;font-size:11.5px;line-height:18px;color:#818892;">Source of Fund</td>
+                <td align="right" style="padding:4px 0 0 8px;font-size:11.5px;line-height:18px;font-weight:500;color:#34383d;text-align:right;"><%= invoice_details.source_of_funds || '--' %></td>
+              </tr>
+              <tr>
+                <td style="padding:4px 8px 0 0;font-size:11.5px;line-height:18px;color:#818892;">Purpose of Remittance</td>
+                <td align="right" style="padding:4px 0 0 8px;font-size:11.5px;line-height:18px;font-weight:500;color:#34383d;text-align:right;"><%= invoice_details.remarks || '--' %></td>
+              </tr>
+
+              <tr>
+                <td colspan="2" style="padding:5px 0 0;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+                    <tr><td height="11" style="height:11px;line-height:11px;font-size:11px;background:#dcdfe2;">&nbsp;</td></tr>
+                  </table>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:10px 8px 0 0;font-size:11.5px;line-height:19px;font-weight:500;color:#25292e;">Total to Pay</td>
+                <td align="right" style="padding:10px 0 0 8px;font-size:11.5px;line-height:19px;font-weight:500;color:#25292e;text-align:right;"><%= invoice_details.sending_currency || '--' %> <%= invoice_details.total_sending_amount || '--' %></td>
+              </tr>
+            </table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:20px;line-height:20px;font-size:20px;">&nbsp;</td></tr></table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:10.5px;line-height:15px;font-weight:500;letter-spacing:1px;color:#4e6d8c;">REMITTER &amp; BENEFICIARY DETAILS</td></tr></table>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:8px;line-height:8px;font-size:8px;">&nbsp;</td></tr></table>
+
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td width="50%" valign="top" style="width:50%;padding:0 12px 0 0;vertical-align:top;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+                    <tr>
+                      <td style="padding:10px 12px 12px;background:#f7f9fa;border:1px solid #e5e8eb;border-radius:4px;vertical-align:top;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:9.5px;line-height:13px;font-weight:500;letter-spacing:.3px;color:#7f8791;">REMITTER (SENDER)</td></tr></table>
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:4px;line-height:4px;font-size:4px;">&nbsp;</td></tr></table>
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:11.5px;line-height:17px;font-weight:bold;color:#25292e;"><%= invoice_details.sender_name || '--' %></td></tr></table>
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:3px;line-height:3px;font-size:3px;">&nbsp;</td></tr></table>
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:10.5px;line-height:16px;color:#4c5157;">
+                          NRIC/FIN: <span style="font-family:Arial,Helvetica,sans-serif;color:#25292e;"><%= invoice_details.sender_ic || '--' %></span><br>
+                          Mobile: <span style="color:#25292e;"><%= invoice_details.sender_mobile || '--' %></span><br>
+                          Address: <span style="color:#25292e;"><%= invoice_details.sender_address || '--' %></span>
+                        </td></tr></table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+
+                <td width="50%" valign="top" style="width:50%;padding:0 0 0 12px;vertical-align:top;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+                    <tr>
+                      <td style="padding:10px 12px 12px;background:#f7f9fa;border:1px solid #e5e8eb;border-radius:4px;vertical-align:top;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:9.5px;line-height:13px;font-weight:500;letter-spacing:.3px;color:#7f8791;">BENEFICIARY (RECEIVER)</td></tr></table>
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:4px;line-height:4px;font-size:4px;">&nbsp;</td></tr></table>
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:11.5px;line-height:17px;font-weight:bold;color:#25292e;"><%= invoice_details.beneficiary_name || '--' %></td></tr></table>
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:3px;line-height:3px;font-size:3px;">&nbsp;</td></tr></table>
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="font-size:10.5px;line-height:16px;color:#4c5157;">
+                          Account No: <span style="font-family:monospace;color:#25292e;"><%= invoice_details.beneficiary_account_no || '--' %></span><br>
+                          Bank: <span style="color:#25292e;"><%= invoice_details.beneficiary_bank_name || '--' %></span><br>
+                          Mobile: <span style="color:#25292e;"><%= invoice_details.beneficiary_mobile || '--' %></span><br>
+                          Address: <span style="color:#25292e;"><%= invoice_details.beneficiary_address || '--' %></span>
+                        </td></tr></table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr><td style="height:20px;line-height:20px;font-size:20px;">&nbsp;</td></tr></table>
+
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td style="padding:10px 12px;background:#f3f4f6;border-radius:4px;font-size:9.5px;line-height:14.5px;color:#7a828c;text-align:justify;">
+                  <strong>IMPORTANT NOTICE:</strong> This receipt serves as an official proof of payment request processed by A-Express Remit. All transactions are subject to compliance checks under MAS guidelines. Please verify all details immediately. Funds credited are non-refundable once disbursed. For inquiries, contact support at remit@aexpressremit.com or +65 6235 9849 quoting your Transaction No.
+                </td>
+              </tr>
+            </table>
+
+          </td>
+        </tr>
+      </table>
+
+    </td>
+  </tr>
+</table>
+
 </body>
 </html>
