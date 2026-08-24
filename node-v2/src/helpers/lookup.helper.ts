@@ -1,5 +1,6 @@
 import { Op } from "sequelize";
 import { getFixedRate } from "./commission.helper";
+import City from "../models/city.model";
 import FxRate from "../models/fx_rate.model";
 import Lookup from "../models/lookup.model";
 import MerchantSetting from "../models/merchant_setting.model";
@@ -250,6 +251,29 @@ export const findValueByKey = async (
     });
 
     return lookupRow ? lookupRow.value : String(key);
+};
+
+/**
+ * Seeded cities for a country (dynamic city dropdown source). An empty
+ * result means the address form keeps its free-text city input.
+ */
+export const cities = async (
+    countryCode?: string | null,
+): Promise<LookupItem[]> => {
+    if (!countryCode) return [];
+
+    const cityRows = await City.findAll({
+        where: {
+            status: 1,
+            country: countryCode,
+        },
+        order: [["city", "ASC"]],
+    });
+
+    return cityRows.map((row) => ({
+        label: row.city,
+        value: row.city,
+    }));
 };
 
 /**

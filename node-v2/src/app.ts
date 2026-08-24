@@ -19,6 +19,7 @@ import "./models/beneficiary_account_validation.model";
 import "./models/beneficiary_additional_detail.model";
 import "./models/beneficiary_transaction.model";
 import "./models/beneficiary_transaction_status_history.model";
+import "./models/city.model";
 import "./models/deposit_transaction.model";
 import "./models/external_service_call.model";
 import "./models/fee.model";

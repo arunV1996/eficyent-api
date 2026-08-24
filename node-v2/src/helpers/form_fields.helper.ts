@@ -10,6 +10,7 @@ import {
     mobileCountryCodes as buildMobileCountryCodes,
     serviceBanks,
     states as buildStates,
+    cities as buildCityOptions,
 } from "./lookup.helper";
 import {
     EXTERNAL_TYPE_DIGININE,
@@ -281,16 +282,20 @@ const buildContext = async (): Promise<FormBuildContext> => {
     };
 };
 
-const addressFields = (
+const addressFields = async (
     prefix: string,
     context: FormBuildContext,
-): FieldDef[] => {
+    country?: string | null,
+): Promise<FieldDef[]> => {
     const category =
         prefix === "receiver"
             ? "Address"
             : `${prefix.charAt(0).toUpperCase()}${prefix
                   .slice(1)
                   .replace(/_/g, " ")} Address`;
+    // Seeded-city countries render a dropdown; everyone else keeps the
+    // free-text city input.
+    const citiesList = country ? await buildCityOptions(country) : [];
     return [
         make(`${prefix}_address_line_1`, `${category} Line 1`, {
             validation: VALIDATION_PRESETS.address,
@@ -315,13 +320,18 @@ const addressFields = (
             category,
         }),
         make(`${prefix}_city`, `${category} City`, {
-            validation: VALIDATION_PRESETS.city,
             category,
+            ...(citiesList.length > 0
+                ? { values: citiesList }
+                : { validation: VALIDATION_PRESETS.city }),
         }),
     ];
 };
 
-const baseIndividualFields = (context: FormBuildContext): FieldDef[] => {
+const baseIndividualFields = async (
+    context: FormBuildContext,
+    country?: string | null,
+): Promise<FieldDef[]> => {
     return [
         make("first_name", "First Name", {
             validation: VALIDATION_PRESETS.name,
@@ -336,11 +346,14 @@ const baseIndividualFields = (context: FormBuildContext): FieldDef[] => {
             values: context.mobile_country_codes,
         }),
         make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
-        ...addressFields("receiver", context),
+        ...(await addressFields("receiver", context, country)),
     ];
 };
 
-const baseBusinessFields = (context: FormBuildContext): FieldDef[] => {
+const baseBusinessFields = async (
+    context: FormBuildContext,
+    country?: string | null,
+): Promise<FieldDef[]> => {
     return [
         make("business_name", "Business Name", {
             validation: VALIDATION_PRESETS.business_name,
@@ -353,7 +366,7 @@ const baseBusinessFields = (context: FormBuildContext): FieldDef[] => {
             values: context.mobile_country_codes,
         }),
         make("mobile", "Mobile", { validation: VALIDATION_PRESETS.mobile }),
-        ...addressFields("receiver", context),
+        ...(await addressFields("receiver", context, country)),
     ];
 };
 
@@ -808,12 +821,12 @@ export const onboardingFormFieldsNew = async (
  * Country/currency-specific bank fields for the beneficiary form.
  * Mirror of the legacy bankFieldsByCountry.
  */
-const bankFieldsByCountry = (
+const bankFieldsByCountry = async (
     country: string,
     currency: string,
     context: FormBuildContext,
     paymentRail?: string | null,
-): FieldDef[] => {
+): Promise<FieldDef[]> => {
     const accountTypeField = make("account_type", "Account Type", {
         values: [
             { label: "Checking", value: "Checking" },
@@ -1023,7 +1036,7 @@ const bankFieldsByCountry = (
                     validation: VALIDATION_PRESETS.routing,
                     required_if_empty_of: "code",
                 }),
-                ...addressFields("bank", context),
+                ...(await addressFields("bank", context, "USA")),
             ];
         default:
             return [
@@ -1034,7 +1047,7 @@ const bankFieldsByCountry = (
                 make("code", "SWIFT/BIC/Routing Number", {
                     validation: VALIDATION_PRESETS.swift,
                 }),
-                ...addressFields("bank", context),
+                ...(await addressFields("bank", context, country)),
             ];
     }
 };
@@ -1122,8 +1135,8 @@ export const beneficiaryFormFields = async (payload: {
     const context = await buildContext();
     const baseFields =
         Number(payload.type) === USER_TYPE_BUSINESS
-            ? baseBusinessFields(context)
-            : baseIndividualFields(context);
+            ? await baseBusinessFields(context, payload.country)
+            : await baseIndividualFields(context, payload.country);
 
     baseFields.push(
         make("account_name", "Account Name", {
@@ -1131,7 +1144,7 @@ export const beneficiaryFormFields = async (payload: {
         }),
     );
 
-    const additionalFields = bankFieldsByCountry(
+    const additionalFields = await bankFieldsByCountry(
         supportedCountry.countryCode,
         supportedCountry.currency,
         context,
