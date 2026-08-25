@@ -121,16 +121,24 @@ export const buildResponse = async (
         : payload.payment_rail ?? null;
 
     if (source.kind === "wallet") {
-        if (source.currency !== receivingCurrency) {
-            throw new CodedError(
-                "Wallet currency does not match the receiving currency.",
-                172,
-                400,
-            );
-        }
         if (source.status !== WALLET_STATUS_ACTIVE) {
             throw new CodedError("Wallet is not active.", 169, 400);
         }
+        const fxResult = await calcFxCommissions(
+            {
+                amount: payload.amount,
+                receivingAmount: payload.amount,
+                fxRate: 1,
+                quoteType: payload.quote_type,
+                receivingCurrency,
+                sourceCurrency: source.currency,
+                sourceType: "wallet",
+                sourceId: source.id,
+                paymentRail,
+            },
+            { userId, merchantId, merchantType },
+        );
+
         const transactionCommission = await calcTransactionCommissions(
             {
                 amount: payload.amount,
@@ -141,16 +149,17 @@ export const buildResponse = async (
             },
             { userId, merchantId, merchantType },
         );
+
         return {
-            amount: payload.amount,
+            amount: fxResult.amount,
             total_sending_amount:
-                payload.amount +
+                fxResult.amount +
                 transactionCommission.commission_amount +
                 transactionCommission.merchant_commission_amount,
-            fx_rate: "1",
+            fx_rate: String(fxResult.fx_rate),
             external_fx_rate: "1",
-            internal_fx_rate: "1",
-            receiving_amount: payload.amount,
+            internal_fx_rate: String(fxResult.internal_fx_rate),
+            receiving_amount: fxResult.receiving_amount,
             recipient_country: payload.recipient_country!,
             receiving_currency: receivingCurrency,
             recipient_type: recipientTypeNumeric,
@@ -163,6 +172,7 @@ export const buildResponse = async (
             merchant_commission_amount:
                 transactionCommission.merchant_commission_amount,
             external_commission_amount: 0,
+            commission_value: fxResult.commission_value,
         };
     }
 
@@ -278,6 +288,7 @@ export const buildResponse = async (
             quoteType: driverResponse.quote_type,
             receivingCurrency,
             sourceCurrency: source.currency,
+            sourceType: source.kind,
             sourceId: source.id,
             paymentRail,
         },
@@ -294,11 +305,11 @@ export const buildResponse = async (
     if (quoteMode === QUOTE_MODE_QUOTATION) {
         transactionCommission = await calcTransactionCommissions(
             {
-                amount: fxResult.amount,
+                amount: driverResponse.amount,
                 receivingCurrency,
                 sourceCurrency: source.currency,
                 paymentRail,
-                sourceType: "virtual_account",
+                sourceType: source.kind,
             },
             { userId, merchantId, merchantType },
         );

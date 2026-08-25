@@ -1,5 +1,6 @@
 import Fee from "../models/fee.model";
 import VirtualAccount from "../models/virtual_account.model";
+import Wallet from "../models/wallet.model";
 import { CodedError } from "./coded_error.helper";
 import {
     DEPOSIT_FEE,
@@ -11,6 +12,7 @@ import {
     MERCHANT_TYPE_WHITELABEL,
     MORPH_MERCHANT,
     MORPH_USER,
+    MORPH_VIRTUAL_ACCOUNT,
     MORPH_WALLET,
     QUOTE_TYPE_FORWARD,
     TRANSACTION_FEE,
@@ -197,6 +199,7 @@ export interface CalcFxQuoteInput {
     quoteType: string;
     receivingCurrency: string;
     sourceCurrency: string;
+    sourceType: string;
     sourceId: number;
     paymentRail?: string | null;
 }
@@ -221,6 +224,18 @@ const requireVirtualAccount = async (
     return { id: virtualAccount.id, currency: virtualAccount.currency };
 };
 
+const requireWallet = async (
+    sourceId: number,
+): Promise<{ id: number; currency: string }> => {
+    const wallet = await Wallet.findByPk(sourceId, {
+        attributes: ["id", "currency"],
+    });
+    if (!wallet) {
+        throw new CodedError("Wallet not found.", 116, 400);
+    }
+    return { id: wallet.id, currency: wallet.currency };
+};
+
 /**
  * Mirror of CommissionsHelper::calc_fx_commissions.
  */
@@ -240,8 +255,17 @@ export const calcFxCommissions = async (
     }
 
     const baseRate = quoteInput.fxRate;
-    const virtualAccount = await requireVirtualAccount(quoteInput.sourceId);
-    const currency1 = virtualAccount.currency.toUpperCase();
+    let sourceAccount;
+    if (
+        quoteInput.sourceType === MORPH_VIRTUAL_ACCOUNT ||
+        quoteInput.sourceType === "virtual_account"
+    ) {
+        sourceAccount = await requireVirtualAccount(quoteInput.sourceId);
+    } else {
+        sourceAccount = await requireWallet(quoteInput.sourceId);
+    }
+
+    const currency1 = sourceAccount.currency.toUpperCase();
     const currency2 = quoteInput.receivingCurrency.toUpperCase();
 
     const hasMerchant = context.merchantId !== null;
