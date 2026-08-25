@@ -52,6 +52,7 @@ import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
 import BeneficiaryTransactionProof from "../models/beneficiary_transaction_proof.model";
 import Ledger from "../models/ledger.model";
 import Merchant from "../models/merchant.model";
+import MerchantSetting from "../models/merchant_setting.model";
 import PayoutJob from "../models/payout_job.model";
 import Quote from "../models/quote.model";
 import Sender from "../models/sender.model";
@@ -1708,8 +1709,21 @@ export const exportReceipt = async (
 
         // A-Express transactions use their dedicated receipt layout
         // (zero-margin A4 — the template's tables carry all spacing);
-        // both locals are provided so either template resolves.
-        const isAexReceipt = transaction.externalType === EXTERNAL_TYPE_AEX;
+        // both locals are provided so either template resolves. A
+        // merchant-level receipt_template setting forces that layout for
+        // every transaction regardless of provider.
+        const receiptTemplateSetting = req.user.merchantId
+            ? await MerchantSetting.findOne({
+                  where: {
+                      merchantId: req.user.merchantId,
+                      key: "receipt_template",
+                  },
+              })
+            : null;
+
+        const isAexReceipt =
+            transaction.externalType === EXTERNAL_TYPE_AEX ||
+            receiptTemplateSetting?.value === "aexpress_receipt";
         const templateName = isAexReceipt
             ? "pdf/aexpress_receipt.ejs"
             : "invoice/invoice.ejs";
@@ -1807,13 +1821,22 @@ export const exportMultipleReceipts = async (
         }
 
         const zip = new JSZip();
+        const receiptTemplateSetting = req.user.merchantId
+            ? await MerchantSetting.findOne({
+                  where: {
+                      merchantId: req.user.merchantId,
+                      key: "receipt_template",
+                  },
+              })
+            : null;
         for (const transaction of transactions) {
             const invoiceDetails = await buildReceiptInvoiceDetails(
                 req.user,
                 transaction,
             );
             const isAexReceipt =
-                transaction.externalType === EXTERNAL_TYPE_AEX;
+                transaction.externalType === EXTERNAL_TYPE_AEX ||
+                receiptTemplateSetting?.value === "aexpress_receipt";
             const templateName = isAexReceipt
                 ? "pdf/aexpress_receipt.ejs"
                 : "invoice/invoice.ejs";
