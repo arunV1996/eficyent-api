@@ -1653,6 +1653,7 @@ const buildReceiptInvoiceDetails = async (
             : "",
         source_of_funds: sourceOfFunds,
         sender_ic: sender?.idNumber ?? "",
+        sender_id: sender?.idNumber ?? "",
         sender_mobile: joinMobile(
             sender?.mobileCountryCode ?? user.mobileCountryCode,
             sender?.mobile ?? user.mobile,
@@ -1663,6 +1664,7 @@ const buildReceiptInvoiceDetails = async (
             beneficiaryAccount?.mobileCountryCode,
             beneficiaryAccount?.mobile,
         ),
+        beneficiary_country: detail?.country ?? "",
         beneficiary_address: beneficiaryAddress,
         sender_name: senderName,
         sender_address: sender?.address1 ?? userInfo?.address1 ?? "",
