@@ -68,6 +68,7 @@ export const validateAndNormalizeSender = async (
         type: senderType,
         merchantId,
         remitterDepositEnabled,
+        currency: (payload.currency as string) || undefined,
     });
     if (fields.length === 0) {
         throw new CodedError("Sender not found.", 132, 400);

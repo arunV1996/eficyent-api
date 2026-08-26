@@ -70,6 +70,10 @@ const SENDER_COLUMN_MAP: Record<string, string> = {
     type: "type",
     id_type: "idType",
     id_number: "idNumber",
+    id_issued_country: "idIssuedCountry",
+    id_issued_date: "idIssuedDate",
+    id_expiry_date: "idExpiryDate",
+    profession: "profession",
     source_of_funds: "sourceOfFunds",
     business_persons: "businessPersons",
     client_reference_id: "clientReferenceId",
@@ -90,7 +94,12 @@ const toSenderColumns = (
             continue;
         }
         let value: unknown = rawValue;
-        if (destination === "dob" && typeof rawValue === "string") {
+        if (
+            (destination === "dob" ||
+                destination === "idIssuedDate" ||
+                destination === "idExpiryDate") &&
+            typeof rawValue === "string"
+        ) {
             value = new Date(rawValue);
         }
         if (NUMERIC_KEYS.has(key) && typeof rawValue === "string") {

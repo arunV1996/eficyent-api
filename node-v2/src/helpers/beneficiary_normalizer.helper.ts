@@ -103,9 +103,9 @@ export const validateAndNormalizeBeneficiary = async (
         type: recipientType,
         merchantId: user.merchantId,
     });
-    // USA/BGD corridors require a valid payment rail before any of the
-    // field-level checks run.
-    if (country === "USA" || country === "BGD") {
+    // USA/BGD/CHN corridors require a valid payment rail before any of
+    // the field-level checks run.
+    if (country === "USA" || country === "BGD" || country === "CHN") {
         const paymentRail = payload.payment_rail;
         if (
             paymentRail === undefined ||
@@ -180,7 +180,9 @@ export const validateAndNormalizeBeneficiary = async (
         email: validated.email ?? "",
         mobile_country_code: validated.mobile_country_code ?? "",
         mobile: validated.mobile ?? "",
-        payment_rail: validated.payment_rail ?? "",
+        // payment_rail is not part of the dynamic form builder array, so
+        // validateAgainstFields strips it — pull it from the raw payload.
+        payment_rail: (payload.payment_rail as string | undefined) ?? "",
         service_bank: serviceBankBankId ?? "",
         bank_name: serviceBankName ?? validated.bank_name ?? "",
         routing_number: validated.routing_number ?? validated.code ?? "",
@@ -202,6 +204,7 @@ export const validateAndNormalizeBeneficiary = async (
         bank_country: validated.bank_country ?? country,
         business_name: validated.business_name ?? "",
         business_country: validated.business_country ?? "",
+        relationship: (validated.relationship as string | undefined) ?? null,
     };
 
     const beneficiaryAccountAdditionalDetail: Record<string, unknown> = {
