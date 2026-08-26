@@ -21,6 +21,8 @@ import {
     BDT_RAIL_BKASH,
     BDT_RAIL_NAGAD,
     BDT_RAIL_ROCKET,
+    CHN_RAIL_ALIPAY,
+    CHN_RAIL_BANK,
     PAYMENT_RAILS,
     USER_TYPE_BUSINESS,
 } from "../utils/constants";
@@ -473,8 +475,9 @@ export const receivingCountries = async (
 };
 
 /**
- * Country-specific payout rails: BGD gets the Bangladesh rails, USA
- * (or no country) the US rails, anything else has none.
+ * Country-specific payout rails: BGD gets the Bangladesh rails, CHN the
+ * China rails, USA (or no country) the US rails, anything else has
+ * none.
  */
 export const getPaymentRails = (
     countryCode?: string,
@@ -485,6 +488,12 @@ export const getPaymentRails = (
             { label: "Bkash", value: BDT_RAIL_BKASH },
             { label: "Nagad", value: BDT_RAIL_NAGAD },
             { label: "Rocket", value: BDT_RAIL_ROCKET },
+        ];
+    }
+    if (countryCode === "CHN") {
+        return [
+            { label: "Alipay", value: CHN_RAIL_ALIPAY },
+            { label: "Bank", value: CHN_RAIL_BANK },
         ];
     }
     if (countryCode !== undefined && countryCode !== "USA") {

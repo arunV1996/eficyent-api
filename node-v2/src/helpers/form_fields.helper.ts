@@ -1328,6 +1328,16 @@ export const beneficiaryFormFields = async (payload: {
         });
     }
 
+    // ARE/CHN corridors collect the remitter-beneficiary relationship.
+    if (["ARE", "CHN"].includes(payload.country?.toUpperCase() || "")) {
+        const relationship = await getLookups("relationships");
+        fields.push(
+            make("relationship", "Relationship", {
+                values: relationship,
+            }),
+        );
+    }
+
     if (payload.merchantId) {
         const beneficiaryFieldsSetting = await MerchantSetting.findOne({
             where: {
@@ -1462,30 +1472,37 @@ export const transactionFormFields = async (
         }),
     ];
 
-    // Extended compliance fields for the ARE/CHN corridors.
-    if (["ARE", "CHN"].includes(country?.toUpperCase() || "")) {
-        const relationship = await getLookups("relationships");
-        fields.push(
-            make("id_issued_country", "ID Issued Country", {
-                values: context.countries,
-            }),
-            make("id_issued_date", "ID Issued Date", {
-                type: "date",
-            }),
-            make("id_expiry_date", "ID Expiry Date", {
-                type: "date",
-                validation: {
-                    min_date: new Date().toISOString().slice(0, 10),
-                },
-            }),
-            make("profession", "Profession", {
-                values: context.professions,
-            }),
-            make("relationship", "Relationship", {
-                values: relationship,
-            }),
-        );
-    }
+    // Extended compliance fields — mandatory only for the ARE/CHN
+    // corridors.
+    const complianceFieldsEnabled = ["ARE", "CHN"].includes(
+        country?.toUpperCase() || "",
+    );
+    const relationship = await getLookups("relationships");
+    fields.push(
+        make("id_issued_country", "ID Issued Country", {
+            mandatory: complianceFieldsEnabled,
+            values: context.countries,
+        }),
+        make("id_issued_date", "ID Issued Date", {
+            type: "date",
+            mandatory: complianceFieldsEnabled,
+        }),
+        make("id_expiry_date", "ID Expiry Date", {
+            type: "date",
+            mandatory: complianceFieldsEnabled,
+            validation: {
+                min_date: new Date().toISOString().slice(0, 10),
+            },
+        }),
+        make("profession", "Profession", {
+            mandatory: complianceFieldsEnabled,
+            values: context.professions,
+        }),
+        make("relationship", "Relationship", {
+            mandatory: complianceFieldsEnabled,
+            values: relationship,
+        }),
+    );
 
     return fields;
 };

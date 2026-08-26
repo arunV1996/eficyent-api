@@ -146,6 +146,7 @@ export const getFormFields = async (
             remitterDepositEnabled: await isRemitterDepositEnabled(
                 req.user.merchantId,
             ),
+            currency: query.currency ? String(query.currency) : undefined,
         });
 
         const filled = prefill
@@ -507,6 +508,9 @@ export const bulkTemplate = async (
             remitterDepositEnabled: await isRemitterDepositEnabled(
                 req.user.merchantId,
             ),
+            currency: (req.query as { currency?: string }).currency
+                ? String((req.query as { currency?: string }).currency)
+                : undefined,
         });
         const flat = flattenFormFields({ remitter: fields }, ["remitter"]);
         const buffer = await generateBulkTemplate(flat, "Senders");
@@ -560,6 +564,9 @@ export const bulkStore = async (
             type,
             merchantId: merchant?.id ?? null,
             remitterDepositEnabled: depositEnabled,
+            currency: (req.body as { currency?: string }).currency
+                ? String((req.body as { currency?: string }).currency)
+                : undefined,
         });
         const flat = flattenFormFields({ remitter: fields }, ["remitter"]);
 
