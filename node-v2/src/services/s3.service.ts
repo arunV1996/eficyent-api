@@ -37,9 +37,9 @@ const getClient = (): { client: S3Client; bucket: string } => {
         return { client: cachedClient, bucket: cachedBucket };
     }
 
-    const bucket = process.env.S3_BUCKET;
+    const bucket = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET;
     if (!bucket) {
-        throw new Error("S3_BUCKET is not configured");
+        throw new Error("S3_BUCKET or AWS_S3_BUCKET is not configured");
     }
 
     const region =

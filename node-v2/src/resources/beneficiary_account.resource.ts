@@ -84,6 +84,7 @@ export const beneficiaryAccountToJSON = async (
         intermediary_bank_postal_code: account.intermediaryBankPostalCode ?? "",
         intermediary_bank_country: account.intermediaryBankCountry ?? "",
         bank_country: account.bankCountry ?? "",
+        relationship: account.relationship ?? "",
         user_source_of_income: detail?.userSourceOfIncome
             ? await findValueByKey(detail.userSourceOfIncome)
             : "",
