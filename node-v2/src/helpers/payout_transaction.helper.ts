@@ -74,6 +74,11 @@ export interface PayoutCreatePayload {
     purpose_of_payment?: string;
     client_reference_id?: string;
     order_id?: string;
+    id_issued_country?: string;
+    id_issued_date?: string;
+    id_expiry_date?: string;
+    profession?: string;
+    relationship?: string;
     /**
      * Bulk-import rows thread their originating PayoutJob unique id and
      * a "bulk" dispatch source through to the Processing Unit queue so
@@ -191,6 +196,12 @@ export const createPayoutTransaction = async (
         );
     }
 
+    if (payload.relationship) {
+        await beneficiaryAccount.update({
+            relationship: payload.relationship,
+        });
+    }
+
     // 5. Source validation (balance locking is deferred into the
     //    transaction below to prevent race conditions).
     if (!quote.sourceType || !quote.sourceId) {
@@ -250,6 +261,27 @@ export const createPayoutTransaction = async (
                 400,
             );
         }
+
+        // Retroactively update the sender with compliance fields if the
+        // payout form collected them (because the sender didn't have
+        // them).
+        const senderUpdates: Partial<Record<string, unknown>> = {};
+        if (payload.id_issued_country) {
+            senderUpdates.idIssuedCountry = payload.id_issued_country;
+        }
+        if (payload.id_issued_date) {
+            senderUpdates.idIssuedDate = payload.id_issued_date;
+        }
+        if (payload.id_expiry_date) {
+            senderUpdates.idExpiryDate = payload.id_expiry_date;
+        }
+        if (payload.profession) {
+            senderUpdates.profession = payload.profession;
+        }
+        if (Object.keys(senderUpdates).length > 0) {
+            await sender.update(senderUpdates);
+        }
+
         resolvedSenderId = sender.id;
     }
 

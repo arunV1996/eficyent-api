@@ -31,6 +31,10 @@ interface SenderAttributes {
     type: number | null;
     idType: string | null;
     idNumber: string | null;
+    idIssuedCountry: string | null;
+    idIssuedDate: string | null;
+    idExpiryDate: string | null;
+    profession: string | null;
     sourceOfFunds: string | null;
     businessPersons: unknown | null;
     status: number;
@@ -74,6 +78,10 @@ class Sender
     public type!: number | null;
     public idType!: string | null;
     public idNumber!: string | null;
+    public idIssuedCountry!: string | null;
+    public idIssuedDate!: string | null;
+    public idExpiryDate!: string | null;
+    public profession!: string | null;
     public sourceOfFunds!: string | null;
     public businessPersons!: unknown | null;
     public status!: number;
@@ -129,6 +137,10 @@ Sender.init(
         type: { type: DataTypes.TINYINT, allowNull: true, defaultValue: 1 },
         idType: { type: DataTypes.STRING(255), allowNull: true },
         idNumber: { type: DataTypes.STRING(255), allowNull: true },
+        idIssuedCountry: { type: DataTypes.STRING(255), allowNull: true },
+        idIssuedDate: { type: DataTypes.DATEONLY, allowNull: true },
+        idExpiryDate: { type: DataTypes.DATEONLY, allowNull: true },
+        profession: { type: DataTypes.STRING(255), allowNull: true },
         sourceOfFunds: { type: DataTypes.STRING(255), allowNull: true },
         businessPersons: { type: DataTypes.JSON, allowNull: true },
         status: { type: DataTypes.TINYINT, allowNull: false, defaultValue: 1 },

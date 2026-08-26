@@ -31,6 +31,7 @@ import {
     ONBOARDING_STEP_TWO,
     PASSWORD_REGEX,
     BDT_RAIL_BANK,
+    CHN_RAIL_BANK,
     USER_TYPE_BUSINESS,
     USER_TYPE_PERSONAL,
 } from "../utils/constants";
@@ -1273,12 +1274,19 @@ export const beneficiaryFormFields = async (payload: {
             // No bank directory for this corridor — a dropdown with
             // zero options would render as (or force) free text and
             // could never validate. Fall back to the same free-form
-            // bank name field the non-directory corridors use.
-            additionalFields.push(
-                make("bank_name", "Bank Name", {
-                    validation: VALIDATION_PRESETS.name,
-                }),
-            );
+            // bank name field the non-directory corridors use — unless
+            // the rail intentionally suppresses the bank field (like
+            // Alipay).
+            if (
+                payload.currency !== "CNY" ||
+                payload.payment_rail === CHN_RAIL_BANK
+            ) {
+                additionalFields.push(
+                    make("bank_name", "Bank Name", {
+                        validation: VALIDATION_PRESETS.name,
+                    }),
+                );
+            }
         }
     } else {
         additionalFields.push(
@@ -1417,7 +1425,7 @@ export const transactionFormFields = async (
 
     const context = await buildContext();
 
-    return [
+    const fields: FieldDef[] = [
         make("quote_id", "Quote ID"),
         make("remarks", "Remarks", {
             mandatory: isRemarksRequired,
@@ -1448,7 +1456,38 @@ export const transactionFormFields = async (
             mandatory: isTransactionRefRequired,
             validation: { max_length: 64 },
         }),
+        make("payin_country", "Payin Country", {
+            mandatory: false,
+            values: context.countries,
+        }),
     ];
+
+    // Extended compliance fields for the ARE/CHN corridors.
+    if (["ARE", "CHN"].includes(country?.toUpperCase() || "")) {
+        const relationship = await getLookups("relationships");
+        fields.push(
+            make("id_issued_country", "ID Issued Country", {
+                values: context.countries,
+            }),
+            make("id_issued_date", "ID Issued Date", {
+                type: "date",
+            }),
+            make("id_expiry_date", "ID Expiry Date", {
+                type: "date",
+                validation: {
+                    min_date: new Date().toISOString().slice(0, 10),
+                },
+            }),
+            make("profession", "Profession", {
+                values: context.professions,
+            }),
+            make("relationship", "Relationship", {
+                values: relationship,
+            }),
+        );
+    }
+
+    return fields;
 };
 
 /**
@@ -1477,6 +1516,7 @@ export interface SenderFieldsContext {
     merchantId: number | null;
     remitterDepositEnabled: boolean;
     country?: string;
+    currency?: string;
 }
 
 /**
@@ -1519,9 +1559,38 @@ export const senderFields = async (
         }),
         make("id_type", "ID Type", { values: context.id_types }),
         make("id_number", "ID Number", {
+            mandatory: true,
             validation: VALIDATION_PRESETS.id_number,
         }),
     ];
+
+    // Extended ID/compliance fields — mandatory only for corridors that
+    // require them (AED/CNY), optional everywhere else.
+    const additionalIdFieldsEnabled = ["AED", "CNY"].includes(
+        senderContext.currency || "",
+    );
+    common.push(
+        make("id_issued_country", "ID Issued Country", {
+            mandatory: additionalIdFieldsEnabled,
+            values: context.countries,
+        }),
+        make("id_issued_date", "ID Issued Date", {
+            type: "date",
+            mandatory: additionalIdFieldsEnabled,
+        }),
+        make("id_expiry_date", "ID Expiry Date", {
+            type: "date",
+            mandatory: additionalIdFieldsEnabled,
+            validation: {
+                min_date: new Date().toISOString().slice(0, 10),
+            },
+        }),
+        make("profession", "Profession", {
+            mandatory: additionalIdFieldsEnabled,
+            values: context.professions,
+        }),
+    );
+
     if (senderContext.remitterDepositEnabled) {
         common.push(make("client_reference_id", "Client Reference ID"));
     }

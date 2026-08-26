@@ -45,6 +45,7 @@ interface BeneficiaryAccountAttributes {
     externalType: string | null;
     externalReferenceId: string | null;
     externalData: unknown | null;
+    relationship: string | null;
     status: number;
     createdAt?: Date | null;
     updatedAt?: Date | null;
@@ -106,6 +107,7 @@ class BeneficiaryAccount
     public externalType!: string | null;
     public externalReferenceId!: string | null;
     public externalData!: unknown | null;
+    public relationship!: string | null;
     public status!: number;
 
     public readonly createdAt!: Date | null;
@@ -193,6 +195,7 @@ BeneficiaryAccount.init(
         externalType: { type: DataTypes.STRING(255), allowNull: true },
         externalReferenceId: { type: DataTypes.STRING(255), allowNull: true },
         externalData: { type: DataTypes.JSON, allowNull: true },
+        relationship: { type: DataTypes.STRING(255), allowNull: true },
         status: {
             type: DataTypes.TINYINT,
             allowNull: false,

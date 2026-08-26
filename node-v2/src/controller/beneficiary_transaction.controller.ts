@@ -202,6 +202,11 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                 txn_ref_no: req.body.txn_ref_no,
                 purpose_of_payment: req.body.purpose_of_payment,
                 client_reference_id: req.body.client_reference_id,
+                id_issued_country: req.body.id_issued_country,
+                id_issued_date: req.body.id_issued_date,
+                id_expiry_date: req.body.id_expiry_date,
+                profession: req.body.profession,
+                relationship: req.body.relationship,
             },
             req.user,
             teamMemberContext(req),
@@ -570,6 +575,7 @@ export const getFormFields = async (
             remitterDepositEnabled: await isRemitterDepositEnabled(
                 req.user.merchantId,
             ),
+            currency: String(query.currency),
         });
         const transaction = await buildTransactionFormFields(
             req.user,
@@ -642,6 +648,7 @@ export const instantGetFormFields = async (
             remitterDepositEnabled: await isRemitterDepositEnabled(
                 req.user.merchantId,
             ),
+            currency: String(query.currency),
         });
         const quote = await quoteFormFields();
         return res.sendResponse(
@@ -970,6 +977,7 @@ export const payoutTemplate = async (
                       req.user.merchantId,
                   ),
                   country: query.country,
+                  currency: String(query.currency),
               })
             : [];
 
@@ -1074,6 +1082,7 @@ export const bulkStore = async (
                   remitterDepositEnabled: await isRemitterDepositEnabled(
                       req.user.merchantId,
                   ),
+                  currency: String(currency),
               })
             : [];
 
