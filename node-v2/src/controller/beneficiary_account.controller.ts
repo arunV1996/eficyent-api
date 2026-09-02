@@ -293,6 +293,7 @@ const beneficiaryAttributesFromNormalized = (
         bankCountry: stringOrNull(payload, "bank_country"),
         businessName: stringOrNull(payload, "business_name"),
         businessCountry: stringOrNull(payload, "business_country"),
+        relationship: stringOrNull(payload, "relationship"),
         status: BENEFICIARY_ACCOUNT_ACTIVATED,
     };
 };

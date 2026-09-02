@@ -7,15 +7,15 @@
         "105": "Logout successful.",
         "106": "Submitted successfully.",
         "107": "Quote created successfully.",
-        "108": "Wallet conversion completed.",
+        "108": "Transaction created successfully.",
         "109": "Mail sent successfully.",
         "110": "Code verified successfully.",
         "111": "Password reset successfully.",
-        "112": "Instant payout accepted.",
-        "113": "Account validation completed.",
-        "114": "Proof requested.",
-        "115": "Proof fetched.",
-        "118": "Retry triggered.",
+        "112": "Transaction initiated successfully.",
+        "113": "Account validated successfully.",
+        "114": "The beneficiary transaction proof has been requested successfully.",
+        "115": "Payment Proof fetched successfully.",
+        "118": "External service transaction reinitiated successfully",
         "176": "Job retry queued."
     }
 }
