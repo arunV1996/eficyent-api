@@ -124,6 +124,11 @@ export const VALIDATION_PRESETS = {
         max_length: 100,
         regex: "/^(?=.{1,100}$)[A-Za-z]+(?:[ '-]+[A-Za-z]+)*$/",
     },
+    chinese_name: {
+        min_length: 2,
+        max_length: 100,
+        regex: "/^[\\u{4E00}-\\u{9FA5}]+$/u",
+    },
     business_name: {
         min_length: 2,
         max_length: 100,
@@ -332,16 +337,21 @@ const addressFields = async (
 const baseIndividualFields = async (
     context: FormBuildContext,
     country?: string | null,
+    currency?: string | null,
 ): Promise<FieldDef[]> => {
+    const nameValidation =
+        currency === "CNY"
+            ? VALIDATION_PRESETS.chinese_name
+            : VALIDATION_PRESETS.name;
     return [
         make("first_name", "First Name", {
-            validation: VALIDATION_PRESETS.name,
+            validation: nameValidation,
         }),
         make("middle_name", "Middle Name", {
             mandatory: false,
-            validation: VALIDATION_PRESETS.name,
+            validation: nameValidation,
         }),
-        make("last_name", "Last Name", { validation: VALIDATION_PRESETS.name }),
+        make("last_name", "Last Name", { validation: nameValidation }),
         make("email", "Email", { validation: VALIDATION_PRESETS.email }),
         make("mobile_country_code", "Mobile Country Code", {
             values: context.mobile_country_codes,
@@ -1137,11 +1147,19 @@ export const beneficiaryFormFields = async (payload: {
     const baseFields =
         Number(payload.type) === USER_TYPE_BUSINESS
             ? await baseBusinessFields(context, payload.country)
-            : await baseIndividualFields(context, payload.country);
+            : await baseIndividualFields(
+                  context,
+                  payload.country,
+                  payload.currency,
+              );
 
+    const accountNameValidation =
+        payload.currency === "CNY"
+            ? VALIDATION_PRESETS.chinese_name
+            : VALIDATION_PRESETS.account_name;
     baseFields.push(
         make("account_name", "Account Name", {
-            validation: VALIDATION_PRESETS.account_name,
+            validation: accountNameValidation,
         }),
     );
 
