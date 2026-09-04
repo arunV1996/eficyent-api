@@ -176,6 +176,17 @@ export const createPayoutTransaction = async (
     if (quote.status === QUOTE_SUBMITTED) {
         throw new CodedError("Quote already submitted.", 153, 400);
     }
+    if (
+        quote.recipientCountry?.toUpperCase() === "USA" &&
+        quote.receivingCurrency?.toUpperCase() === "USD" &&
+        !payload.supporting_document
+    ) {
+        throw new CodedError(
+            "The supporting document field is required.",
+            1100,
+            422,
+        );
+    }
 
     // 4. Beneficiary account + currency match (118 / 180).
     const beneficiaryAccount = await BeneficiaryAccount.findOne({
