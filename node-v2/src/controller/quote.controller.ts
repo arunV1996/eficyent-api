@@ -24,6 +24,7 @@ import {
     EXTERNAL_TYPE_MASSIVE,
     MORPH_VIRTUAL_ACCOUNT,
     MORPH_WALLET,
+    DEFAULT_QUOTE_EXPIRY_MINUTES,
     QUOTE_MODE_QUOTATION,
     QUOTE_MODE_RATE,
     QUOTE_TYPE_REVERSE,
@@ -395,7 +396,9 @@ export const persistQuote = async (
         externalData: response.external_data ?? null,
         expiresAt: response.expires_at
             ? new Date(String(response.expires_at))
-            : new Date(Date.now() + 30 * 60 * 1000),
+            : new Date(
+                  Date.now() + DEFAULT_QUOTE_EXPIRY_MINUTES * 60 * 1000,
+              ),
     });
 };
 

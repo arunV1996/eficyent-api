@@ -17,6 +17,7 @@ import User from "../models/user.model";
 import UserInformation from "../models/user_information.model";
 import VirtualAccount from "../models/virtual_account.model";
 import Wallet from "../models/wallet.model";
+import WalletTransaction from "../models/wallet_transaction.model";
 import { call } from "./http_client.service";
 import { generateUniqueId } from "../utils/common.utils";
 import {
@@ -27,7 +28,9 @@ import {
     COMPLIANCE_PURPOSE_OF_PAYMENT_MAP,
     COMPLIANCE_SOURCE_OF_FUNDS_MAP,
     EXTERNAL_TYPE_COMPLIANCE,
+    TRANSACTION_TYPE_CREDIT,
     USER_TYPE_BUSINESS,
+    WALLET_TRANSACTION_COMPLETED,
 } from "../utils/constants";
 
 /**
@@ -492,6 +495,59 @@ export const make = async (
             }
         }
 
+        // Wallet-funded payouts are reported in the currency the wallet
+        // was originally funded with: reverse the last completed credit
+        // conversion so amount/rate trace back to the original funds
+        // (usually USD) instead of the wallet's local currency.
+        let isWalletTransaction = false;
+        let walletAmount = Number(transaction.amount);
+        let walletFx = Number(quote.fxRate);
+        if (
+            quote.sourceId &&
+            quote.sourceType &&
+            quote.sourceType.includes("Wallet")
+        ) {
+            isWalletTransaction = true;
+            const lastCredit = await WalletTransaction.findOne({
+                where: {
+                    userId: transaction.userId ?? user.id,
+                    walletId: quote.sourceId,
+                    status: WALLET_TRANSACTION_COMPLETED,
+                    type: TRANSACTION_TYPE_CREDIT,
+                },
+                order: [["id", "DESC"]],
+                include: [{ model: Quote, as: "quote" }],
+            });
+            const creditQuote = (
+                lastCredit as (WalletTransaction & { quote?: Quote }) | null
+            )?.quote;
+            if (creditQuote) {
+                const originalFx = Number(creditQuote.fxRate);
+                if (Number.isFinite(originalFx) && originalFx > 0) {
+                    walletFx = originalFx;
+                    walletAmount = Number(transaction.amount) / originalFx;
+                }
+                // Trace the original funding currency of that credit.
+                if (creditQuote.sourceId && creditQuote.sourceType) {
+                    if (creditQuote.sourceType.includes("VirtualAccount")) {
+                        const originalAccount = await VirtualAccount.findByPk(
+                            creditQuote.sourceId,
+                        );
+                        if (originalAccount?.currency) {
+                            sourceCurrency = originalAccount.currency;
+                        }
+                    } else if (creditQuote.sourceType.includes("Wallet")) {
+                        const originalWallet = await Wallet.findByPk(
+                            creditQuote.sourceId,
+                        );
+                        if (originalWallet?.currency) {
+                            sourceCurrency = originalWallet.currency;
+                        }
+                    }
+                }
+            }
+        }
+
         // Corridor: source country (from the VA) falls back to the
         // originator's country when null; both sides normalized to alpha2.
         const fromCountryRaw =
@@ -619,6 +675,26 @@ export const make = async (
                       : (ownerUser.email ?? ""),
                 occupation: "",
                 employer: "",
+                business: {
+                    businessName: senderName,
+                    registrationNumber: userInformation?.taxId ?? "",
+                    incorporationCountry:
+                        userInformation?.countryOfIncorporation ?? "",
+                    registeredAddress: {
+                        street: sender
+                            ? (sender.address1 ?? "")
+                            : (userInformation?.address1 ?? ""),
+                        city: sender
+                            ? (sender.city ?? "")
+                            : (userInformation?.city ?? ""),
+                        postalCode: sender
+                            ? (sender.postalCode ?? "")
+                            : (userInformation?.postalCode ?? ""),
+                        country: sender
+                            ? (sender.country ?? "")
+                            : (userInformation?.country ?? ""),
+                    },
+                },
             },
             beneficiary: {
                 partyType: beneficiaryType,
@@ -679,13 +755,37 @@ export const make = async (
                     securityQuestion: "",
                     securityAnswer: "",
                 },
+                business: {
+                    businessName: beneficiaryFullName,
+                    registrationNumber: "",
+                    incorporationCountry:
+                        beneficiaryAccount.businessCountry ?? "",
+                    businessType: "",
+                    registeredAddress: {
+                        street:
+                            beneficiaryAdditionalDetail?.addressLine1 ?? "",
+                        city: beneficiaryAdditionalDetail?.city ?? "",
+                        postalCode:
+                            beneficiaryAdditionalDetail?.postalCode ?? "",
+                        country: beneficiaryAdditionalDetail?.country ?? "",
+                    },
+                },
             },
-            amount: Number(transaction.amount),
+            payin_country:
+                (transaction as unknown as { payinCountry?: string })
+                    .payinCountry ?? null,
+            amount: isWalletTransaction
+                ? walletAmount
+                : Number(transaction.amount),
             currency: sourceCurrency,
-            amountUsd: Number(transaction.amount),
+            amountUsd: isWalletTransaction
+                ? walletAmount
+                : Number(transaction.amount),
             destinationAmount: Number(transaction.recipientAmount),
             destinationCurrency: transaction.receivingCurrency ?? "",
-            exchangeRate: Number(formatProcessingUnitFxRate(quote.fxRate)),
+            exchangeRate: isWalletTransaction
+                ? Number(formatProcessingUnitFxRate(walletFx))
+                : Number(formatProcessingUnitFxRate(quote.fxRate)),
             paymentMethod:
                 (transaction.receivingCurrency ?? "") !== "USD"
                     ? "BANK_TRANSFER"

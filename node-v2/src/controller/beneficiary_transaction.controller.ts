@@ -534,11 +534,11 @@ const resolvePartyTypes = (
         { beneficiary_type: 1 | 2; remitter_type: 1 | 2 }
     > = {
         C2C: { beneficiary_type: 1, remitter_type: 1 },
-        // C2B (bill payment): individual remitter paying a business
-        // beneficiary; B2C (corporate disbursement): business remitter
-        // paying an individual beneficiary.
-        C2B: { beneficiary_type: 2, remitter_type: 1 },
-        B2C: { beneficiary_type: 1, remitter_type: 2 },
+        // C2B here means a corporate disbursement template: a business
+        // remitter paying individual beneficiaries (what the frontend
+        // requests as type "Business"); B2C is the inverse.
+        C2B: { beneficiary_type: 1, remitter_type: 2 },
+        B2C: { beneficiary_type: 2, remitter_type: 1 },
         B2B: { beneficiary_type: 2, remitter_type: 2 },
     };
     return { payment_type: paymentType, ...partyMap[paymentType] };

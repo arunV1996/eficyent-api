@@ -444,6 +444,23 @@ export const updateTransactionStatus = async (
                         }
                     }
 
+                    // An approval may not revive a payout whose quote
+                    // has already expired.
+                    if (
+                        resolvedStatus === BENEFICIARY_TRANSACTION_APPROVED
+                    ) {
+                        const quote = await Quote.findByPk(
+                            transactionRow.quoteId ?? undefined,
+                            { transaction: databaseTransaction },
+                        );
+                        if (
+                            quote?.expiresAt &&
+                            new Date(quote.expiresAt).getTime() < Date.now()
+                        ) {
+                            throw new CodedError("Quote expired.", 122, 400);
+                        }
+                    }
+
                     transactionRow.status = resolvedStatus;
                     transactionRow.notes = remarks ?? null;
                     return transactionRow.save({

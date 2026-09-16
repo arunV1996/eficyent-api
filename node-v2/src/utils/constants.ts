@@ -143,6 +143,7 @@ export const QUOTE_TYPE_REVERSE = "REVERSE";
 export const QUOTE_MODE_QUOTATION = "quote";
 export const QUOTE_MODE_RATE = "rate";
 export const QUOTE_SUBMITTED = 1;
+export const DEFAULT_QUOTE_EXPIRY_MINUTES = 30;
 export const EXTERNAL_TYPE_MASSIVE = "em";
 
 // Wallets
