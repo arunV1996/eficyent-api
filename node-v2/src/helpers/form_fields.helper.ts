@@ -1144,6 +1144,13 @@ export const beneficiaryFormFields = async (payload: {
     }
 
     const context = await buildContext();
+    // Corridor-scoped ID types: serve the corridor provider's own
+    // lookups (IME, MOBI, CoinPH, ...); a corridor without an external
+    // type falls back to the generic catalog.
+    context.id_types = await getLookups(
+        LOOKUP_TYPE_ID_TYPE,
+        supportedCountry.externalType ?? undefined,
+    );
     const baseFields =
         Number(payload.type) === USER_TYPE_BUSINESS
             ? await baseBusinessFields(context, payload.country)
@@ -1323,9 +1330,12 @@ export const beneficiaryFormFields = async (payload: {
     } else if (supportedCountry.currency === "USD") {
         purposes = await getLookups(LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS);
     } else {
+        // Corridor-scoped purposes instead of the legacy hardcoded
+        // Diginine catalog; a null/empty external type falls back to
+        // the generic lookups.
         purposes = await getLookups(
             LOOKUP_TYPE_PURPOSES_OF_TRANSACTIONS,
-            EXTERNAL_TYPE_DIGININE,
+            supportedCountry.externalType ?? undefined,
         );
     }
 
