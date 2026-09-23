@@ -299,6 +299,7 @@ export const beneficiaryTransactionToJSON = async (
             transaction.recipientAmount ?? 0,
         ).toFixed(2),
         receiving_currency: transaction.receivingCurrency ?? "",
+        payin_country: transaction.payinCountry ?? "",
         remarks: transaction.remarks ?? "",
         notes: transaction.notes ?? "",
         supporting_document: transaction.supportingDocument
@@ -345,6 +346,9 @@ export const beneficiaryTransactionToJSON = async (
     }
     if (filtered.purpose_of_payment === undefined) {
         filtered.purpose_of_payment = "";
+    }
+    if (filtered.payin_country === undefined) {
+        filtered.payin_country = "";
     }
 
     return filtered;

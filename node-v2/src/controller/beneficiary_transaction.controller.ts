@@ -202,6 +202,7 @@ export const store = async (req: Request, res: Response): Promise<void> => {
                 txn_ref_no: req.body.txn_ref_no,
                 purpose_of_payment: req.body.purpose_of_payment,
                 client_reference_id: req.body.client_reference_id,
+                payin_country: req.body.payin_country,
                 id_issued_country: req.body.id_issued_country,
                 id_issued_date: req.body.id_issued_date,
                 id_expiry_date: req.body.id_expiry_date,
@@ -721,6 +722,8 @@ export const direct = async (req: Request, res: Response): Promise<void> => {
                     (transaction.purpose_of_payment as string) ?? undefined,
                 client_reference_id:
                     (transaction.client_reference_id as string) ?? undefined,
+                payin_country:
+                    (transaction.payin_country as string) ?? undefined,
             },
             req.user,
             teamMemberContext(req),

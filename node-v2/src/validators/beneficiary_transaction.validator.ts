@@ -60,6 +60,7 @@ export const TRANSACTION_STORE_ALLOWED_KEYS = [
     "txn_ref_no",
     "purpose_of_payment",
     "client_reference_id",
+    "payin_country",
     "verification_code",
 ];
 
@@ -98,6 +99,11 @@ export const transactionStoreBodyValidator: ValidationChain[] = [
     body("purpose_of_payment").optional().isString().isLength({ max: 255 }),
 
     body("client_reference_id").optional().isString().isLength({ max: 255 }),
+
+    body("payin_country")
+        .optional({ nullable: true })
+        .isString()
+        .isLength({ min: 3, max: 3 }),
 
     body("verification_code")
         .optional()

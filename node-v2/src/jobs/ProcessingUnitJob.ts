@@ -164,6 +164,7 @@ interface BulkPayoutJobPayload {
         amount?: unknown;
         remarks?: string | null;
         txn_ref_no?: string | null;
+        payin_country?: string | null;
     } | null;
     creator: string | null;
     source_type: string | null;
@@ -330,6 +331,8 @@ const handleBulkPayout = async (
                 remitter_id: senderRow?.uniqueId,
                 remarks: transactionData.remarks ?? undefined,
                 txn_ref_no: transactionData.txn_ref_no ?? undefined,
+                payin_country:
+                    (transactionData.payin_country as string) ?? undefined,
                 client_reference_id: transactionData.txn_ref_no
                     ? String(transactionData.txn_ref_no)
                     : undefined,

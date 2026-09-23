@@ -74,6 +74,7 @@ export interface PayoutCreatePayload {
     purpose_of_payment?: string;
     client_reference_id?: string;
     order_id?: string;
+    payin_country?: string;
     id_issued_country?: string;
     id_issued_date?: string;
     id_expiry_date?: string;
@@ -382,6 +383,7 @@ export const createPayoutTransaction = async (
                     totalAmount: amountPlusFees.toString(),
                     recipientAmount: quote.receivingAmount,
                     receivingCurrency: quote.receivingCurrency,
+                    payinCountry: payload.payin_country ?? null,
                     externalType: quote.externalType,
                     rail: quote.paymentRail,
                     purposeOfPayment: payload.purpose_of_payment ?? null,

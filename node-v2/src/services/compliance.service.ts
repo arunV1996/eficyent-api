@@ -771,9 +771,7 @@ export const make = async (
                     },
                 },
             },
-            payin_country:
-                (transaction as unknown as { payinCountry?: string })
-                    .payinCountry ?? null,
+            payin_country: transaction.payinCountry ?? null,
             amount: isWalletTransaction
                 ? walletAmount
                 : Number(transaction.amount),

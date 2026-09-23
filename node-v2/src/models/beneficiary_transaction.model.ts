@@ -28,6 +28,7 @@ interface BeneficiaryTransactionAttributes {
     commissionAmount: string;
     recipientAmount: string | null;
     receivingCurrency: string | null;
+    payinCountry: string | null;
     rail: string | null;
     externalType: string | null;
     serviceMid: string | null;
@@ -76,6 +77,7 @@ class BeneficiaryTransaction
     public commissionAmount!: string;
     public recipientAmount!: string | null;
     public receivingCurrency!: string | null;
+    public payinCountry!: string | null;
     public rail!: string | null;
     public externalType!: string | null;
     public serviceMid!: string | null;
@@ -132,6 +134,7 @@ BeneficiaryTransaction.init(
         },
         recipientAmount: { type: DataTypes.DECIMAL(20, 6), allowNull: true },
         receivingCurrency: { type: DataTypes.STRING(5), allowNull: true },
+        payinCountry: { type: DataTypes.STRING(255), allowNull: true },
         rail: { type: DataTypes.STRING(255), allowNull: true },
         externalType: { type: DataTypes.STRING(255), allowNull: true },
         serviceMid: { type: DataTypes.STRING(255), allowNull: true },
