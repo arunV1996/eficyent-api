@@ -24,6 +24,8 @@ import { temporaryUrl, upload } from "../services/s3.service";
 import { extractUploadedFileBuffer } from "../helpers/uploaded_file.helper";
 import { teamMemberContext } from "../helpers/team_context.helper";
 import { passesTransactionTfa } from "../helpers/tfa.helper";
+import { CodedError } from "../helpers/coded_error.helper";
+import { withRedisLock, LockTimeoutError } from "../helpers/lock.helper";
 import { generateUniqueId } from "../utils/common.utils";
 import {
     BENEFICIARY_ACCOUNT_ACTIVATED,
@@ -498,84 +500,113 @@ export const validateAccount = async (
         const accountNumber = String(req.body.account_number);
         const ifscCode = String(req.body.ifsc);
 
-        const cachedValidation = await BeneficiaryAccountValidation.findOne({
-            where: { accountNumber },
-        });
-        if (cachedValidation) {
+        // Serialize concurrent validations of the same account+IFSC
+        // behind a Redis lock (mirror of the legacy
+        // $cache->lock()->block()) so only one provider call is in
+        // flight per account pair.
+        const lockKey = `account_validation_lock:${accountNumber}:${ifscCode}`;
+
+        try {
+            const result = await withRedisLock(lockKey, 60, 10, async () => {
+                const cachedValidation =
+                    await BeneficiaryAccountValidation.findOne({
+                        where: { accountNumber, code: ifscCode },
+                    });
+                if (cachedValidation) {
+                    return cachedValidation;
+                }
+
+                const merchant = req.user!.merchantId
+                    ? await Merchant.findByPk(req.user!.merchantId)
+                    : null;
+
+                const providerResult = await processingUnitValidateAccount({
+                    merchant_email: req.user!.email,
+                    merchant_name:
+                        merchant?.name ??
+                        req.user!.firstName ??
+                        req.user!.email,
+                    account_number: accountNumber,
+                    ifsc_code: ifscCode,
+                });
+
+                if (!providerResult.success || !providerResult.data) {
+                    throw new CodedError(
+                        providerResult.message || res.__("179"),
+                        179,
+                        502,
+                    );
+                }
+
+                const providerData = providerResult.data as Record<
+                    string,
+                    unknown
+                >;
+                const targetAccountNumber =
+                    (providerData.account_number as string) ?? accountNumber;
+
+                // Concurrent-create guard: another request may have
+                // persisted this account number while the provider call
+                // was in flight.
+                const concurrentValidation =
+                    await BeneficiaryAccountValidation.findOne({
+                        where: { accountNumber: targetAccountNumber },
+                    });
+                if (concurrentValidation) {
+                    return concurrentValidation;
+                }
+
+                return await BeneficiaryAccountValidation.create({
+                    uniqueId: generateUniqueId(24),
+                    userId: req.user!.id,
+                    accountName: (providerData.account_name as string) ?? null,
+                    accountNumber: targetAccountNumber,
+                    code: (providerData.ifsc_code as string) ?? ifscCode,
+                    validationService: "pu",
+                    externalReferenceId:
+                        (providerData.client_id as string) ?? null,
+                    externalStatus: (providerData.status as string) ?? null,
+                    externalData: providerData,
+                    remarks: (providerData.message as string) ?? null,
+                    isAccountExists:
+                        String(
+                            providerData.is_account_exists ?? "NO",
+                        ).toUpperCase() === "YES"
+                            ? 1
+                            : 0,
+                    isNreAccount:
+                        String(
+                            providerData.is_nre_account ?? "NO",
+                        ).toUpperCase() === "YES"
+                            ? 1
+                            : 0,
+                    status: 1,
+                });
+            });
+
             return res.sendResponse(
-                { account: validationToJSON(cachedValidation) },
+                { account: validationToJSON(result) },
                 res.__("success.113"),
                 113,
             );
+        } catch (error) {
+            if (error instanceof LockTimeoutError) {
+                return res.sendError(
+                    res.__("179") || "Service busy, please try again",
+                    179,
+                    502,
+                );
+            }
+            throw error;
         }
-
-        const merchant = req.user.merchantId
-            ? await Merchant.findByPk(req.user.merchantId)
-            : null;
-
-        const providerResult = await processingUnitValidateAccount({
-            merchant_email: req.user.email,
-            merchant_name:
-                merchant?.name ?? req.user.firstName ?? req.user.email,
-            account_number: accountNumber,
-            ifsc_code: ifscCode,
-        });
-
-        if (!providerResult.success || !providerResult.data) {
-            return res.sendError(
-                providerResult.message || res.__("179"),
-                179,
-                502,
-            );
-        }
-
-        const providerData = providerResult.data as Record<string, unknown>;
-        const targetAccountNumber =
-            (providerData.account_number as string) ?? accountNumber;
-
-        // Concurrent-create guard: another request may have persisted
-        // this account number while the provider call was in flight.
-        const concurrentValidation = await BeneficiaryAccountValidation.findOne(
-            { where: { accountNumber: targetAccountNumber } },
-        );
-        if (concurrentValidation) {
-            return res.sendResponse(
-                { account: validationToJSON(concurrentValidation) },
-                res.__("success.113"),
-                113,
-            );
-        }
-
-        const createdValidation = await BeneficiaryAccountValidation.create({
-            uniqueId: generateUniqueId(24),
-            userId: req.user.id,
-            accountName: (providerData.account_name as string) ?? null,
-            accountNumber: targetAccountNumber,
-            code: (providerData.ifsc_code as string) ?? ifscCode,
-            validationService: "pu",
-            externalReferenceId: (providerData.client_id as string) ?? null,
-            externalStatus: (providerData.status as string) ?? null,
-            externalData: providerData,
-            remarks: (providerData.message as string) ?? null,
-            isAccountExists:
-                String(providerData.is_account_exists ?? "NO").toUpperCase() ===
-                "YES"
-                    ? 1
-                    : 0,
-            isNreAccount:
-                String(providerData.is_nre_account ?? "NO").toUpperCase() ===
-                "YES"
-                    ? 1
-                    : 0,
-            status: 1,
-        });
-
-        return res.sendResponse(
-            { account: validationToJSON(createdValidation) },
-            res.__("success.113"),
-            113,
-        );
     } catch (error) {
+        if (error instanceof CodedError) {
+            return res.sendError(
+                error.message,
+                error.errorCode,
+                error.httpStatus,
+            );
+        }
         return res.handleError(error);
     }
 };
