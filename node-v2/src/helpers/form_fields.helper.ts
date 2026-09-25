@@ -892,18 +892,23 @@ const bankFieldsByCountry = async (
                           validation: VALIDATION_PRESETS.generic_account,
                       }),
                   ];
+        case "VNM":
         case "HKG":
-            return [
-                accountTypeField,
-                make("account_number", "Account Number", {
-                    validation: { regex: "^[A-Za-z0-9]{4,34}$" },
-                }),
-                make("code", isForeignCurrency ? "SWIFT/BIC" : "Branch Code", {
-                    validation: isForeignCurrency
-                        ? VALIDATION_PRESETS.swift
-                        : { regex: "^\\d{3}$" },
-                }),
-            ];
+            return isForeignCurrency
+                ? [
+                      accountTypeField,
+                      make("account_number", "Account Number", {
+                          validation: VALIDATION_PRESETS.generic_account,
+                      }),
+                      make("code", "SWIFT/BIC", {
+                          validation: VALIDATION_PRESETS.swift,
+                      }),
+                  ]
+                : [
+                      make("account_number", "Account Number", {
+                          validation: VALIDATION_PRESETS.generic_account,
+                      }),
+                  ];
         case "IND":
             return [
                 accountTypeField,
@@ -1393,6 +1398,21 @@ export const beneficiaryFormFields = async (payload: {
         }
     }
 
+    // VND/HKD corridors require the beneficiary city (the beneficiary
+    // address block prefixes it as receiver_city), even when a merchant
+    // beneficiary_fields override relaxed it.
+    if (["VND", "HKD"].includes(supportedCountry.currency ?? "")) {
+        fields = fields.map((field) => {
+            if (
+                field.field_key === "city" ||
+                field.field_key === "receiver_city"
+            ) {
+                return { ...field, is_mandatory: true };
+            }
+            return field;
+        });
+    }
+
     return fields;
 };
 
@@ -1434,6 +1454,7 @@ export const transactionFormFields = async (
     user?: { merchantId?: number | null },
     type?: string,
     country?: string,
+    currency?: string,
 ): Promise<FieldDef[]> => {
     const isSupportingDocumentRequired = await merchantSettingEnabled(
         user,
@@ -1457,9 +1478,9 @@ export const transactionFormFields = async (
     );
 
     const isB2B = type === "B2B";
-    const isUSA = country?.toUpperCase() === "USA";
+    const isUSD = currency?.toUpperCase() === "USD";
     const finalSupportingDocRequired =
-        isSupportingDocumentRequired || isB2B || isUSA;
+        isSupportingDocumentRequired || isB2B || isUSD;
 
     const context = await buildContext();
 

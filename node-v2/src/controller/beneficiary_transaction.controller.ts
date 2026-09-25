@@ -582,6 +582,7 @@ export const getFormFields = async (
             req.user,
             query.type,
             query.country,
+            query.currency,
         );
         return res.sendResponse(
             { form_fields: { transaction, beneficiary, remitter } },
@@ -601,13 +602,18 @@ export const transactionFormFields = async (
     res: Response,
 ): Promise<void> => {
     try {
-        const query = req.query as { type?: string; country?: string };
+        const query = req.query as {
+            type?: string;
+            country?: string;
+            currency?: string;
+        };
         return res.sendResponse(
             {
                 form_fields: await buildTransactionFormFields(
                     req.user,
                     query.type,
                     query.country,
+                    query.currency,
                 ),
             },
             "",
