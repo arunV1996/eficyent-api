@@ -21,6 +21,7 @@ interface MerchantAttributes {
     callbackUrl: string | null;
     telegramChannel: string | null;
     type: number;
+    entity: number | null;
     status: number;
     createdAt?: Date | null;
     updatedAt?: Date | null;
@@ -38,6 +39,7 @@ interface MerchantCreationAttributes
         | "callbackUrl"
         | "telegramChannel"
         | "type"
+        | "entity"
         | "status"
     > {}
 
@@ -58,6 +60,7 @@ class Merchant
     public callbackUrl!: string | null;
     public telegramChannel!: string | null;
     public type!: number;
+    public entity!: number | null;
     public status!: number;
 
     public readonly createdAt!: Date | null;
@@ -123,6 +126,10 @@ Merchant.init(
             type: DataTypes.TINYINT,
             allowNull: false,
             defaultValue: 1,
+        },
+        entity: {
+            type: DataTypes.TINYINT.UNSIGNED,
+            allowNull: true,
         },
         status: {
             type: DataTypes.TINYINT,
