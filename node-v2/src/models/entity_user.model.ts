@@ -13,6 +13,9 @@ interface EntityUserAttributes {
     name: string;
     email: string;
     password: string;
+    accessToken: string | null;
+    apiKey: string | null;
+    saltKey: string | null;
     entityIds: unknown | null;
     modules: unknown | null;
     lastPasswordReset: Date | null;
@@ -26,6 +29,9 @@ interface EntityUserCreationAttributes
     extends Optional<
         EntityUserAttributes,
         | "id"
+        | "accessToken"
+        | "apiKey"
+        | "saltKey"
         | "entityIds"
         | "modules"
         | "lastPasswordReset"
@@ -42,6 +48,9 @@ class EntityUser
     public name!: string;
     public email!: string;
     public password!: string;
+    public accessToken!: string | null;
+    public apiKey!: string | null;
+    public saltKey!: string | null;
     public entityIds!: unknown | null;
     public modules!: unknown | null;
     public lastPasswordReset!: Date | null;
@@ -76,6 +85,18 @@ EntityUser.init(
         password: {
             type: DataTypes.STRING,
             allowNull: false,
+        },
+        accessToken: {
+            type: DataTypes.TEXT("long"),
+            allowNull: true,
+        },
+        apiKey: {
+            type: DataTypes.TEXT("long"),
+            allowNull: true,
+        },
+        saltKey: {
+            type: DataTypes.TEXT("long"),
+            allowNull: true,
         },
         entityIds: {
             type: DataTypes.JSON,
