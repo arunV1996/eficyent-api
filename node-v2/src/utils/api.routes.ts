@@ -218,6 +218,17 @@ export const profileApiRoutes = {
         path: "/update-tour-status",
         middleware: [authSanctum, appSignatureIfEnforced, validateMerchant],
     },
+    VALIDATE_PASSWORD: {
+        path: "/validate-password",
+        middleware: [
+            authSanctum,
+            appSignatureIfEnforced,
+            validateMerchant,
+            strictBody(PASSWORD_ONLY_ALLOWED_KEYS),
+            passwordOnlyBodyValidator,
+            checkValidationErrors,
+        ],
+    },
     DELETE_ACCOUNT: {
         path: "/delete-account",
         middleware: [
@@ -379,6 +390,14 @@ const transactionBaseMiddleware = [
 export const beneficiaryTransactionApiRoutes = {
     LIST: {
         path: "/list",
+        middleware: [
+            ...transactionBaseMiddleware,
+            transactionListQueryValidator,
+            checkValidationErrors,
+        ],
+    },
+    RECONCILIATION: {
+        path: "/reconciliation",
         middleware: [
             ...transactionBaseMiddleware,
             transactionListQueryValidator,

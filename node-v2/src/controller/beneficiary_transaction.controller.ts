@@ -63,6 +63,7 @@ import VirtualAccount from "../models/virtual_account.model";
 import Wallet from "../models/wallet.model";
 import {
     beneficiaryTransactionCallbackToJSON,
+    beneficiaryTransactionReconciliationToJSON,
     beneficiaryTransactionToJSON,
     transactionProofToJSON,
 } from "../resources/beneficiary_transaction.resource";
@@ -1906,6 +1907,55 @@ export const exportMultipleReceipts = async (
             { url: signedUrl },
             "Transaction receipt generated.",
             200,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * GET /api/user/beneficiary-transactions/reconciliation — the /list
+ * query surface serialized through the slim reconciliation resource.
+ */
+export const reconciliation = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const query = req.query as Record<string, string | undefined>;
+        const skip = req.query.skip !== undefined ? Number(req.query.skip) : 0;
+        const take =
+            req.query.take !== undefined ? Number(req.query.take) : TAKE_COUNT;
+        const { total, rows } = await listTransactions(
+            req.user,
+            {
+                status: query.status,
+                from_date: query.from_date,
+                to_date: query.to_date,
+                bank_account_id: query.bank_account_id,
+                wallet_id: query.wallet_id,
+                search_key: query.search_key,
+                skip,
+                take,
+            },
+            teamMemberContext(req),
+        );
+        const beneficiaryTransactions = [];
+        for (const row of rows) {
+            beneficiaryTransactions.push(
+                await beneficiaryTransactionReconciliationToJSON(
+                    row,
+                    !!req.teamMember,
+                ),
+            );
+        }
+        return res.sendResponse(
+            { total, beneficiary_transactions: beneficiaryTransactions },
+            "",
+            "",
         );
     } catch (error) {
         return sendCodedError(res, error);

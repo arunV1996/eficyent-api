@@ -11,6 +11,7 @@ import {
     updateProfile,
     updateProfileFormFields,
     updateTourStatus,
+    validatePassword,
 } from "../controller/profile.controller";
 import { profileApiRoutes } from "../utils/api.routes";
 
@@ -83,6 +84,12 @@ router.post(
     profileApiRoutes.UPDATE_PROFILE.path,
     ...profileApiRoutes.UPDATE_PROFILE.middleware,
     updateProfile,
+);
+
+router.post(
+    profileApiRoutes.VALIDATE_PASSWORD.path,
+    ...profileApiRoutes.VALIDATE_PASSWORD.middleware,
+    validatePassword,
 );
 
 export default router;

@@ -859,3 +859,37 @@ export const updateProfile = async (
         return res.handleError(error);
     }
 };
+
+/**
+ * POST /api/user/validate-password — confirms the authenticated user's
+ * password without changing anything (used by the frontend before
+ * sensitive actions).
+ */
+export const validatePassword = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const password = String(req.body.password);
+        const userWithPassword = await User.scope("withPassword").findByPk(
+            req.user.id,
+        );
+        if (!userWithPassword) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const isPasswordValid = await comparePassword(
+            password,
+            userWithPassword.password,
+        );
+        return res.sendResponse(
+            { is_password_valid: isPasswordValid },
+            "",
+            200,
+        );
+    } catch (error) {
+        return res.handleError(error);
+    }
+};

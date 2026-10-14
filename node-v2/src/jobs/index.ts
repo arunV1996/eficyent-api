@@ -45,6 +45,7 @@ export * from "./ProcessDiginineWebhookJob";
 export * from "./ProcessingUnitJob";
 export * from "./RefreshFxRatesJob";
 export * from "./SendCallbackJob";
+export * from "./SendDailyTransactionReportJob";
 export * from "./SendDebitNotificationJob";
 
 // Legacy argument shapes accepted by the Dispatch facade.

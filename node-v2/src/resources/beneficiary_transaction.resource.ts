@@ -16,6 +16,7 @@ import {
     beneficiaryAccountToJSON,
     filterEmptyValues,
 } from "./beneficiary_account.resource";
+import { quoteToJSON } from "./quote.resource";
 
 /**
  * Mirror of App\Http\Resources\BeneficiaryTransactionResource (via the
@@ -373,5 +374,30 @@ export const beneficiaryTransactionCallbackToJSON = (
             : "",
         status: beneficiaryTransactionStatusLabel(transaction.status) ?? "",
         remarks: transaction.notes ?? "",
+    };
+};
+
+/**
+ * Slim reconciliation view of a payout — just the identifiers, quote,
+ * status and creation time (mirror of the Laravel reconciliation
+ * resource).
+ */
+export const beneficiaryTransactionReconciliationToJSON = async (
+    transaction: BeneficiaryTransaction,
+    _isTeam = false,
+): Promise<Record<string, unknown>> => {
+    const userTimezone = transaction.users?.timezone ?? "Asia/Kolkata";
+    const statusLabel = beneficiaryTransactionStatusLabel(transaction.status);
+    return {
+        unique_id: transaction.uniqueId ?? "",
+        client_reference_id: transaction.clientReferenceId ?? "",
+        utr_number: transaction.externalReferenceId ?? "",
+        quote: transaction.quotes ? quoteToJSON(transaction.quotes) : {},
+        status: statusLabel ?? "",
+        sub_status:
+            (transaction as unknown as { subStatus?: string }).subStatus ?? "",
+        created_at: transaction.createdAt
+            ? formatDateHuman(transaction.createdAt, userTimezone)
+            : "",
     };
 };

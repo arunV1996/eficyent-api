@@ -31,6 +31,10 @@ import {
     SEND_CALLBACK_JOB,
 } from "./jobs/SendCallbackJob";
 import {
+    executeSendDailyTransactionReport,
+    SEND_DAILY_TRANSACTION_REPORT_JOB,
+} from "./jobs/SendDailyTransactionReportJob";
+import {
     executeSendDebitNotification,
     SEND_DEBIT_NOTIFICATION_JOB,
 } from "./jobs/SendDebitNotificationJob";
@@ -52,6 +56,7 @@ const jobRegistry: Record<string, (job: Job) => Promise<unknown>> = {
     [PROCESSING_UNIT_JOB]: executeProcessingUnit,
     [COMPLIANCE_JOB]: executeCompliance,
     [SEND_CALLBACK_JOB]: executeSendCallback,
+    [SEND_DAILY_TRANSACTION_REPORT_JOB]: executeSendDailyTransactionReport,
     [REFRESH_FX_RATES_JOB]: executeRefreshFxRates,
     [PROCESS_CALIZA_WEBHOOK_JOB]: executeProcessCalizaWebhook,
     [PROCESS_DIGININE_WEBHOOK_JOB]: executeProcessDiginineWebhook,

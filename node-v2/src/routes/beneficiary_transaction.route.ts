@@ -14,6 +14,7 @@ import {
     instant,
     instantGetFormFields,
     payoutTemplate,
+    reconciliation,
     requestProof,
     show,
     store,
@@ -137,6 +138,12 @@ router.post(
     beneficiaryTransactionApiRoutes.EXPORT_MULTIPLE.path,
     ...beneficiaryTransactionApiRoutes.EXPORT_MULTIPLE.middleware,
     exportMultipleReceipts,
+);
+
+router.get(
+    beneficiaryTransactionApiRoutes.RECONCILIATION.path,
+    ...beneficiaryTransactionApiRoutes.RECONCILIATION.middleware,
+    reconciliation,
 );
 
 export default router;

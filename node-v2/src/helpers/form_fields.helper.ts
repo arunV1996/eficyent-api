@@ -1032,6 +1032,37 @@ const bankFieldsByCountry = async (
                         : { regex: "^[a-zA-Z0-9]{8,12}$" },
                 }),
             ];
+        case "NGA":
+            if (isForeignCurrency) {
+                return [
+                    accountTypeField,
+                    genericAccountNumberField,
+                    swiftCodeField,
+                    ...(await addressFields("bank", context, country)),
+                ];
+            } else {
+                return [genericAccountNumberField];
+            }
+        case "JPN":
+            if (isForeignCurrency) {
+                return [
+                    accountTypeField,
+                    genericAccountNumberField,
+                    swiftCodeField,
+                    ...(await addressFields("bank", context, country)),
+                ];
+            } else {
+                return [
+                    genericAccountNumberField,
+                    make("code", "Branch Code", {
+                        validation: {
+                            min_length: 3,
+                            max_length: 16,
+                            regex: "^[0-9]{3,16}$",
+                        },
+                    }),
+                ];
+            }
         case "USA":
             return [
                 accountTypeField,
