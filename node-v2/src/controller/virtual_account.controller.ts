@@ -184,10 +184,10 @@ export const index = async (req: Request, res: Response): Promise<void> => {
         const groupedTotal = groupAccountsByExternalType(allRows).length;
         const grouped = groupAccountsByExternalType(pageRows);
 
-        if (isTruthyFlag(query.with_balance)) {
-            for (const account of grouped) {
-                await attachBalance(req.user, account, teamMemberContext(req));
-            }
+        // Balances are always attached (Laravel dropped the
+        // with_balance gate).
+        for (const account of grouped) {
+            await attachBalance(req.user, account, teamMemberContext(req));
         }
 
         if (!req.user.memo) {

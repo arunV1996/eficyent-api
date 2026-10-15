@@ -25,6 +25,7 @@ export interface VirtualAccountDto {
     routing_number: string | null;
     flag: string;
     status: string;
+    allowed_corridors: string[];
     created_at: string;
     balance?: number;
     memo?: string;
@@ -53,6 +54,7 @@ export const virtualAccountToJSON = (
         routing_number: virtualAccount.routingNumber,
         flag: getFlagUrl(virtualAccount.country, baseUrl),
         status: virtualAccountStatusLabel(virtualAccount.status),
+        allowed_corridors: virtualAccount.allowedCorridors ?? [],
         created_at: formatDateHuman(virtualAccount.createdAt, timezone),
     };
 

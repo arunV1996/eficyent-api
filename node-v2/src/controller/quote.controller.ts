@@ -64,6 +64,7 @@ export interface ResolvedSource {
     id: number;
     currency: string;
     status: number;
+    allowedCorridors?: string[] | null;
 }
 
 export const resolveSource = async (
@@ -86,6 +87,7 @@ export const resolveSource = async (
             id: virtualAccount.id,
             currency: virtualAccount.currency,
             status: virtualAccount.status,
+            allowedCorridors: virtualAccount.allowedCorridors,
         };
     }
     if (payload.wallet_id) {
@@ -212,6 +214,23 @@ export const buildResponse = async (
                 transactionCommission.merchant_commission_amount,
             external_commission_amount: 0,
         };
+    }
+
+    // Cross-currency. Validate allowed corridors for VirtualAccount
+    // source: an account with a configured corridor list only funds
+    // those receiving currencies.
+    if (
+        source.kind === "virtual_account" &&
+        source.allowedCorridors &&
+        Array.isArray(source.allowedCorridors) &&
+        source.allowedCorridors.length > 0 &&
+        !source.allowedCorridors.includes(receivingCurrency)
+    ) {
+        throw new CodedError(
+            "Corridor not allowed for this bank account.",
+            207,
+            400,
+        );
     }
 
     // Cross-currency. Fixed FX fee override short-circuits the

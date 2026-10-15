@@ -24,6 +24,7 @@ interface VirtualAccountAttributes {
     externalReferenceId: string | null;
     externalData: unknown | null;
     status: number;
+    allowedCorridors: string[] | null;
     createdAt?: Date | null;
     updatedAt?: Date | null;
 }
@@ -59,6 +60,7 @@ class VirtualAccount
     public externalReferenceId!: string | null;
     public externalData!: unknown | null;
     public status!: number;
+    public allowedCorridors!: string[] | null;
 
     public readonly createdAt!: Date | null;
     public readonly updatedAt!: Date | null;
@@ -104,6 +106,11 @@ VirtualAccount.init(
             type: DataTypes.TINYINT,
             allowNull: false,
             defaultValue: 0,
+        },
+        allowedCorridors: {
+            type: DataTypes.JSON,
+            allowNull: true,
+            field: "allowed_corridors",
         },
     },
     {

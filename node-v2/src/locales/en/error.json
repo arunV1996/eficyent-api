@@ -30,6 +30,7 @@
     "192": "X-User-Id header required.",
     "193": "User not found for the merchant.",
     "195": "C2B (consumer to business) is not supported.",
+    "207": "Corridor not allowed for this bank account.",
     "401": "Unauthenticated.",
     "403": "Email not verified.",
     "sig_110": "Missing X-Api-Key header.",
