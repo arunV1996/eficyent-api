@@ -153,19 +153,25 @@ const calcFxFee = (
 
 /**
  * FIXED-type FX fee override for a currency pair, resolved
- * User -> Merchant -> global. Returns null when none exists.
+ * User -> Merchant -> global. Returns null when none exists. Non-INR
+ * corridors filter by payment rail (mode) when one is given.
  */
 export const getFixedRate = async (
     userId: number,
     merchantId: number | null,
     fromCurrency: string,
     toCurrency: string,
+    paymentRail?: string | null,
 ): Promise<number | null> => {
-    const feeQuery = {
+    const feeQuery: FeeQuery = {
         feeName: FX_FEE,
         currency1: fromCurrency.toUpperCase(),
         currency2: toCurrency.toUpperCase(),
     };
+
+    if (toCurrency.toUpperCase() !== "INR" && paymentRail !== undefined) {
+        feeQuery.mode = paymentRail ?? null;
+    }
 
     const userFee = await findUserFee(userId, feeQuery);
     if (userFee && parseInt(userFee.feeType, 10) === FEE_TYPE_FIXED) {
@@ -279,19 +285,22 @@ export const calcFxCommissions = async (
     let isUserFixed = false;
     let isMerchantFixed = false;
 
+    // Non-INR corridors scope the FX fee to the payment rail (mode);
+    // INR keeps the rail-agnostic lookup.
+    const feeFilters: FeeQuery = {
+        feeName: FX_FEE,
+        currency1,
+        currency2,
+    };
+    if (currency2 !== "INR") {
+        feeFilters.mode = quoteInput.paymentRail ?? null;
+    }
+
     let userFee: FeeRow | null = null;
     if (userFeeEligible) {
-        userFee = await findUserFee(context.userId, {
-            feeName: FX_FEE,
-            currency1,
-            currency2,
-        });
+        userFee = await findUserFee(context.userId, feeFilters);
         if (!userFee && !hasMerchant) {
-            userFee = await findGlobalFee({
-                feeName: FX_FEE,
-                currency1,
-                currency2,
-            });
+            userFee = await findGlobalFee(feeFilters);
         }
     }
 
@@ -302,17 +311,12 @@ export const calcFxCommissions = async (
     }
 
     if (hasMerchant) {
-        let merchantFee = await findMerchantFee(context.merchantId!, {
-            feeName: FX_FEE,
-            currency1,
-            currency2,
-        });
+        let merchantFee = await findMerchantFee(
+            context.merchantId!,
+            feeFilters,
+        );
         if (!merchantFee) {
-            merchantFee = await findGlobalFee({
-                feeName: FX_FEE,
-                currency1,
-                currency2,
-            });
+            merchantFee = await findGlobalFee(feeFilters);
         }
         if (merchantFee && Number(merchantFee.feeValue) > 0) {
             const feeResult = calcFxFee(baseRate, merchantFee);
@@ -331,7 +335,9 @@ export const calcFxCommissions = async (
 
     const internalFxRate = isMerchantFixed
         ? merchantCommission
-        : baseRate - merchantSpread;
+        : isUserFixed && !hasMerchant
+          ? userCommission
+          : baseRate - merchantSpread;
     const finalFxRate = isUserFixed
         ? userCommission
         : internalFxRate - userSpread;
@@ -381,10 +387,7 @@ export const calcTransactionCommissions = async (
         transactionInput.sourceType === MORPH_WALLET
             ? lookupCurrency
             : null;
-    const mode =
-        lookupCurrency === "USD"
-            ? (transactionInput.paymentRail ?? null)
-            : null;
+    const mode = transactionInput.paymentRail ?? null;
     const hasMerchant = context.merchantId !== null;
     const userFeeEligible =
         !hasMerchant ||

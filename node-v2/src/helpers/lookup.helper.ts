@@ -23,6 +23,7 @@ import {
     BDT_RAIL_ROCKET,
     CHN_RAIL_ALIPAY,
     CHN_RAIL_BANK,
+    PAYMENT_RAIL_ACH,
     PAYMENT_RAILS,
     USER_TYPE_BUSINESS,
 } from "../utils/constants";
@@ -503,6 +504,21 @@ export const getPaymentRails = (
 };
 
 /**
+ * Corridor default payment rail (mirror of Laravel's
+ * Helper::get_default_payment_rail).
+ */
+export const getDefaultPaymentRail = (
+    countryCode?: string | null,
+): string | null => {
+    const defaultRails: Record<string, string> = {
+        USA: PAYMENT_RAIL_ACH,
+        BGD: BDT_RAIL_BANK,
+        CHN: CHN_RAIL_BANK,
+    };
+    return countryCode ? (defaultRails[countryCode] ?? null) : null;
+};
+
+/**
  * FX rates for the user's available `from` currencies vs the supported
  * countries. Mirror of LookupRepository::rates, with per-caller
  * settlement overrides: an admin-configured FIXED fx fee for the pair
@@ -560,11 +576,13 @@ export const rates = async (
             // FIXED rate for this pair (user -> merchant -> global)
             // beats the cached global rate — and keeps the currency in
             // the list even when fx_rates has no cached entry.
+            const defaultRail = getDefaultPaymentRail(supportedRow.countryCode);
             const fixedRate = await getFixedRate(
                 user.id,
                 user.merchantId ?? null,
                 fromCurrency,
                 supportedRow.currency,
+                defaultRail,
             );
 
             const cachedRate = await FxRate.findOne({

@@ -113,8 +113,12 @@ export const quoteStoreCrossFieldRules = (
         return res.sendError("payment_rail required for USD/USA.", 422, 422);
     }
 
-    if (recipientCountry === "BGD" && !paymentRail) {
-        return res.sendError("payment_rail required for BGD.", 422, 422);
+    if (
+        receivingCurrency === "BDT" &&
+        recipientCountry === "BGD" &&
+        !paymentRail
+    ) {
+        return res.sendError("payment_rail required for BDT/BGD.", 422, 422);
     }
 
     // Dynamic rail membership: whatever corridor was requested, the

@@ -222,6 +222,7 @@ export const buildResponse = async (
         merchantId,
         source.currency,
         receivingCurrency,
+        paymentRail,
     );
 
     const fixedRateResponse = (rate: number): QuoteDriverResponse => {
@@ -268,6 +269,7 @@ export const buildResponse = async (
                 merchantId,
                 source.currency,
                 receivingCurrency,
+                paymentRail,
             );
             if (fallbackRate !== null) {
                 driverResponse = fixedRateResponse(fallbackRate);
