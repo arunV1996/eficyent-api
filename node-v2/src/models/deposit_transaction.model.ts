@@ -11,7 +11,8 @@ interface DepositTransactionAttributes {
     uniqueId: string;
     userId: number;
     teamMemberId: number | null;
-    virtualAccountId: number;
+    virtualAccountId: number | null;
+    walletId: number | null;
     adminWalletId: number | null;
     amount: string;
     commissionAmount: string;
@@ -61,7 +62,8 @@ class DepositTransaction
     public uniqueId!: string;
     public userId!: number;
     public teamMemberId!: number | null;
-    public virtualAccountId!: number;
+    public virtualAccountId!: number | null;
+    public walletId!: number | null;
     public adminWalletId!: number | null;
     public amount!: string;
     public commissionAmount!: string;
@@ -106,6 +108,10 @@ DepositTransaction.init(
         uniqueId: { type: DataTypes.STRING(255), allowNull: false, unique: true },
         userId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
         teamMemberId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+        walletId: {
+            type: DataTypes.BIGINT.UNSIGNED,
+            allowNull: true,
+        },
         virtualAccountId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
         adminWalletId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
         amount: money(),

@@ -38,6 +38,15 @@ import {
     executeSendDebitNotification,
     SEND_DEBIT_NOTIFICATION_JOB,
 } from "./jobs/SendDebitNotificationJob";
+import {
+    executeProcessPayoutTransaction,
+    PROCESS_PAYOUT_JOB,
+} from "./jobs/ProcessPayoutTransactionJob";
+import {
+    executeSettlePayoutTransactions,
+    SETTLE_PAYOUTS_JOB,
+    dispatchSettlePayoutTransactions,
+} from "./jobs/SettlePayoutTransactionsJob";
 import { loadSecretsIntoEnv } from "./services/secrets_manager.service";
 
 /**
@@ -61,6 +70,8 @@ const jobRegistry: Record<string, (job: Job) => Promise<unknown>> = {
     [PROCESS_CALIZA_WEBHOOK_JOB]: executeProcessCalizaWebhook,
     [PROCESS_DIGININE_WEBHOOK_JOB]: executeProcessDiginineWebhook,
     [SEND_DEBIT_NOTIFICATION_JOB]: executeSendDebitNotification,
+    [PROCESS_PAYOUT_JOB]: executeProcessPayoutTransaction,
+    [SETTLE_PAYOUTS_JOB]: executeSettlePayoutTransactions,
 };
 
 const routeJob = async (job: Job): Promise<unknown> => {
@@ -113,6 +124,13 @@ const startWorker = async (): Promise<void> => {
     });
 
     await worker.waitUntilReady();
+
+    // Init Cron Jobs
+    await dispatchSettlePayoutTransactions(
+        { runId: "cron" },
+        { repeat: { pattern: "*/5 * * * *" } },
+    );
+
     // eslint-disable-next-line no-console
     console.log(
         `Queue worker running: queue "${queueName()}" (prefix "${bullmqPrefix()}", concurrency ${concurrency}, ${

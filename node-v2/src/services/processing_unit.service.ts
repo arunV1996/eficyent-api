@@ -485,7 +485,7 @@ const prepareDepositPayload = async (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<Record<string, any>> => {
     const virtualAccount = await VirtualAccount.findByPk(
-        deposit.virtualAccountId,
+        deposit.virtualAccountId!,
     );
     const user = await User.findByPk(deposit.userId);
     if (!virtualAccount || !user) {

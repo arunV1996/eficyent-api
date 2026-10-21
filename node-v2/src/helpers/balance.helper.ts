@@ -7,11 +7,15 @@ import Quote from "../models/quote.model";
 import User from "../models/user.model";
 import VirtualAccount from "../models/virtual_account.model";
 import Wallet from "../models/wallet.model";
+import BankWallet from "../models/bank_wallet.model";
+import PayoutTransaction from "../models/payout_transaction.model";
 import WalletTransaction from "../models/wallet_transaction.model";
 import {
     DEPOSIT_TRANSACTION_COMPLETED,
     MERCHANT_TYPE_PAYINCOLLECTION,
     MORPH_VIRTUAL_ACCOUNT,
+    PAYOUT_TABLE_STATUS_PENDING,
+    PAYOUT_TABLE_STATUS_PROCESSING,
     QUOTE_SUBMITTED,
     TEAM_MEMBER_ROLE_CORPORATE,
     TRANSACTION_TYPE_CREDIT,
@@ -27,7 +31,7 @@ import {
 
 const ZERO = new Decimal(0);
 
-const sumColumn = async (
+export const sumColumn = async (
     model: {
         sum: (
             column: string,
@@ -41,6 +45,80 @@ const sumColumn = async (
     return total === null || total === undefined
         ? ZERO
         : new Decimal(String(total));
+};
+
+/**
+ * Amount still held by in-flight (pending/processing) payout-queue rows
+ * against a funding source, so available balances exclude money that
+ * the worker has not yet debited.
+ */
+export const inflightPayoutTotal = async (
+    column: string,
+    id: number,
+    user: User,
+    teamMember: { role: number; id: number } | null = null,
+): Promise<Decimal> => {
+    const isCorporateTeamMember =
+        teamMember !== null && teamMember.role === TEAM_MEMBER_ROLE_CORPORATE;
+
+    const where: Record<string, unknown> = {
+        [column]: id,
+        userId: user.id,
+        payoutStatus: {
+            [Op.in]: [
+                PAYOUT_TABLE_STATUS_PENDING,
+                PAYOUT_TABLE_STATUS_PROCESSING,
+            ],
+        },
+    };
+
+    if (isCorporateTeamMember) {
+        where.teamMemberId = teamMember!.id;
+    }
+
+    // PayoutTransaction is a secondary DB model but Decimal conversion
+    // is identical.
+    return sumColumn(PayoutTransaction, "amount", where);
+};
+
+/**
+ * Synced bank-wallet available balance minus in-flight queued payouts.
+ */
+export const availableBankBalance = async (
+    user: User,
+    virtualAccount: VirtualAccount,
+    teamMember: { role: number; id: number } | null = null,
+): Promise<Decimal> => {
+    const currency = virtualAccount.currency || "USD";
+
+    const isCorporateTeamMember =
+        teamMember !== null && teamMember.role === TEAM_MEMBER_ROLE_CORPORATE;
+
+    const where: Record<string, unknown> = {
+        virtualAccountId: virtualAccount.id,
+        currency,
+    };
+
+    if (isCorporateTeamMember) {
+        where.teamMemberId = teamMember!.id;
+    } else {
+        where.userId = user.id;
+    }
+
+    const bankWallet = await BankWallet.findOne({ where });
+
+    if (!bankWallet) {
+        return ZERO;
+    }
+
+    const inflight = await inflightPayoutTotal(
+        "virtualAccountId",
+        virtualAccount.id,
+        user,
+        teamMember,
+    );
+
+    return new Decimal(String(bankWallet.availableBalance)).minus(inflight);
 };
 
 /**
@@ -177,4 +255,22 @@ export const getWalletBalance = async (
         }),
     ]);
     return creditTotal.minus(debitTotal);
+};
+
+/**
+ * Funded wallet balance minus in-flight queued payouts.
+ */
+export const availableWalletBalance = async (
+    user: User,
+    wallet: Wallet,
+    teamMember: { role: number; id: number } | null = null,
+): Promise<Decimal> => {
+    const funded = await getWalletBalance(user, wallet);
+    const inflight = await inflightPayoutTotal(
+        "walletId",
+        wallet.id,
+        user,
+        teamMember,
+    );
+    return funded.minus(inflight);
 };

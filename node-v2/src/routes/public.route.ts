@@ -3,6 +3,7 @@ import {
     checkExternalServiceStatus,
     retryExternalService,
     retryJob,
+    retryPayoutTransaction,
 } from "../controller/beneficiary_transaction.controller";
 import { retryDeposit } from "../controller/deposit.controller";
 import { merchantBalances } from "../controller/user.controller";
@@ -20,6 +21,12 @@ userPublicRouter.post(
     publicApiRoutes.RETRY_JOB.path,
     ...publicApiRoutes.RETRY_JOB.middleware,
     retryJob,
+);
+
+userPublicRouter.post(
+    publicApiRoutes.RETRY_PAYOUT_TRANSACTION.path,
+    ...publicApiRoutes.RETRY_PAYOUT_TRANSACTION.middleware,
+    retryPayoutTransaction,
 );
 
 userPublicRouter.get(

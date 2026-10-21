@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { Op } from "sequelize";
 import { applyAedOverrideToQuote } from "../helpers/aed_override.helper";
 import { CodedError } from "../helpers/coded_error.helper";
 import {
@@ -9,6 +10,7 @@ import {
 import { getVirtualAccountScope } from "../helpers/virtual_account.helper";
 import Merchant from "../models/merchant.model";
 import Quote from "../models/quote.model";
+import ServiceBank from "../models/service_bank.model";
 import SupportedCountry from "../models/supported_country.model";
 import User from "../models/user.model";
 import VirtualAccount from "../models/virtual_account.model";
@@ -20,6 +22,8 @@ import {
 } from "../services/massive.service";
 import { generateUniqueId } from "../utils/common.utils";
 import {
+    BDT_RAIL_BANK,
+    BDT_RAIL_NPSB,
     BUSINESS_MODEL_DEAL_BASED,
     EXTERNAL_TYPE_MASSIVE,
     MORPH_VIRTUAL_ACCOUNT,
@@ -57,6 +61,7 @@ export interface QuotePayload {
     wallet_id?: string;
     quote_type: string;
     payment_rail?: string | null;
+    bank_name?: string | null;
 }
 
 export interface ResolvedSource {
@@ -119,7 +124,7 @@ export const buildResponse = async (
     const receivingCurrency = payload.receiving_currency.toUpperCase();
     const isCrossBorderUsd =
         payload.recipient_country !== "USA" && receivingCurrency === "USD";
-    const paymentRail = isCrossBorderUsd
+    let paymentRail = isCrossBorderUsd
         ? "swift"
         : payload.payment_rail ?? null;
 
@@ -231,6 +236,35 @@ export const buildResponse = async (
             207,
             400,
         );
+    }
+
+    // BDT bank-rail quotes against an NPSB-routed service bank silently
+    // switch to the npsb rail so the rail-scoped fee/rate applies.
+    if (
+        receivingCurrency === "BDT" &&
+        paymentRail?.toLowerCase() === BDT_RAIL_BANK
+    ) {
+        if (payload.bank_name) {
+            const bankQuery = String(payload.bank_name).trim();
+            if (bankQuery) {
+                const serviceBank = await ServiceBank.findOne({
+                    where: {
+                        [Op.or]: [
+                            { bankName: { [Op.like]: `%${bankQuery}%` } },
+                            { uniqueId: bankQuery },
+                        ],
+                    },
+                });
+
+                if (
+                    serviceBank &&
+                    serviceBank.rail?.toLowerCase() === BDT_RAIL_NPSB
+                ) {
+                    paymentRail = BDT_RAIL_NPSB;
+                    payload.payment_rail = BDT_RAIL_NPSB;
+                }
+            }
+        }
     }
 
     // Cross-currency. Fixed FX fee override short-circuits the

@@ -1,5 +1,7 @@
 import Decimal from "decimal.js";
 import { QueryTypes } from "sequelize";
+import PayoutTransaction from "../models/payout_transaction.model";
+import { dispatchProcessPayoutTransaction } from "../jobs/ProcessPayoutTransactionJob";
 import sequelize from "../config/database";
 import { Dispatch } from "../jobs";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
@@ -131,6 +133,164 @@ export const isComplianceEnabled = async (): Promise<boolean> => {
         setting?.value?.toLowerCase() === "true" ||
         setting?.value?.toLowerCase() === "yes"
     );
+};
+
+
+/**
+ * Accept-and-queue payout (mirror of Laravel's acceptPayout): validates
+ * the request, stages a PayoutTransaction row in the secondary payout
+ * DB and dispatches the Redis worker job that performs the real
+ * createPayoutTransaction; the API response is built from a transient
+ * (unsaved) BeneficiaryTransaction.
+ */
+export const acceptPayout = async (
+    payload: PayoutCreatePayload,
+    user: User,
+    creator: CreatorContext | null = null,
+): Promise<BeneficiaryTransaction> => {
+    // Basic validations
+    if (payload.client_reference_id) {
+        const dupClient = await BeneficiaryTransaction.findOne({
+            where: {
+                userId: user.id,
+                clientReferenceId: payload.client_reference_id,
+            },
+        });
+        if (dupClient) {
+            throw new CodedError("Duplicate client_reference_id.", 187, 400);
+        }
+        const dupQueue = await PayoutTransaction.findOne({
+            where: {
+                userId: user.id,
+                clientReferenceId: payload.client_reference_id,
+            },
+        });
+        if (dupQueue) {
+            throw new CodedError("Duplicate client_reference_id.", 187, 400);
+        }
+    }
+
+    if (payload.txn_ref_no) {
+        const dupTxnPrimary = await BeneficiaryTransaction.findOne({
+            where: { txnRefNo: payload.txn_ref_no },
+        });
+        if (dupTxnPrimary) {
+            throw new CodedError("Duplicate txn_ref_no.", 196, 400);
+        }
+        const dupTxnQueue = await PayoutTransaction.findOne({
+            where: { txnRefNo: payload.txn_ref_no },
+        });
+        if (dupTxnQueue) {
+            throw new CodedError("Duplicate txn_ref_no.", 196, 400);
+        }
+    }
+    const txnRefNo = payload.txn_ref_no || generateUniqueId(12);
+    const generatedOrderId =
+        payload.order_id ||
+        `TXN${Math.floor(Date.now() / 1000)
+            .toString()
+            .slice(-8)}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    const quote = await Quote.findOne({
+        where: { uniqueId: payload.quote_id, userId: user.id },
+    });
+    if (!quote) {
+        throw new CodedError("Quote not found.", 121, 400);
+    }
+    if (quote.status === 2) {
+        throw new CodedError("Quote already submitted.", 153, 400);
+    }
+
+    const quoteInUse = await PayoutTransaction.findOne({
+        where: { quoteId: quote.id, payoutStatus: ["0", "1", "2"] },
+    });
+    if (quoteInUse) {
+        throw new CodedError("Quote already in use.", 153, 400);
+    }
+
+    const beneficiaryAccount = await BeneficiaryAccount.findOne({
+        where: { uniqueId: payload.beneficiary_account_id, userId: user.id },
+    });
+    if (!beneficiaryAccount) {
+        throw new CodedError("Beneficiary not found.", 117, 400);
+    }
+
+    // Initial status
+    let finalStatus: number = 3; // APPROVED
+    if (creator) {
+        if (creator.role === 2) {
+            finalStatus = 1; // WAITING_FOR_APPROVAL
+        }
+        if (creator.role === 3) {
+            finalStatus = 12; // CORPORATE_INITIATED
+        }
+    }
+
+    const fees = new Decimal(quote.commissionAmount)
+        .plus(quote.externalCommissionAmount)
+        .plus(quote.merchantCommissionAmount ?? 0);
+    const amountPlusFees = new Decimal(quote.amount).plus(fees);
+
+    // Create the queued PayoutTransaction in the secondary DB
+    const payout = await PayoutTransaction.create({
+        uniqueId: generateUniqueId(24),
+        orderId: generatedOrderId,
+        txnRefNo,
+        userId: user.id,
+        teamMemberId: creator?.id ?? null,
+        clientReferenceId: payload.client_reference_id ?? null,
+        beneficiaryAccountId: beneficiaryAccount.id,
+        quoteId: quote.id,
+        virtualAccountId:
+            quote.sourceType === "App\\Models\\VirtualAccount"
+                ? quote.sourceId
+                : null,
+        walletId:
+            quote.sourceType === "App\\Models\\Wallet" ? quote.sourceId : null,
+        amount: quote.amount,
+        commissionAmount: String(fees),
+        totalAmount: amountPlusFees.toString(),
+        recipientAmount: quote.receivingAmount,
+        sendingCurrency: "USD",
+        receivingCurrency: quote.receivingCurrency,
+        type:
+            quote.sourceType === "App\\Models\\Wallet" ? "wallet" : "bank",
+        status: finalStatus,
+        payoutStatus: "0", // PENDING
+        payload: {
+            store: { ...payload, order_id: generatedOrderId },
+            creator_id: creator?.id,
+        },
+    });
+
+    // Dispatch the worker job
+    await dispatchProcessPayoutTransaction({ payoutTransactionId: payout.id });
+
+    // Return a transient BeneficiaryTransaction to satisfy the API
+    // response
+    const fakeTxn = BeneficiaryTransaction.build({
+        uniqueId: generateUniqueId(24),
+        txnRefNo,
+        userId: user.id,
+        teamMemberId: creator?.id ?? null,
+        quoteId: quote.id,
+        beneficiaryAccountId: beneficiaryAccount.id,
+        amount: quote.amount,
+        commissionAmount: String(fees),
+        totalAmount: amountPlusFees.toString(),
+        recipientAmount: quote.receivingAmount,
+        receivingCurrency: quote.receivingCurrency,
+        purposeOfPayment: payload.purpose_of_payment ?? null,
+        clientReferenceId: payload.client_reference_id ?? null,
+        status: 0, // PROCESSING
+        createdAt: new Date(),
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (fakeTxn as any).quotes = quote;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (fakeTxn as any).beneficiaryAccount = beneficiaryAccount;
+    return fakeTxn;
 };
 
 export const createPayoutTransaction = async (

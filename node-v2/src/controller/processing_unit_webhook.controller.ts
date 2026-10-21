@@ -322,7 +322,7 @@ const handleDeposit = async (
 
     const depositUser = await User.findByPk(deposit.userId);
     const virtualAccount = await VirtualAccount.findByPk(
-        deposit.virtualAccountId,
+        deposit.virtualAccountId!,
     );
 
     const statusMap = mapProcessingUnitDepositStatus(status);

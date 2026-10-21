@@ -926,7 +926,11 @@ export const subuserApiRoutes = {
 export const publicApiRoutes = {
     RETRY_JOB: {
         path: "/retry-job/:jobId",
-        middleware: [retryJobParamValidator, checkValidationErrors],
+        middleware: [],
+    },
+    RETRY_PAYOUT_TRANSACTION: {
+        path: "/retry-payout-transaction",
+        middleware: [],
     },
     CHECK_EXTERNAL_SERVICE_STATUS: {
         path: "/check_external_service_status/:trxn",

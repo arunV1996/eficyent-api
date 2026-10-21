@@ -259,7 +259,7 @@ const buildContext = async (): Promise<FormBuildContext> => {
         buildStates(),
         getLookups(LOOKUP_TYPE_PROFESSIONS),
         businessTypes(),
-        getLookups(LOOKUP_TYPE_ID_TYPE),
+        getLookups(LOOKUP_TYPE_ID_TYPE, EXTERNAL_TYPE_DIGININE),
         businessVerificationTypes(),
         getLookups(LOOKUP_TYPE_ADDRESS_TYPES),
         getLookups(LOOKUP_TYPE_PROOF_OF_ADDRESS),
@@ -1005,7 +1005,7 @@ const bankFieldsByCountry = async (
                         make("account_number", "Account Number", {
                             validation: VALIDATION_PRESETS.generic_account,
                         }),
-                        make("code", "Routing Number", {
+                        make("routing_number", "Routing Number", {
                             validation: VALIDATION_PRESETS.routing,
                         }),
                     ];

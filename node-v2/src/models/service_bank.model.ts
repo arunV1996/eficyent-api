@@ -17,6 +17,7 @@ interface ServiceBankAttributes {
     currency: string | null;
     serviceType: string | null;
     externalType: string | null;
+    rail: string | null;
     status: string;
     createdAt?: Date | null;
     updatedAt?: Date | null;
@@ -26,7 +27,13 @@ interface ServiceBankAttributes {
 interface ServiceBankCreationAttributes
     extends Optional<
         ServiceBankAttributes,
-        "id" | "isoCode" | "currency" | "serviceType" | "externalType" | "status"
+        | "id"
+        | "isoCode"
+        | "currency"
+        | "serviceType"
+        | "externalType"
+        | "rail"
+        | "status"
     > {}
 
 class ServiceBank
@@ -42,6 +49,7 @@ class ServiceBank
     public currency!: string | null;
     public serviceType!: string | null;
     public externalType!: string | null;
+    public rail!: string | null;
     public status!: string;
 
     public readonly createdAt!: Date | null;
@@ -88,6 +96,10 @@ ServiceBank.init(
         },
         externalType: {
             type: DataTypes.STRING(11),
+            allowNull: true,
+        },
+        rail: {
+            type: DataTypes.STRING(255),
             allowNull: true,
         },
         status: {

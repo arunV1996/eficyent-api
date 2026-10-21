@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { check, ValidationChain } from "express-validator";
 import { getPaymentRails } from "../helpers/lookup.helper";
 import {
+    BDT_RAIL_BANK,
     QUOTE_TYPE_FORWARD,
     QUOTE_TYPE_REVERSE,
     USER_TYPE_MAP,
@@ -66,12 +67,31 @@ export const quoteStoreValidator: ValidationChain[] = [
         .customSanitizer((value) =>
             typeof value === "string" ? value.toLowerCase() : value,
         ),
+
+    check("bank_name")
+        .if((_value, { req }) => {
+            const payload = (
+                req.method === "GET" ? req.query : req.body
+            ) as Record<string, unknown>;
+            const receivingCurrency = String(
+                payload?.receiving_currency ?? "",
+            ).toUpperCase();
+            const paymentRail = String(
+                payload?.payment_rail ?? "",
+            ).toLowerCase();
+            return (
+                receivingCurrency === "BDT" && paymentRail === BDT_RAIL_BANK
+            );
+        })
+        .notEmpty()
+        .withMessage(localizedError("1100", 1100)),
 ];
 
 /**
  * Cross-field rules from the legacy QuoteStoreSchema refinements:
  *   - exactly one of bank_account_id / wallet_id
  *   - payment_rail required for USD/USA and BGD corridors
+ *   - bank_name required for BDT bank rail
  *   - payment_rail must belong to getPaymentRails(recipient_country)
  * Must run after checkValidationErrors.
  */
@@ -115,10 +135,18 @@ export const quoteStoreCrossFieldRules = (
 
     if (
         receivingCurrency === "BDT" &&
-        recipientCountry === "BGD" &&
+        (!recipientCountry || recipientCountry === "BGD") &&
         !paymentRail
     ) {
         return res.sendError("payment_rail required for BDT/BGD.", 422, 422);
+    }
+
+    if (
+        receivingCurrency === "BDT" &&
+        paymentRail.toLowerCase() === BDT_RAIL_BANK &&
+        (!payload.bank_name || String(payload.bank_name).trim() === "")
+    ) {
+        return res.sendError("The bank name field is required.", 422, 422);
     }
 
     // Dynamic rail membership: whatever corridor was requested, the

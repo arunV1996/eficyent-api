@@ -659,6 +659,9 @@ export const bulkTemplate = async (
             country: String(query.country),
             currency: String(query.currency),
             type: Number(query.type ?? 1),
+            payment_rail: query.payment_rail
+                ? String(query.payment_rail)
+                : null,
         });
         const flat = flattenFormFields({ beneficiary: fields }, ["beneficiary"]);
         const buffer = await generateBulkTemplate(flat, "Beneficiaries");
@@ -717,6 +720,7 @@ export const bulkStore = async (
             country?: string;
             currency?: string;
             type?: number | string;
+            payment_rail?: string;
         };
         const country = String(body.country ?? "");
         const currency = String(body.currency ?? "");
@@ -726,6 +730,8 @@ export const bulkStore = async (
             country,
             currency,
             type,
+            merchantId: req.user.merchantId,
+            payment_rail: body.payment_rail ? String(body.payment_rail) : null,
         });
         const fields = flattenFormFields({ beneficiary }, ["beneficiary"]);
 

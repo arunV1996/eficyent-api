@@ -22,6 +22,7 @@ import {
     transactionFormFields as buildTransactionFormFields,
 } from "../helpers/form_fields.helper";
 import {
+    acceptPayout,
     createPayoutTransaction,
     isRemitterDepositEnabled,
 } from "../helpers/payout_transaction.helper";
@@ -33,7 +34,7 @@ import {
     findOrCreateBeneficiaryAccount,
     findOrCreateSender,
 } from "../helpers/party_upsert.helper";
-import { Dispatch } from "../jobs";
+import { Dispatch, dispatchProcessPayoutTransaction } from "../jobs";
 import { computeBankBalance, getWalletBalance } from "../helpers/balance.helper";
 import { reverseRefund } from "../helpers/refund.helper";
 import { extractUploadedFileBuffer } from "../helpers/uploaded_file.helper";
@@ -49,6 +50,7 @@ import { generateExcel } from "../services/excel_export.service";
 import { temporaryUrl, upload } from "../services/s3.service";
 import BeneficiaryAccount from "../models/beneficiary_account.model";
 import BeneficiaryTransaction from "../models/beneficiary_transaction.model";
+import PayoutTransaction from "../models/payout_transaction.model";
 import BeneficiaryTransactionProof from "../models/beneficiary_transaction_proof.model";
 import Ledger from "../models/ledger.model";
 import Merchant from "../models/merchant.model";
@@ -193,7 +195,7 @@ export const store = async (req: Request, res: Response): Promise<void> => {
             req.body.supporting_document,
         );
 
-        const transaction = await createPayoutTransaction(
+        const transaction = await acceptPayout(
             {
                 beneficiary_account_id: req.body.beneficiary_account_id,
                 quote_id: req.body.quote_id,
@@ -716,7 +718,7 @@ export const direct = async (req: Request, res: Response): Promise<void> => {
         );
         const senderRow = await findOrCreateSender(req.user, sender);
 
-        const createdTransaction = await createPayoutTransaction(
+        const createdTransaction = await acceptPayout(
             {
                 beneficiary_account_id: beneficiaryAccount.uniqueId,
                 quote_id: String(transaction.quote_id),
@@ -974,6 +976,9 @@ export const payoutTemplate = async (
             currency: String(query.currency),
             type: parties.beneficiary_type,
             merchantId: req.user.merchantId,
+            payment_rail: query.payment_rail
+                ? String(query.payment_rail)
+                : null,
         });
         const quote = await quoteFormFields();
         const merchantRow = req.user.merchantId
@@ -1046,6 +1051,7 @@ export const bulkStore = async (
             type?: number | string;
             bank_account_id?: string;
             wallet_id?: string;
+            payment_rail?: string;
         };
         const country = String(body.country ?? "");
         const currency = String(body.currency ?? "");
@@ -1079,6 +1085,7 @@ export const bulkStore = async (
             currency,
             type,
             merchantId: req.user.merchantId,
+            payment_rail: body.payment_rail ? String(body.payment_rail) : null,
         });
         const quote = await quoteFormFields();
         const merchantRow = req.user.merchantId
@@ -1959,5 +1966,62 @@ export const reconciliation = async (
         );
     } catch (error) {
         return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/retry-payout-transaction — re-queues a FAILED secondary-DB
+ * payout row through the processing worker.
+ */
+export const retryPayoutTransaction = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        const trxn = req.body.trxn;
+        // eslint-disable-next-line no-console
+        console.log("Retry request received for transaction :" + trxn);
+
+        const transaction = await BeneficiaryTransaction.findOne({
+            where: { uniqueId: trxn },
+        });
+        if (transaction) {
+            return res.sendError("Transaction already exists", 124, 400);
+        }
+
+        const payouttransaction = await PayoutTransaction.findOne({
+            where: { uniqueId: trxn },
+        });
+        if (!payouttransaction) {
+            return res.sendError("Payout Transaction not found", 124, 400);
+        }
+
+        // FAILED
+        if (payouttransaction.payoutStatus !== "3") {
+            return res.sendError(
+                "Transaction is not in failed state",
+                201,
+                400,
+            );
+        }
+
+        await dispatchProcessPayoutTransaction({
+            payoutTransactionId: payouttransaction.id,
+        });
+
+        // eslint-disable-next-line no-console
+        console.log("Retry request dispatched for transaction :" + trxn);
+
+        return res.sendResponse(
+            [],
+            "Retry request dispatched successfully",
+            200,
+        );
+    } catch (e) {
+        return res.sendError(
+            e instanceof Error ? e.message : String(e),
+            400,
+            400,
+        );
     }
 };

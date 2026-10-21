@@ -97,28 +97,35 @@ export const validateAndNormalizeBeneficiary = async (
         );
     }
 
+    // USA/BGD/CHN corridors require a valid payment rail before any of
+    // the field-level checks run; whichever rail survives is threaded
+    // into the form builder so rail-specific fields validate.
+    let paymentRail: string | null = null;
+    if (country === "USA" || country === "BGD" || country === "CHN") {
+        const rawPaymentRail = payload.payment_rail;
+        if (
+            rawPaymentRail === undefined ||
+            rawPaymentRail === null ||
+            String(rawPaymentRail).trim() === ""
+        ) {
+            throw new FormFieldsError("The payment rail field is required.");
+        }
+        const validRails = getPaymentRails(country).map((rail) => rail.value);
+        if (!validRails.includes(String(rawPaymentRail))) {
+            throw new FormFieldsError("The selected payment rail is invalid.");
+        }
+        paymentRail = String(rawPaymentRail);
+    } else if (payload.payment_rail) {
+        paymentRail = String(payload.payment_rail);
+    }
+
     const fields = await beneficiaryFormFields({
         country,
         currency,
         type: recipientType,
         merchantId: user.merchantId,
+        payment_rail: paymentRail,
     });
-    // USA/BGD/CHN corridors require a valid payment rail before any of
-    // the field-level checks run.
-    if (country === "USA" || country === "BGD" || country === "CHN") {
-        const paymentRail = payload.payment_rail;
-        if (
-            paymentRail === undefined ||
-            paymentRail === null ||
-            String(paymentRail).trim() === ""
-        ) {
-            throw new FormFieldsError("The payment rail field is required.");
-        }
-        const validRails = getPaymentRails(country).map((rail) => rail.value);
-        if (!validRails.includes(String(paymentRail))) {
-            throw new FormFieldsError("The selected payment rail is invalid.");
-        }
-    }
 
     const validationResult = validateAgainstFields(fields, payload);
     const validationError = firstFieldError(validationResult);

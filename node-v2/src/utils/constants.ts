@@ -508,6 +508,7 @@ export const CHN_RAIL_BANK = "bank";
 export const BDT_RAIL_BKASH = "bkash";
 export const BDT_RAIL_NAGAD = "nagad";
 export const BDT_RAIL_ROCKET = "rocket";
+export const BDT_RAIL_NPSB = "npsb";
 
 // Mirror of get_account_types()
 export const ACCOUNT_TYPES: { label: string; value: string }[] = [
@@ -587,3 +588,15 @@ export const ALPHA3_TO_ALPHA2: Record<string, string> = {
     "URY": "uy", "UZB": "uz", "VUT": "vu", "VEN": "yv", "VNM": "vn", "WLF": "wf", "ESH": "eh", "YEM": "ye",
     "ZMB": "zm", "ZWE": "zw", "CHN": "cn",
 };
+
+// Secondary payout-queue table lifecycle (payout_transactions.payout_status).
+export const PAYOUT_TABLE_STATUS_PENDING = "0";
+export const PAYOUT_TABLE_STATUS_PROCESSING = "1";
+export const PAYOUT_TABLE_STATUS_COMPLETED = "2";
+export const PAYOUT_TABLE_STATUS_FAILED = "3";
+
+export const SETTLEMENT_STATUS_PENDING = "0";
+export const SETTLEMENT_STATUS_APPLIED = "1";
+export const SETTLEMENT_STATUS_DONE = "2";
+
+export const DEPOSIT_TYPE_WALLET = "wallet";

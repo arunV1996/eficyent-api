@@ -31,4 +31,33 @@ const sequelize = new Sequelize(databaseName, databaseUser, databasePassword, {
     },
 });
 
+/**
+ * Secondary payout queue database (Laravel's payout connection): holds
+ * the payout_transactions staging/archive tables processed by the
+ * Redis worker and settlement sweeper.
+ */
+export const payoutSequelize = new Sequelize(
+    process.env.PAYOUT_DB_DATABASE || "eficyent_payout",
+    process.env.PAYOUT_DB_USERNAME || "root",
+    process.env.PAYOUT_DB_PASSWORD || "",
+    {
+        host: process.env.PAYOUT_DB_HOST || "127.0.0.1",
+        port: parseInt(process.env.PAYOUT_DB_PORT || "3306", 10),
+        dialect: databaseDialect,
+        logging: false,
+        timezone: "+00:00",
+        pool: {
+            max: parseInt(process.env.DB_POOL_MAX || "10", 10),
+            min: parseInt(process.env.DB_POOL_MIN || "0", 10),
+            acquire: parseInt(process.env.DB_POOL_ACQUIRE || "30000", 10),
+            idle: parseInt(process.env.DB_POOL_IDLE || "10000", 10),
+        },
+        define: {
+            timestamps: true,
+            freezeTableName: true,
+            underscored: true,
+        },
+    },
+);
+
 export default sequelize;

@@ -12,6 +12,7 @@ import User from "../models/user.model";
 import VirtualAccount from "../models/virtual_account.model";
 import Wallet from "../models/wallet.model";
 import WalletTransaction from "../models/wallet_transaction.model";
+import DepositTransaction from "../models/deposit_transaction.model";
 import {
     walletToJSON,
     walletTransactionToJSON,
@@ -31,6 +32,11 @@ import {
     WALLET_TRANSACTION_FAILED,
     WALLET_TRANSACTION_PENDING,
     WALLET_TRANSACTION_REJECTED,
+    DEPOSIT_TRANSACTION_PENDING,
+    DEPOSIT_TYPE_WALLET,
+    DEPOSIT_TYPE_DEPOSIT,
+    TRANSACTION_TYPE_DEBIT,
+    MORPH_VIRTUAL_ACCOUNT,
 } from "../utils/constants";
 
 const APP_URL = process.env.APP_URL ?? "https://dev-eficyent.rare-able.com";
@@ -329,8 +335,8 @@ export const convert = async (req: Request, res: Response): Promise<void> => {
                         userId: req.user!.id,
                         walletId: wallet.id,
                         quoteId: quote.id,
-                        amount: quote.receivingAmount,
-                        totalAmount: quote.receivingAmount,
+                        amount: quote.receivingAmount ?? "0",
+                        totalAmount: quote.receivingAmount ?? "0",
                         fees: quote.commissionAmount,
                         status: WALLET_TRANSACTION_PENDING,
                         type: TRANSACTION_TYPE_CREDIT,
@@ -534,6 +540,250 @@ export const showTransaction = async (
             },
             "",
             200,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/user/wallets/to-bank — stages a wallet -> bank transfer:
+ * a pending deposit on the funding virtual account plus a pending
+ * wallet DEBIT linked to it, submitting the quote.
+ */
+export const wallet_to_bank = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const { wallet_id, quote_id } = req.body;
+
+        const wallet = await Wallet.findOne({
+            where: { uniqueId: wallet_id, userId: req.user.id },
+        });
+        if (!wallet) {
+            return res.sendError(res.__("167") || "Wallet not found", 167, 400);
+        }
+        if (wallet.status !== WALLET_STATUS_ACTIVE) {
+            return res.sendError(res.__("169") || "Wallet not active", 169, 400);
+        }
+
+        const quote = await Quote.findOne({
+            where: { uniqueId: quote_id, userId: req.user.id },
+        });
+        if (!quote) {
+            return res.sendError(res.__("121") || "Quote not found", 121, 400);
+        }
+        if (quote.status === QUOTE_SUBMITTED) {
+            return res.sendError(
+                res.__("153") || "Quote already submitted",
+                153,
+                400,
+            );
+        }
+        if (quote.receivingCurrency !== wallet.currency) {
+            return res.sendError(
+                res.__("168") || "Currency mismatch",
+                168,
+                400,
+            );
+        }
+        if (quote.sourceType !== MORPH_VIRTUAL_ACCOUNT) {
+            return res.sendError(
+                res.__("206") || "Invalid source type",
+                206,
+                400,
+            );
+        }
+
+        const walletBalance = await getWalletBalance(req.user, wallet);
+        if (new Decimal(quote.receivingAmount || 0).gt(walletBalance)) {
+            return res.sendError(
+                res.__("154") || "Insufficient balance",
+                154,
+                400,
+            );
+        }
+
+        const walletTransaction = await sequelize.transaction(
+            async (databaseTransaction) => {
+                const transactionIdString = `${Math.floor(Math.random() * 900) + 100}${new Date()
+                    .toISOString()
+                    .replace(/\D/g, "")
+                    .substring(0, 14)}${String(quote.fxRate).replace(".", "")}`;
+
+                const depositTx = await DepositTransaction.create(
+                    {
+                        uniqueId: generateUniqueId(24),
+                        userId: req.user!.id,
+                        virtualAccountId: quote.sourceId!,
+                        amount: quote.totalSendingAmount ?? "0",
+                        totalAmount: quote.totalSendingAmount ?? "0",
+                        status: DEPOSIT_TRANSACTION_PENDING,
+                        type: DEPOSIT_TYPE_WALLET,
+                    },
+                    { transaction: databaseTransaction },
+                );
+
+                const walletTx = await WalletTransaction.create(
+                    {
+                        uniqueId: generateUniqueId(24),
+                        transactionId: transactionIdString,
+                        userId: req.user!.id,
+                        walletId: wallet.id,
+                        quoteId: quote.id,
+                        depositTransactionId: depositTx.id,
+                        amount: quote.receivingAmount ?? "0",
+                        totalAmount: quote.receivingAmount ?? "0",
+                        fees: quote.commissionAmount,
+                        status: WALLET_TRANSACTION_PENDING,
+                        type: TRANSACTION_TYPE_DEBIT,
+                    },
+                    { transaction: databaseTransaction },
+                );
+
+                await Quote.update(
+                    { status: QUOTE_SUBMITTED },
+                    {
+                        where: { id: quote.id },
+                        transaction: databaseTransaction,
+                    },
+                );
+
+                return walletTx;
+            },
+        );
+
+        return res.sendResponse(
+            {
+                wallet_transaction: walletTransactionToJSON(
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    walletTransaction as any,
+                    req.user.timezone,
+                ),
+            },
+            res.__("success.108"),
+            108,
+        );
+    } catch (error) {
+        return sendCodedError(res, error);
+    }
+};
+
+/**
+ * POST /api/user/wallets/to-wallet — stages a bank -> wallet transfer:
+ * a pending deposit plus a pending wallet CREDIT linked to it.
+ */
+export const bank_to_wallet = async (
+    req: Request,
+    res: Response,
+): Promise<void> => {
+    try {
+        if (!req.user) {
+            return res.sendError(res.__("102"), 102, 400);
+        }
+        const { wallet_id, quote_id } = req.body;
+
+        const wallet = await Wallet.findOne({
+            where: { uniqueId: wallet_id, userId: req.user.id },
+        });
+        if (!wallet) {
+            return res.sendError(res.__("167") || "Wallet not found", 167, 400);
+        }
+        if (wallet.status !== WALLET_STATUS_ACTIVE) {
+            return res.sendError(res.__("169") || "Wallet not active", 169, 400);
+        }
+
+        const quote = await Quote.findOne({
+            where: { uniqueId: quote_id, userId: req.user.id },
+        });
+        if (!quote) {
+            return res.sendError(res.__("121") || "Quote not found", 121, 400);
+        }
+        if (quote.status === QUOTE_SUBMITTED) {
+            return res.sendError(
+                res.__("153") || "Quote already submitted",
+                153,
+                400,
+            );
+        }
+        if (quote.sourceType !== MORPH_VIRTUAL_ACCOUNT) {
+            return res.sendError(
+                res.__("206") || "Invalid source type",
+                206,
+                400,
+            );
+        }
+
+        const va = await VirtualAccount.findByPk(quote.sourceId!);
+        if (!va) {
+            return res.sendError("Virtual account not found", 400, 400);
+        }
+        if (va.currency !== wallet.currency) {
+            return res.sendError(
+                res.__("168") || "Currency mismatch",
+                168,
+                400,
+            );
+        }
+
+        const walletTransaction = await sequelize.transaction(
+            async (databaseTransaction) => {
+                const depositTx = await DepositTransaction.create(
+                    {
+                        uniqueId: generateUniqueId(24),
+                        userId: req.user!.id,
+                        virtualAccountId: quote.sourceId!,
+                        walletId: wallet.id,
+                        amount: quote.amount ?? "0",
+                        totalAmount: quote.amount ?? "0",
+                        status: DEPOSIT_TRANSACTION_PENDING,
+                        type: DEPOSIT_TYPE_DEPOSIT,
+                    },
+                    { transaction: databaseTransaction },
+                );
+
+                const walletTx = await WalletTransaction.create(
+                    {
+                        uniqueId: generateUniqueId(24),
+                        userId: req.user!.id,
+                        walletId: wallet.id,
+                        quoteId: quote.id,
+                        depositTransactionId: depositTx.id,
+                        amount: quote.amount ?? "0",
+                        totalAmount: quote.amount ?? "0",
+                        fees: quote.commissionAmount,
+                        status: WALLET_TRANSACTION_PENDING,
+                        type: TRANSACTION_TYPE_CREDIT,
+                    },
+                    { transaction: databaseTransaction },
+                );
+
+                await Quote.update(
+                    { status: QUOTE_SUBMITTED },
+                    {
+                        where: { id: quote.id },
+                        transaction: databaseTransaction,
+                    },
+                );
+
+                return walletTx;
+            },
+        );
+
+        return res.sendResponse(
+            {
+                wallet_transaction: walletTransactionToJSON(
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    walletTransaction as any,
+                    req.user.timezone,
+                ),
+            },
+            res.__("success.108"),
+            108,
         );
     } catch (error) {
         return sendCodedError(res, error);

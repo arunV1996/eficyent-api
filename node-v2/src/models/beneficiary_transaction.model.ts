@@ -1,4 +1,5 @@
 import { DataTypes, Model, Optional } from "sequelize";
+import PayoutTransaction from "./payout_transaction.model";
 import sequelize from "../config/database";
 import BeneficiaryAccount from "./beneficiary_account.model";
 import Quote from "./quote.model";
@@ -158,6 +159,26 @@ BeneficiaryTransaction.init(
     {
         sequelize,
         tableName: "beneficiary_transactions",
+        hooks: {
+            // Keep the secondary payout queue row's status in sync with
+            // the primary transaction (matched by order id).
+            afterUpdate: async (transaction) => {
+                if (transaction.changed("status")) {
+                    try {
+                        await PayoutTransaction.update(
+                            { status: String(transaction.status) },
+                            { where: { orderId: transaction.orderId } },
+                        );
+                    } catch (error) {
+                        // eslint-disable-next-line no-console
+                        console.warn(
+                            "Failed to sync payout_transactions status",
+                            error,
+                        );
+                    }
+                }
+            },
+        },
         underscored: true,
         timestamps: true,
     },

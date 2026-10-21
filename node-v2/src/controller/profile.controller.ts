@@ -886,8 +886,8 @@ export const validatePassword = async (
         );
         return res.sendResponse(
             { is_password_valid: isPasswordValid },
-            "",
-            200,
+            "Password validated successfully.",
+            120,
         );
     } catch (error) {
         return res.handleError(error);

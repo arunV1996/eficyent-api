@@ -5,3 +5,4 @@ dist
 npm-debug.log
 logs/
 dump.rdb
+.arcconfig
